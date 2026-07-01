@@ -1,5 +1,6 @@
 package pe.quantum.crm.config.security
 
+import com.ninjasquad.springmockk.MockkBean
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -13,6 +14,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
+import pe.quantum.crm.domain.empleados.EmpleadoService
 
 /**
  * Tests de las cabeceras de seguridad HTTP (SECURITY-backend.md §6) y del CORS
@@ -41,6 +43,10 @@ class SecurityHeadersAndCorsTest {
 
     @Autowired
     lateinit var jwtService: JwtService
+
+    // Sin DataSource no hay repositorios JPA; se mockea el servicio que los usa.
+    @MockkBean
+    lateinit var empleadoService: EmpleadoService
 
     private fun bearer(): String = "Bearer " + jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
 

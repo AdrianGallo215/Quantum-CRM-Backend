@@ -1,7 +1,9 @@
 package pe.quantum.crm
 
+import com.ninjasquad.springmockk.MockkBean
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
+import pe.quantum.crm.domain.empleados.EmpleadoService
 
 /**
  * Test de arranque del contexto de Spring (B0.1).
@@ -24,6 +26,11 @@ import org.springframework.boot.test.context.SpringBootTest
     ],
 )
 class CrmApplicationTests {
+    // Sin DataSource no hay repositorios JPA; se mockea el servicio que los usa
+    // para que el contexto (web + security) ensamble sin base de datos.
+    @MockkBean
+    lateinit var empleadoService: EmpleadoService
+
     @Test
     fun `el contexto de la aplicacion levanta`() {
         // Pasa si el ApplicationContext arranca. Si no existe `CrmApplication`
