@@ -11,7 +11,7 @@ import pe.quantum.crm.support.SeedFixtures
 import java.math.BigDecimal
 
 /**
- * Test de integracion de B0.5: verifica que Flyway aplica las 19 migraciones en
+ * Test de integracion de B0.5: verifica que Flyway aplica todas las migraciones en
  * orden contra un PostgreSQL 16 real (Testcontainers) y que el schema y los seeds
  * (Calidda, catalogo de eventos, admin) quedan como especifica `schema.sql` y las
  * migraciones de seed (V17/V18/V19).
@@ -34,7 +34,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
     private fun strList(sql: String): List<String> = jdbcTemplate.queryForList(sql, String::class.java)
 
     @Test
-    fun `las 19 migraciones se aplican en orden y sin fallos`() {
+    fun `todas las migraciones se aplican en orden y sin fallos`() {
         val version = int("SELECT MAX(version::int) FROM flyway_schema_history WHERE success")
         val aplicadas = int("SELECT COUNT(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")
         val fallidas = int("SELECT COUNT(*) FROM flyway_schema_history WHERE NOT success")
