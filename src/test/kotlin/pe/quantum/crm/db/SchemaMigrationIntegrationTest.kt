@@ -6,11 +6,8 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.test.context.DynamicPropertyRegistry
-import org.springframework.test.context.DynamicPropertySource
-import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
+import pe.quantum.crm.support.IntegrationTestBase
+import pe.quantum.crm.support.SeedFixtures
 import java.math.BigDecimal
 
 /**
@@ -26,22 +23,7 @@ import java.math.BigDecimal
  */
 @Tag("integration")
 @SpringBootTest
-@Testcontainers
-class SchemaMigrationIntegrationTest {
-    companion object {
-        @Container
-        @JvmStatic
-        val postgres = PostgreSQLContainer("postgres:16-alpine")
-
-        @JvmStatic
-        @DynamicPropertySource
-        fun datasourceProps(registry: DynamicPropertyRegistry) {
-            registry.add("spring.datasource.url", postgres::getJdbcUrl)
-            registry.add("spring.datasource.username", postgres::getUsername)
-            registry.add("spring.datasource.password", postgres::getPassword)
-        }
-    }
-
+class SchemaMigrationIntegrationTest : IntegrationTestBase() {
     @Autowired
     lateinit var jdbcTemplate: JdbcTemplate
 
@@ -56,8 +38,8 @@ class SchemaMigrationIntegrationTest {
         val version = int("SELECT MAX(version::int) FROM flyway_schema_history WHERE success")
         val aplicadas = int("SELECT COUNT(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")
         val fallidas = int("SELECT COUNT(*) FROM flyway_schema_history WHERE NOT success")
-        assertThat(version).isEqualTo(19)
-        assertThat(aplicadas).isEqualTo(19)
+        assertThat(version).isEqualTo(SeedFixtures.MIGRACIONES_TOTAL)
+        assertThat(aplicadas).isEqualTo(SeedFixtures.MIGRACIONES_TOTAL)
         assertThat(fallidas).isZero()
     }
 
@@ -103,17 +85,20 @@ class SchemaMigrationIntegrationTest {
     @Test
     fun `el seed inserta a Calidda como unica financiadora default`() {
         val defaults = strList("SELECT nombre FROM financiadoras WHERE es_default")
-        assertThat(defaults).containsExactly("Calidda – Fraccionamiento GNV")
+        assertThat(defaults).containsExactly(SeedFixtures.CALIDDA_NOMBRE)
 
         val cuota = jdbcTemplate.queryForObject("SELECT cuota_por_unidad FROM financiadoras WHERE es_default", BigDecimal::class.java)
-        assertThat(cuota).isEqualByComparingTo("937.50")
+        assertThat(cuota).isEqualByComparingTo(SeedFixtures.CALIDDA_CUOTA_POR_UNIDAD)
     }
 
     @Test
     fun `el seed carga el catalogo de eventos con sus hitos y disparos`() {
-        assertThat(int("SELECT COUNT(*) FROM catalogo_eventos")).isEqualTo(10)
-        assertThat(int("SELECT COUNT(*) FROM catalogo_eventos WHERE es_hito_prospeccion")).isEqualTo(3)
-        assertThat(int("SELECT COUNT(*) FROM catalogo_eventos WHERE dispara_cambio_estado")).isEqualTo(3)
+        assertThat(int("SELECT COUNT(*) FROM catalogo_eventos"))
+            .isEqualTo(SeedFixtures.CATALOGO_EVENTOS_TOTAL)
+        assertThat(int("SELECT COUNT(*) FROM catalogo_eventos WHERE es_hito_prospeccion"))
+            .isEqualTo(SeedFixtures.CATALOGO_HITOS_PROSPECCION)
+        assertThat(int("SELECT COUNT(*) FROM catalogo_eventos WHERE dispara_cambio_estado"))
+            .isEqualTo(SeedFixtures.CATALOGO_DISPARAN_CAMBIO_ESTADO)
 
         val desembolso = str("SELECT estado_destino::text FROM catalogo_eventos WHERE nombre = 'Desembolso Calidda'")
         assertThat(desembolso).isEqualTo("facturado")
@@ -121,7 +106,7 @@ class SchemaMigrationIntegrationTest {
 
     @Test
     fun `el seed crea el empleado admin inicial`() {
-        val rol = str("SELECT rol::text FROM empleados WHERE email = 'admin@quantum.pe'")
-        assertThat(rol).isEqualTo("admin")
+        val rol = str("SELECT rol::text FROM empleados WHERE email = '${SeedFixtures.ADMIN_EMAIL}'")
+        assertThat(rol).isEqualTo(SeedFixtures.ADMIN_ROL)
     }
 }
