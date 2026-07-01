@@ -1,0 +1,64 @@
+name: Security Scan (OWASP Dependency-Check)
+
+# Escaneo de vulnerabilidades de dependencias (SECURITY-backend.md §12).
+# Desacoplado del CI de PR: la API publica de la NVD es inestable y su descarga
+# inicial puede tardar horas, lo que bloquearia todo merge ante una caida.
+# Aqui corre en cadencia nocturna y bajo demanda, sin frenar el desarrollo.
+# El build sigue fallando ante CVE alto (failBuildOnCVSS=7.0 en build.gradle.kts).
+on:
+  schedule:
+    # Todos los dias a las 06:00 UTC (madrugada en Peru).
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-check:
+    name: OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    # La primera poblacion de la base NVD puede ser lenta; damos margen amplio.
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Cachea la base NVD entre corridas. Debe ir ANTES del scan para restaurar
+      # la base ya descargada; el guardado ocurre en el post-job.
+      - name: Cache OWASP NVD data
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: owasp-nvd-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            owasp-nvd-${{ runner.os }}-
+
+      # La NVD_API_KEY viene de los secrets del repo; sin ella la descarga de la
+      # base NVD es aun mas lenta (memoria owasp-dependency-check-nvd-apikey).
+      - name: Dependency vulnerability scan (OWASP)
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew dependencyCheckAnalyze --no-daemon
+
+      - name: Upload dependency-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check-report.*
+          if-no-files-found: ignore

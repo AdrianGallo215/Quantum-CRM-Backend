@@ -6,13 +6,18 @@ import org.yaml.snakeyaml.Yaml
 import java.io.File
 
 /**
- * Test de contrato sobre el pipeline de CI (B0.4).
+ * Test de contrato sobre el pipeline de CI de PR (B0.4).
  *
- * No ejecuta el workflow: valida que `.github/workflows/ci.yml` declare todos los
- * gates exigidos por DEVOPS-backend.md (§3 esquema, §4 tabla de gates) y que
- * respete el principio fail-fast (lo mas rapido primero). Los gates son:
- * ktlint, detekt, compilacion, tests (con Testcontainers + ArchUnit),
- * cobertura (Kover) y escaneo de vulnerabilidades (OWASP Dependency-Check).
+ * No ejecuta el workflow: valida que `.github/workflows/ci.yml` declare los gates
+ * que gatean cada PR y que respete el principio fail-fast (lo mas rapido primero):
+ * ktlint, detekt, compilacion, tests (con Testcontainers + ArchUnit) y cobertura
+ * (Kover).
+ *
+ * El escaneo de vulnerabilidades (OWASP Dependency-Check) NO gatea cada PR: la API
+ * publica de la NVD es inestable y su descarga inicial puede tardar horas, lo que
+ * bloquearia todo merge ante una caida de la NVD. Se ejecuta en un workflow de
+ * seguridad nocturno + manual (ver SecurityScanWorkflowConfigTest). El build sigue
+ * fallando ante CVE alto, solo cambia la cadencia.
  *
  * La verificacion en caliente ("el workflow corre en un PR y todos los jobs
  * pasan") ocurre en GitHub Actions, no en la suite local.
@@ -91,7 +96,6 @@ class CiPipelineConfigTest {
                 "compilacion" to "compileKotlin",
                 "tests" to "test",
                 "cobertura" to "koverVerify",
-                "dependency-check" to "dependencyCheckAnalyze",
             )
         assertThat(gates.entries).allSatisfy { (gate, comando) ->
             assertThat(texto)
@@ -121,15 +125,12 @@ class CiPipelineConfigTest {
     }
 
     @Test
-    fun `el escaneo de dependencias recibe la NVD_API_KEY del secret`() {
-        val texto = workflowText()
-        assertThat(texto)
-            .withFailMessage(
-                "El dependency-check debe recibir NVD_API_KEY desde los secrets del repo " +
-                    "(sin ella la descarga NVD es lentisima; ver memoria owasp-dependency-check-nvd-apikey)",
-            )
-            .contains("NVD_API_KEY")
-            .contains("secrets.NVD_API_KEY")
+    fun `el CI de PR no bloquea con el escaneo de dependencias`() {
+        // El scan de vulnerabilidades corre en el workflow de seguridad nocturno,
+        // no en cada PR: la NVD inestable no debe poder bloquear todo merge.
+        assertThat(workflowText())
+            .withFailMessage("dependencyCheckAnalyze no debe estar en el CI de PR (corre en security-scan.yml)")
+            .doesNotContain("dependencyCheckAnalyze")
     }
 
     @Test
