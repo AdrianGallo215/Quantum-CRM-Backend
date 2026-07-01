@@ -3,6 +3,7 @@
 
 # ── Build / Gradle ─────────────────────────────────────────
 build/
+bin/
 .gradle/
 !gradle/wrapper/gradle-wrapper.jar
 
