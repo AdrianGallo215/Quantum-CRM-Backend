@@ -1,0 +1,22 @@
+# Configuración detekt para Quantum CRM Backend (B0.3).
+# Se construye sobre la config por defecto (buildUponDefaultConfig = true);
+# aquí solo van los ajustes propios del proyecto.
+
+style:
+  # ktlint ya gobierna el formato; evitamos solapamiento y ruido en tests.
+  MaxLineLength:
+    maxLineLength: 140
+  MagicNumber:
+    active: true
+    ignoreNumbers: ['-1', '0', '1', '2', '100']
+    excludes: ['**/test/**', '**/*Test.kt', '**/*Tests.kt']
+
+naming:
+  FunctionNaming:
+    # Los nombres de test van con backticks y espacios ("`hace algo`").
+    excludes: ['**/test/**', '**/*Test.kt', '**/*Tests.kt']
+
+performance:
+  SpreadOperator:
+    # `runApplication<CrmApplication>(*args)` es el idioma obligatorio de Spring Boot.
+    active: false

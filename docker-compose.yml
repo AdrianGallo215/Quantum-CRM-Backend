@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quantum-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-quantum_crm}
+      POSTGRES_USER: ${POSTGRES_USER:-quantum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quantum}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - quantum_crm_data:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready confirma que el motor acepta conexiones antes de marcar healthy.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quantum} -d ${POSTGRES_DB:-quantum_crm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  quantum_crm_data:

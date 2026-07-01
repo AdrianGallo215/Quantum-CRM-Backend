@@ -1,0 +1,84 @@
+name: Backend CI
+
+# Corre en cada PR y en cada push a develop/main (DEVOPS-backend.md §3).
+# Ningun cambio llega a develop/main sin pasar todos los gates de calidad.
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+# Cancela corridas anteriores del mismo PR/rama para no gastar minutos de CI.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Quality Gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Cachea dependencias y el daemon de Gradle entre corridas.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # ── Fail fast: los checks mas rapidos primero (DEVOPS-backend.md §3) ──
+
+      - name: Lint (ktlint)
+        run: ./gradlew ktlintCheck --no-daemon
+
+      - name: Static analysis (detekt)
+        run: ./gradlew detekt --no-daemon
+
+      - name: Compile
+        run: ./gradlew compileKotlin --no-daemon
+
+      # Tests con Testcontainers (Docker disponible en el runner) + ArchUnit.
+      - name: Tests
+        run: ./gradlew test --no-daemon
+
+      # Cobertura: falla si baja del umbral (90% dominio, 75% global).
+      - name: Coverage check (Kover)
+        run: ./gradlew koverVerify --no-daemon
+
+      # Escaneo de vulnerabilidades. La NVD_API_KEY viene de los secrets del repo;
+      # sin ella la descarga de la base NVD es lentisima (memoria owasp-dependency-check-nvd-apikey).
+      - name: Dependency vulnerability scan (OWASP)
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew dependencyCheckAnalyze --no-daemon
+
+      # Cachea la base NVD descargada entre corridas para acelerar el escaneo.
+      - name: Cache OWASP NVD data
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: owasp-nvd-${{ runner.os }}
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/reports/kover/
+          if-no-files-found: ignore
+
+      - name: Upload dependency-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check-report.*
+          if-no-files-found: ignore
