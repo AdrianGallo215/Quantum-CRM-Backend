@@ -39,6 +39,11 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
+    // JWT (firma HS256, cookies httpOnly). SECURITY-backend.md §2.
+    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+
     // Migraciones
     implementation("org.flywaydb:flyway-core")
 
@@ -75,9 +80,27 @@ tasks.withType<KotlinCompile> {
     }
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
+// `test` corre los unitarios (rapidos, sin Docker). Los de integracion se marcan
+// con @Tag("integration") y corren en la tarea `integrationTest` (Testcontainers).
+// Asi `./gradlew test` queda verde en maquinas donde Docker no es compatible con
+// Testcontainers (Docker 29 local); CI corre ambas. Ver testcontainers-docker29-blocker.
+tasks.named<Test>("test") {
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
 }
+
+val integrationTest =
+    tasks.register<Test>("integrationTest") {
+        description = "Ejecuta los tests de integracion con Testcontainers."
+        group = "verification"
+        useJUnitPlatform {
+            includeTags("integration")
+        }
+        testClassesDirs = sourceSets["test"].output.classesDirs
+        classpath = sourceSets["test"].runtimeClasspath
+        shouldRunAfter("test")
+    }
 
 // ── Gates de calidad (B0.3) ────────────────────────────────
 
@@ -98,7 +121,9 @@ configurations.matching { it.name == "detekt" }.all {
 }
 
 // Cobertura: 75% global, 90% en los servicios de dominio (TESTING-backend.md §8).
-// Se excluye el bootstrap de la aplicacion: no contiene logica de negocio.
+// Se excluye de la medicion el "glue" sin logica de negocio: el bootstrap, las
+// entidades JPA, los repositorios, las clases de @ConfigurationProperties y los
+// enums de datos. La cobertura mide logica, no mapeos/estructuras de datos.
 // El umbral de dominio se aplica sobre una report variant filtrada a
 // `pe.quantum.crm.domain` (Kover 0.8 no permite filtros por regla).
 kover {
@@ -113,7 +138,11 @@ kover {
                 classes(
                     "pe.quantum.crm.CrmApplication",
                     "pe.quantum.crm.CrmApplicationKt",
+                    "pe.quantum.crm.domain.empleados.RolEmpleado",
                 )
+                classes("*Repository")
+                classes("*Properties")
+                annotatedBy("jakarta.persistence.Entity")
             }
         }
         verify {
@@ -125,6 +154,11 @@ kover {
             filters {
                 includes {
                     packages("pe.quantum.crm.domain")
+                }
+                excludes {
+                    classes("pe.quantum.crm.domain.empleados.RolEmpleado")
+                    classes("*Repository")
+                    annotatedBy("jakarta.persistence.Entity")
                 }
             }
             verify {

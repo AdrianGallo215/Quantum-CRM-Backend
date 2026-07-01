@@ -47,13 +47,18 @@ jobs:
       - name: Compile
         run: ./gradlew compileKotlin --no-daemon
 
-      # Tests con Testcontainers (Docker disponible en el runner) + ArchUnit.
-      - name: Tests
+      # Tests unitarios (rapidos, sin Docker) + ArchUnit.
+      - name: Unit tests
         run: ./gradlew test --no-daemon
 
       # Cobertura: falla si baja del umbral (90% dominio, 75% global).
       - name: Coverage check (Kover)
         run: ./gradlew koverVerify --no-daemon
+
+      # Tests de integracion con Testcontainers (Docker disponible en el runner).
+      # Marcados con @Tag("integration"); no corren en el `test` unitario.
+      - name: Integration tests (Testcontainers)
+        run: ./gradlew integrationTest --no-daemon
 
       - name: Upload coverage report
         if: always()
