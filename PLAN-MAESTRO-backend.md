@@ -71,9 +71,19 @@ Implementar `POST /auth/login` (mensaje genérico ante fallo, rate limiting), `P
 - **Depende de:** B0.7
 - **Aceptación:** login exitoso setea cookie httpOnly; credenciales inválidas dan 401 genérico; `/me` requiere auth; rate limiting bloquea tras N intentos.
 
+### B0.9 — Dockerfile multi-stage · `medium`
+Crear el `Dockerfile` multi-stage de `DEVOPS-backend.md §5.2`: etapa de build con `gradle:8-jdk21` que produce el `bootJar`, y etapa de runtime con `eclipse-temurin:21-jre-alpine`, usuario no-root y `EXPOSE 8080`. La imagen final solo contiene el JAR (ni Gradle ni el código fuente). Agregar `.dockerignore`. Verificar que el contenedor arranca contra el PostgreSQL de `docker-compose` y que Flyway aplica las migraciones al iniciar.
+- **Depende de:** B0.5
+- **Aceptación:** `docker build` produce una imagen que arranca como usuario no-root, se conecta a PostgreSQL y Flyway aplica las 19 migraciones; la imagen final no contiene código fuente ni Gradle.
+
 > ## 🔍 AUDIT — Hito 0: Infraestructura y seguridad base
 > **Ejecutar skills:** `docs/skills/audit-code-backend.md` · `docs/skills/audit-security-backend.md`
-> **Auditar:** la configuración de seguridad (JWT, cookies, BCrypt, CORS, cabeceras, rate limiting), el envelope `ApiResponse`, el `GlobalExceptionHandler`, la entidad `Empleado`, y el pipeline CI. Esta es la base de seguridad de todo el sistema — auditar con rigor extra.
+> **Auditar:** la configuración de seguridad (JWT, cookies, BCrypt, CORS, cabeceras, rate limiting), el envelope `ApiResponse`, el `GlobalExceptionHandler`, la entidad `Empleado`, el pipeline CI, y el `Dockerfile` (imagen mínima, usuario no-root, sin secretos en capas). Esta es la base de seguridad de todo el sistema — auditar con rigor extra.
+
+### B0.10 — Deploy a Render/Railway (CD) · `medium`
+Conectar el repo a Render o Railway con deploy automático desde `main`. Provisionar el PostgreSQL gestionado. Configurar las variables de entorno de producción en el panel (nunca en código): `DB_*`, `JWT_SECRET`, `JWT_EXPIRATION_MS`, `JWT_REFRESH_EXPIRATION_MS`, `CORS_ALLOWED_ORIGINS`, `SPRING_PROFILES_ACTIVE=production`. Configurar el health check (`GET /actuator/health`) como sonda de la plataforma, con rollback automático si falla. Ver `DEVOPS-backend.md §6`.
+- **Depende de:** Hito 0, B0.9
+- **Aceptación:** un push a `main` dispara el deploy; la app queda accesible por HTTPS; `GET /actuator/health` responde `UP`; Flyway aplicó las 19 migraciones en la BD gestionada; un health check fallido revierte al deploy anterior.
 
 ---
 
