@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.empleados
 
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -10,6 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
+import pe.quantum.crm.config.security.AuthCookieFactory
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
 
@@ -127,6 +129,36 @@ class AuthControllerWebMvcTest {
     @Test
     fun `refresh sin cookie devuelve 401`() {
         mockMvc.post("/api/v1/auth/refresh").andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.error.code") { value("CREDENCIALES_INVALIDAS") }
+        }
+    }
+
+    @Test
+    fun `refresh con cookie valida renueva las cookies`() {
+        every { empleadoService.porId(1) } returns empleado("ana@quantum.pe")
+        val refreshToken = jwtService.generateRefreshToken(empleadoId = 1)
+
+        val result =
+            mockMvc.post("/api/v1/auth/refresh") {
+                cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.expiresIn") { isNumber() }
+            }.andReturn()
+
+        assertThat(result.response.getHeaders("Set-Cookie"))
+            .anyMatch { it.startsWith("access_token=") && it.contains("HttpOnly") }
+    }
+
+    @Test
+    fun `refresh de un empleado inactivo devuelve 401`() {
+        every { empleadoService.porId(1) } returns empleado("ana@quantum.pe").apply { activo = false }
+        val refreshToken = jwtService.generateRefreshToken(empleadoId = 1)
+
+        mockMvc.post("/api/v1/auth/refresh") {
+            cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))
+        }.andExpect {
             status { isUnauthorized() }
             jsonPath("$.error.code") { value("CREDENCIALES_INVALIDAS") }
         }
