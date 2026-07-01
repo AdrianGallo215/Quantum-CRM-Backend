@@ -94,8 +94,9 @@ class CiPipelineConfigTest {
                 "ktlint" to "ktlintCheck",
                 "detekt" to "detekt",
                 "compilacion" to "compileKotlin",
-                "tests" to "test",
+                "tests unitarios" to "gradlew test",
                 "cobertura" to "koverVerify",
+                "tests de integracion" to "integrationTest",
             )
         assertThat(gates.entries).allSatisfy { (gate, comando) ->
             assertThat(texto)
