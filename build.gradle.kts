@@ -75,9 +75,27 @@ tasks.withType<KotlinCompile> {
     }
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
+// `test` corre los unitarios (rapidos, sin Docker). Los de integracion se marcan
+// con @Tag("integration") y corren en la tarea `integrationTest` (Testcontainers).
+// Asi `./gradlew test` queda verde en maquinas donde Docker no es compatible con
+// Testcontainers (Docker 29 local); CI corre ambas. Ver testcontainers-docker29-blocker.
+tasks.named<Test>("test") {
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
 }
+
+val integrationTest =
+    tasks.register<Test>("integrationTest") {
+        description = "Ejecuta los tests de integracion con Testcontainers."
+        group = "verification"
+        useJUnitPlatform {
+            includeTags("integration")
+        }
+        testClassesDirs = sourceSets["test"].output.classesDirs
+        classpath = sourceSets["test"].runtimeClasspath
+        shouldRunAfter("test")
+    }
 
 // ── Gates de calidad (B0.3) ────────────────────────────────
 
