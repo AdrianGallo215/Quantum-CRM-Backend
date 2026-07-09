@@ -8,7 +8,9 @@ import pe.quantum.crm.importcsvtemp.dto.ImportEmpresaFilaResultado
 import pe.quantum.crm.importcsvtemp.dto.ImportEmpresasResultDto
 import pe.quantum.crm.shared.enums.Segmento
 import pe.quantum.crm.shared.exception.ApiException
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.io.IOException
 
 /**
  * Importación "mejor esfuerzo" de empresas desde CSV: cada fila corre en la
@@ -24,11 +26,24 @@ class ImportCsvTempServiceImpl(
         archivo: MultipartFile,
         usuario: UsuarioActual,
     ): ImportEmpresasResultDto {
+        if (archivo.isEmpty) {
+            throw ValidacionException("El archivo CSV está vacío")
+        }
         val lineas =
-            archivo.inputStream.bufferedReader(Charsets.UTF_8).readLines()
-                .map { it.removeSuffix("\r") }
-                .filter { it.isNotBlank() }
+            try {
+                archivo.inputStream.bufferedReader(Charsets.UTF_8).readLines()
+                    .map { it.removeSuffix("\r") }
+                    .filter { it.isNotBlank() }
+            } catch (ex: IOException) {
+                throw ValidacionException("No se pudo leer el archivo CSV")
+            }
+        if (lineas.size < 2) {
+            throw ValidacionException("El archivo CSV no tiene filas de datos, solo cabecera")
+        }
         val filasDatos = lineas.drop(1)
+        if (filasDatos.size > MAX_FILAS_DATOS) {
+            throw ValidacionException("El archivo excede el máximo de $MAX_FILAS_DATOS filas de datos")
+        }
 
         val detalle =
             filasDatos.mapIndexed { indice, linea ->
@@ -48,7 +63,7 @@ class ImportCsvTempServiceImpl(
         linea: String,
         usuario: UsuarioActual,
     ): ImportEmpresaFilaResultado {
-        val campos = linea.split(",")
+        val campos = parseCsvLine(linea)
         if (campos.size < 3) {
             return ImportEmpresaFilaResultado(
                 fila = fila,
@@ -81,7 +96,34 @@ class ImportCsvTempServiceImpl(
         }
     }
 
+    /** Parser CSV mínimo: soporta campos entre comillas dobles con comas internas. */
+    private fun parseCsvLine(linea: String): List<String> {
+        val campos = mutableListOf<String>()
+        val actual = StringBuilder()
+        var dentroComillas = false
+        var i = 0
+        while (i < linea.length) {
+            val c = linea[i]
+            when {
+                c == '"' && dentroComillas && i + 1 < linea.length && linea[i + 1] == '"' -> {
+                    actual.append('"')
+                    i++
+                }
+                c == '"' -> dentroComillas = !dentroComillas
+                c == ',' && !dentroComillas -> {
+                    campos.add(actual.toString())
+                    actual.clear()
+                }
+                else -> actual.append(c)
+            }
+            i++
+        }
+        campos.add(actual.toString())
+        return campos
+    }
+
     private companion object {
+        const val MAX_FILAS_DATOS = 1000
         const val ESTADO_CREADA = "creada"
         const val ESTADO_ERROR = "error"
         val RUC_REGEX = Regex("\\d{11}")

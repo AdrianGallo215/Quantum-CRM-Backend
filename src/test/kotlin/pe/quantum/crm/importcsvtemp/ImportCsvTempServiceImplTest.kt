@@ -6,13 +6,17 @@ import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.mock.web.MockMultipartFile
+import org.springframework.web.multipart.MultipartFile
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.shared.enums.Segmento
 import pe.quantum.crm.shared.exception.RucDuplicadoException
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.io.IOException
 import java.time.LocalDateTime
 
 /**
@@ -142,5 +146,45 @@ class ImportCsvTempServiceImplTest {
         assertThat(resultado.detalle[0].estado).isEqualTo("creada")
         assertThat(resultado.detalle[1].estado).isEqualTo("error")
         assertThat(resultado.detalle[1].motivo).isEqualTo("Esta empresa ya está registrada en el sistema")
+    }
+
+    @Test
+    fun `archivo vacio lanza ValidacionException`() {
+        val archivo = MockMultipartFile("file", "empresas.csv", "text/csv", ByteArray(0))
+
+        assertThrows<ValidacionException> { service.importarEmpresas(archivo, usuario) }
+    }
+
+    @Test
+    fun `archivo con solo cabecera lanza ValidacionException`() {
+        assertThrows<ValidacionException> { service.importarEmpresas(csv(), usuario) }
+    }
+
+    @Test
+    fun `archivo con mas de 1000 filas de datos lanza ValidacionException`() {
+        val filas = (1..1001).map { "fila-de-datos-$it" }.toTypedArray()
+
+        assertThrows<ValidacionException> { service.importarEmpresas(csv(*filas), usuario) }
+    }
+
+    @Test
+    fun `razon social con coma entre comillas se parsea completa`() {
+        val slot = slot<CrearEmpresaRequest>()
+        every { empresaService.crear(capture(slot), usuario) } answers {
+            empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
+        }
+
+        service.importarEmpresas(csv("""20999999999,"Empresa S.A., Sucursal Lima",urbano"""), usuario)
+
+        assertThat(slot.captured.razonSocial).isEqualTo("Empresa S.A., Sucursal Lima")
+    }
+
+    @Test
+    fun `archivo que no se puede leer lanza ValidacionException`() {
+        val archivo = mockk<MultipartFile>()
+        every { archivo.isEmpty } returns false
+        every { archivo.inputStream } throws IOException("boom")
+
+        assertThrows<ValidacionException> { service.importarEmpresas(archivo, usuario) }
     }
 }
