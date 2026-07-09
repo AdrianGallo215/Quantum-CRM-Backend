@@ -50,10 +50,11 @@ interface EmpresaService {
         usuario: UsuarioActual,
     ): String
 
-    /** Reasignacion de vendedor (solo admin/gerente/jdv — verificado en controller). */
+    /** Reasignacion de vendedor (solo admin/gerente/jdv — verificado en controller). Notifica al vendedor destino. */
     fun reasignarVendedor(
         id: Long,
         idVendedor: Long,
+        usuario: UsuarioActual,
     ): Long
 
     /**

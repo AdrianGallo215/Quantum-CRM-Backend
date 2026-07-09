@@ -5,6 +5,7 @@ import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.empleados.EmpleadoService
+import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
@@ -16,6 +17,9 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.empresas.dto.RucCheckDto
 import pe.quantum.crm.domain.empresas.dto.toResumen
 import pe.quantum.crm.domain.empresas.dto.toVinculo
+import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
+import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -30,6 +34,7 @@ import java.time.LocalDateTime
 class EmpresaServiceImpl(
     private val empresaRepository: EmpresaRepository,
     private val empleadoService: EmpleadoService,
+    private val notificacionService: NotificacionService,
 ) : EmpresaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -191,6 +196,7 @@ class EmpresaServiceImpl(
     override fun reasignarVendedor(
         id: Long,
         idVendedor: Long,
+        usuario: UsuarioActual,
     ): Long {
         val empresa = entidad(id)
         if (!empleadoService.existeActivo(idVendedor)) {
@@ -199,6 +205,15 @@ class EmpresaServiceImpl(
         empresa.idVendedor = idVendedor
         empresa.updatedAt = LocalDateTime.now()
         empresaRepository.save(empresa)
+        val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
+        notificacionService.notificar(
+            destinatarios = setOf(idVendedor),
+            idActor = usuario.id,
+            tipo = TipoNotificacion.empresa_asignada,
+            mensaje = "${actor?.nombreCompleto()} te asignó la empresa ${empresa.razonSocial}",
+            entidadTipo = EntidadNotificacion.empresa,
+            entidadId = id,
+        )
         return idVendedor
     }
 
