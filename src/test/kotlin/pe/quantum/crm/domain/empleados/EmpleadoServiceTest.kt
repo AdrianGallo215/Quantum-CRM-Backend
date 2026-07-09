@@ -109,4 +109,19 @@ class EmpleadoServiceTest {
         // usuario no exista, para no delatar la inexistencia por el tiempo de respuesta.
         verify { passwordEncoder.matches("secreta", any()) }
     }
+
+    @Test
+    fun `idsSupervisoresActivos devuelve los ids de admin, gerente y jdv activos`() {
+        every {
+            repository.findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerente, RolEmpleado.jdv))
+        } returns
+            listOf(
+                empleado().let { Empleado(id = 1, nombres = it.nombres, apellidos = it.apellidos, email = "a@quantum.pe", rol = RolEmpleado.admin) },
+                empleado().let { Empleado(id = 2, nombres = it.nombres, apellidos = it.apellidos, email = "b@quantum.pe", rol = RolEmpleado.jdv) },
+            )
+
+        val resultado = service.idsSupervisoresActivos()
+
+        assertThat(resultado).containsExactlyInAnyOrder(1, 2)
+    }
 }
