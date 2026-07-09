@@ -22,6 +22,7 @@ import java.io.IOException
 class ImportCsvTempServiceImpl(
     private val empresaService: EmpresaService,
 ) : ImportCsvTempService {
+    @Suppress("SwallowedException") // Al usuario solo le sirve "no se pudo leer", no el detalle de IO.
     override fun importarEmpresas(
         archivo: MultipartFile,
         usuario: UsuarioActual,
@@ -58,13 +59,14 @@ class ImportCsvTempServiceImpl(
         )
     }
 
+    @Suppress("ReturnCount") // Cadena de validaciones tipo guard clause; dividirla no mejora la legibilidad.
     private fun procesarFila(
         fila: Int,
         linea: String,
         usuario: UsuarioActual,
     ): ImportEmpresaFilaResultado {
         val campos = parseCsvLine(linea)
-        if (campos.size < 3) {
+        if (campos.size < COLUMNAS_ESPERADAS) {
             return ImportEmpresaFilaResultado(
                 fila = fila,
                 ruc = campos.getOrNull(0)?.trim(),
@@ -124,6 +126,7 @@ class ImportCsvTempServiceImpl(
 
     private companion object {
         const val MAX_FILAS_DATOS = 1000
+        const val COLUMNAS_ESPERADAS = 3
         const val ESTADO_CREADA = "creada"
         const val ESTADO_ERROR = "error"
         val RUC_REGEX = Regex("\\d{11}")
