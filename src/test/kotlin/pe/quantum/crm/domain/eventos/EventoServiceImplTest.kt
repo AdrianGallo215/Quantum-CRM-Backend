@@ -11,6 +11,7 @@ import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
+import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -119,5 +120,26 @@ class EventoServiceImplTest {
         every { empresaService.vinculoVisible(99, usuario) } throws NoEncontradoException("La empresa no existe")
 
         assertThrows<NoEncontradoException> { service.listarPorEmpresa(99, usuario) }
+    }
+
+    @Test
+    fun `marcar ocurrido un hito de empresa no genera sugerencia de cambio de estado`() {
+        val evento =
+            Evento(
+                id = 7,
+                idEmpresa = 10,
+                idCatalogoEvento = 5,
+                disparaCambioEstado = false,
+                estadoDestino = null,
+                createdBy = 1,
+                updatedBy = 1,
+            )
+        every { eventoRepository.findById(7) } returns java.util.Optional.of(evento)
+        every { empresaService.vinculoVisible(10, usuario) } returns empresaVinculo()
+        every { eventoRepository.save(evento) } returns evento
+
+        val resultado = service.marcarOcurrido(7, MarcarOcurridoRequest(), usuario)
+
+        assertThat(resultado.sugerencia).isNull()
     }
 }
