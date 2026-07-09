@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.notificaciones
 
 /** Valores de `tipo_notificacion_enum` (migracion V22). */
+@Suppress("ktlint:standard:enum-entry-name-case", "EnumNaming", "EnumEntryName")
 enum class TipoNotificacion {
     oportunidad_cambio_estado,
     empresa_convertida,
@@ -13,6 +14,7 @@ enum class TipoNotificacion {
 }
 
 /** Valores de `entidad_notificacion_enum` (migracion V22). */
+@Suppress("ktlint:standard:enum-entry-name-case", "EnumNaming", "EnumEntryName")
 enum class EntidadNotificacion {
     oportunidad,
     empresa,
