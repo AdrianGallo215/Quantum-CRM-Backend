@@ -43,7 +43,8 @@ class NotificacionServiceImpl(
     }
 
     @Transactional(readOnly = true)
-    override fun contarNoLeidas(usuario: UsuarioActual): Long = notificacionRepository.countByIdEmpleadoDestinatarioAndLeidaFalse(usuario.id)
+    override fun contarNoLeidas(usuario: UsuarioActual): Long =
+        notificacionRepository.countByIdEmpleadoDestinatarioAndLeidaFalse(usuario.id)
 
     @Transactional(readOnly = true)
     override fun listar(usuario: UsuarioActual): List<NotificacionDto> {

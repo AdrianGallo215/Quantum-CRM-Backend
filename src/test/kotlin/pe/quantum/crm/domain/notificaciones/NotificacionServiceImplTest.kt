@@ -83,7 +83,15 @@ class NotificacionServiceImplTest {
                 createdAt = LocalDateTime.now(),
             )
         every { notificacionRepository.findTop20ByIdEmpleadoDestinatarioOrderByCreatedAtDesc(1) } returns listOf(notificacion)
-        every { empleadoService.resumenPorIds(listOf(2)) } returns mapOf(2L to EmpleadoResumen(id = 2, nombres = "Carlos", apellidos = "Ruiz"))
+        every { empleadoService.resumenPorIds(listOf(2)) } returns
+            mapOf(
+                2L to
+                    EmpleadoResumen(
+                        id = 2,
+                        nombres = "Carlos",
+                        apellidos = "Ruiz",
+                    ),
+            )
 
         val resultado = service.listar(usuario)
 
@@ -123,8 +131,26 @@ class NotificacionServiceImplTest {
     fun `marcarTodasLeidas marca todas las pendientes del usuario`() {
         val pendientes =
             listOf(
-                Notificacion(id = 1, idEmpleadoDestinatario = 1, idActor = null, tipo = TipoNotificacion.tarea_recordatorio, mensaje = "a", entidadTipo = EntidadNotificacion.empresa, entidadId = 1, createdAt = LocalDateTime.now()),
-                Notificacion(id = 2, idEmpleadoDestinatario = 1, idActor = null, tipo = TipoNotificacion.tarea_recordatorio, mensaje = "b", entidadTipo = EntidadNotificacion.empresa, entidadId = 2, createdAt = LocalDateTime.now()),
+                Notificacion(
+                    id = 1,
+                    idEmpleadoDestinatario = 1,
+                    idActor = null,
+                    tipo = TipoNotificacion.tarea_recordatorio,
+                    mensaje = "a",
+                    entidadTipo = EntidadNotificacion.empresa,
+                    entidadId = 1,
+                    createdAt = LocalDateTime.now(),
+                ),
+                Notificacion(
+                    id = 2,
+                    idEmpleadoDestinatario = 1,
+                    idActor = null,
+                    tipo = TipoNotificacion.tarea_recordatorio,
+                    mensaje = "b",
+                    entidadTipo = EntidadNotificacion.empresa,
+                    entidadId = 2,
+                    createdAt = LocalDateTime.now(),
+                ),
             )
         every { notificacionRepository.findByIdEmpleadoDestinatarioAndLeidaFalse(1) } returns pendientes
         every { notificacionRepository.saveAll(pendientes) } returns pendientes
