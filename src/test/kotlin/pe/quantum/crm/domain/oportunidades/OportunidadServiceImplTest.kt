@@ -89,4 +89,37 @@ class OportunidadServiceImplTest {
         }
         assertThat(entidad.idVendedor).isEqualTo(2)
     }
+
+    @Test
+    fun `cambiarEstado notifica a los supervisores activos, excluyendo al actor si es supervisor`() {
+        val entidad = oportunidad(idVendedor = 1)
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.save(entidad) } returns entidad
+        every { logRepository.save(any()) } returns mockk()
+        every {
+            consultas.eventosRecomendadosSinRegistrar(100, pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda)
+        } returns emptyList()
+        every { estadoCarteraService.actualizar(10) } returns null
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(1)) } returns mapOf(1L to EmpleadoResumen(id = 1, nombres = "Ana", apellidos = "Diaz"))
+        every { empleadoService.idsSupervisoresActivos() } returns listOf(1, 5, 6)
+
+        service.cambiarEstado(
+            100,
+            pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest(estado = "documentos_legales"),
+            UsuarioActual(id = 1, rol = "vendedor"),
+        )
+
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(1L, 5L, 6L),
+                idActor = 1L,
+                tipo = TipoNotificacion.oportunidad_cambio_estado,
+                mensaje = "Ana Diaz cambió el estado de Kincar S.A.C. a Documentos legales",
+                entidadTipo = EntidadNotificacion.oportunidad,
+                entidadId = 100L,
+            )
+        }
+    }
 }

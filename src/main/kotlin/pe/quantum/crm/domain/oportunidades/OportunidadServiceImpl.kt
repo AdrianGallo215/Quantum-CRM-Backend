@@ -8,6 +8,7 @@ import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.EmpresaService
+import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
@@ -26,6 +27,7 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.MontoNoEditableException
@@ -221,7 +223,9 @@ class OportunidadServiceImpl(
             ),
         )
         // Misma transaccion (reglas §3.3, §13.3).
-        estadoCarteraService.actualizar(oportunidad.idEmpresa)
+        val cambioCartera = estadoCarteraService.actualizar(oportunidad.idEmpresa)
+        notificarConversionSiAplica(cambioCartera, oportunidad.idEmpresa, id, usuario)
+        notificarCambioEstado(oportunidad.idEmpresa, id, nuevo, usuario)
         return CambioEstadoDto(estado = nuevo.name, esRetroceso = esRetroceso, advertencias = advertencias)
     }
 
@@ -374,6 +378,59 @@ class OportunidadServiceImpl(
             anterior == EstadoOportunidad.cerrado -> true
             nuevo == EstadoOportunidad.cerrado -> false
             else -> nuevo.rango < anterior.rango
+        }
+
+    private fun notificarCambioEstado(
+        idEmpresa: Long,
+        idOportunidad: Long,
+        nuevo: EstadoOportunidad,
+        usuario: UsuarioActual,
+    ) {
+        val empresa = empresaService.resumenPorIds(listOf(idEmpresa))[idEmpresa] ?: return
+        val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id] ?: return
+        notificacionService.notificar(
+            destinatarios = empleadoService.idsSupervisoresActivos().toSet(),
+            idActor = usuario.id,
+            tipo = TipoNotificacion.oportunidad_cambio_estado,
+            mensaje = "${actor.nombreCompleto()} cambió el estado de ${empresa.razonSocial} a ${etiquetaEstado(nuevo)}",
+            entidadTipo = EntidadNotificacion.oportunidad,
+            entidadId = idOportunidad,
+        )
+    }
+
+    /**
+     * `empresa_convertida`: solo cuando `estadoCarteraService.actualizar` reporta
+     * la transicion prospeccion -> oportunidad_activa. Se llama tanto desde
+     * `crear` (Task 11) como desde `cambiarEstado` (el retroceso de reglas §13.1
+     * puede en teoria producir la misma transicion desde `cambiarEstado`).
+     */
+    private fun notificarConversionSiAplica(
+        cambio: CambioEstadoCartera?,
+        idEmpresa: Long,
+        idOportunidad: Long,
+        usuario: UsuarioActual,
+    ) {
+        if (cambio?.anterior != EstadoCartera.prospeccion || cambio.nuevo != EstadoCartera.oportunidad_activa) {
+            return
+        }
+        val empresa = empresaService.resumenPorIds(listOf(idEmpresa))[idEmpresa] ?: return
+        val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id] ?: return
+        notificacionService.notificar(
+            destinatarios = empleadoService.idsSupervisoresActivos().toSet(),
+            idActor = usuario.id,
+            tipo = TipoNotificacion.empresa_convertida,
+            mensaje = "${actor.nombreCompleto()} convirtió ${empresa.razonSocial} de prospección a oportunidad",
+            entidadTipo = EntidadNotificacion.oportunidad,
+            entidadId = idOportunidad,
+        )
+    }
+
+    private fun etiquetaEstado(estado: EstadoOportunidad): String =
+        when (estado) {
+            EstadoOportunidad.evaluacion_calidda -> "Evaluación Calidda"
+            EstadoOportunidad.documentos_legales -> "Documentos legales"
+            EstadoOportunidad.facturado -> "Facturado"
+            EstadoOportunidad.cerrado -> "Cerrado"
         }
 
     private fun entidad(id: Long): Oportunidad =
