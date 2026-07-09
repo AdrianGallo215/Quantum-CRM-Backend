@@ -2,7 +2,6 @@ package pe.quantum.crm.domain.notificaciones
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -12,7 +11,6 @@ import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
-import java.util.Optional
 
 class NotificacionServiceImplTest {
     private val notificacionRepository = mockk<NotificacionRepository>()
