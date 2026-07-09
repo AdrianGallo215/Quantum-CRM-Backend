@@ -431,6 +431,58 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 ---
 
+### GET /empresas/:id/eventos
+> Lista los eventos de la empresa que no están vinculados a ninguna oportunidad (`id_oportunidad IS NULL`). Son los hitos de prospección (reglas_negocio.md §10.3): registrarlos antes de que exista una oportunidad es lo que hace avanzar el checkpoint de `GET /prospeccion`.
+
+**Roles:** todos (mismo filtro automático por rol que el resto de `/empresas`)
+
+**Respuesta 200** — mismo shape que `GET /oportunidades/:id/eventos` (§11), incluyendo `es_hito_prospeccion`:
+```json
+{
+  "data": {
+    "pendientes": [
+      {
+        "id": 12,
+        "id_oportunidad": null,
+        "id_empresa": 3,
+        "id_catalogo_evento": 9,
+        "nombre": "Reporte Tributario recibido",
+        "es_personalizado": false,
+        "descripcion": null,
+        "estado": "pendiente",
+        "fecha_estimada": "2026-07-15",
+        "fecha_seguimiento": "2026-07-10",
+        "fecha_ocurrencia": null,
+        "dispara_cambio_estado": false,
+        "estado_destino": null,
+        "es_recomendado": true,
+        "etapa_asociada": null,
+        "es_hito_prospeccion": true
+      }
+    ],
+    "ocurridos": [],
+    "descartados": []
+  }
+}
+```
+
+---
+
+### POST /empresas/:id/eventos
+> Registra un nuevo evento en la empresa, sin oportunidad asociada.
+
+**Roles:** todos (solo su empresa si es vendedor/analista — mismo filtro que `PATCH /empresas/:id/estado-cartera`)
+
+**Body** — idéntico al de `POST /oportunidades/:id/eventos` (catálogo o personalizado, §11).
+
+**Respuesta 201:** el evento creado, con `id_empresa` seteado e `id_oportunidad = null`.
+
+**Notas:**
+- Si `id_catalogo_evento` referencia un evento con `etapa_asociada` no nula → `400 VALIDACION` (ese evento pertenece a una etapa del pipeline y debe registrarse en una oportunidad, no en una empresa suelta).
+- `PATCH /eventos/:id/ocurrido`, `PATCH /eventos/:id/descartado` y `PUT /eventos/:id` (§11) operan igual sobre estos eventos, sin cambios. `sugerencia` en `PATCH /eventos/:id/ocurrido` siempre viene `null` para eventos de empresa (no disparan cambio de estado).
+
+---
+
 ### PATCH /empresas/:id/estado-cartera
 > Cambia el estado de cartera manualmente. Solo acepta estados manuales.
 
@@ -840,7 +892,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
         "dispara_cambio_estado": false,
         "estado_destino": null,
         "es_recomendado": true,
-        "etapa_asociada": "documentos_legales"
+        "etapa_asociada": "documentos_legales",
+        "es_hito_prospeccion": false
       }
     ],
     "ocurridos": [
