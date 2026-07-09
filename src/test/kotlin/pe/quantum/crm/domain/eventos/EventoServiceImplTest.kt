@@ -14,6 +14,7 @@ import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
+import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 
@@ -111,5 +112,12 @@ class EventoServiceImplTest {
             }
 
         assertThat(ex.field).isEqualTo("id_catalogo_evento")
+    }
+
+    @Test
+    fun `listar eventos de una empresa ajena o inexistente devuelve 404`() {
+        every { empresaService.vinculoVisible(99, usuario) } throws NoEncontradoException("La empresa no existe")
+
+        assertThrows<NoEncontradoException> { service.listarPorEmpresa(99, usuario) }
     }
 }
