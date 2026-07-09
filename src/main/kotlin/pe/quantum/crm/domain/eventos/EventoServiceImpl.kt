@@ -197,6 +197,12 @@ class EventoServiceImpl(
                             field = "id_catalogo_evento",
                         )
                 val catalogo = catalogoEventoService.porId(idCatalogo)
+                if (idEmpresa != null && catalogo.etapaAsociada != null) {
+                    throw ValidacionException(
+                        "Este evento pertenece a una etapa del pipeline y debe registrarse en una oportunidad, no en una empresa",
+                        field = "id_catalogo_evento",
+                    )
+                }
                 Evento(
                     idOportunidad = idOportunidad,
                     idEmpresa = idEmpresa,

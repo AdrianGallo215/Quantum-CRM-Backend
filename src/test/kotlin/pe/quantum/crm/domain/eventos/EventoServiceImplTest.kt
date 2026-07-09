@@ -5,6 +5,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
 import pe.quantum.crm.domain.empresas.EmpresaService
@@ -13,6 +14,7 @@ import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 
 /**
@@ -95,5 +97,19 @@ class EventoServiceImplTest {
 
         assertThat(resultado.pendientes).hasSize(1)
         assertThat(resultado.pendientes.first().esHitoProspeccion).isFalse()
+    }
+
+    @Test
+    fun `crear evento del catalogo con etapa_asociada sobre una empresa lanza VALIDACION`() {
+        every { empresaService.vinculoVisible(10, usuario) } returns empresaVinculo()
+        every { catalogoEventoService.porId(5) } returns
+            catalogo(etapaAsociada = EstadoOportunidad.evaluacion_calidda, esHitoProspeccion = false)
+
+        val ex =
+            assertThrows<ValidacionException> {
+                service.crearEnEmpresa(10, CrearEventoRequest(idCatalogoEvento = 5), usuario)
+            }
+
+        assertThat(ex.field).isEqualTo("id_catalogo_evento")
     }
 }
