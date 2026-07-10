@@ -413,6 +413,7 @@ class OportunidadServiceImpl(
      * `crear` (Task 11) como desde `cambiarEstado` (el retroceso de reglas §13.1
      * puede en teoria producir la misma transicion desde `cambiarEstado`).
      */
+    @Suppress("ReturnCount") // Guard clauses de salida temprana; dividir la funcion no mejora la legibilidad.
     private fun notificarConversionSiAplica(
         cambio: CambioEstadoCartera?,
         idEmpresa: Long,

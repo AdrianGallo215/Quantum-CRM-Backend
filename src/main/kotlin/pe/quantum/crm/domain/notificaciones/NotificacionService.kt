@@ -14,6 +14,7 @@ interface NotificacionService {
      * (nadie se notifica de su propia accion); si `idActor` es null (job de
      * sistema) no excluye a nadie. No hace nada si el set resultante queda vacio.
      */
+    @Suppress("LongParameterList") // Firma publica del modulo: cada parametro es necesario para armar la notificacion.
     fun notificar(
         destinatarios: Set<Long>,
         idActor: Long?,

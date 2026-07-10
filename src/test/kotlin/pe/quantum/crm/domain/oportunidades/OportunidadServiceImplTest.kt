@@ -67,6 +67,22 @@ class OportunidadServiceImplTest {
             updatedBy = 1,
         )
 
+    /** Financiadora Calidda usada como stub en varios escenarios de `crear`. */
+    private fun calidda() =
+        pe.quantum.crm.domain.financiadoras.dto.FinanciadoraDto(
+            id = 1,
+            nombre = "Calidda",
+            montoPorUnidad = null,
+            plazoMeses = null,
+            tea = null,
+            cuotaPorUnidad = null,
+            esDefault = true,
+            notas = null,
+        )
+
+    /** Modelo BUS-X usado como stub en varios escenarios de `crear`. */
+    private fun busX() = pe.quantum.crm.domain.modelos.dto.ModeloResumen(id = 1, codigo = "BUS-X", precioBase = java.math.BigDecimal.TEN)
+
     /** Devuelve una copia de la oportunidad con `id` asignado, simulando lo que hace JPA al guardar. */
     private fun Oportunidad.conId(nuevoId: Long) =
         Oportunidad(
@@ -160,19 +176,8 @@ class OportunidadServiceImplTest {
                 idVendedor = 3,
                 estadoCartera = "prospeccion",
             )
-        every { modeloService.resumen(1) } returns
-            pe.quantum.crm.domain.modelos.dto.ModeloResumen(id = 1, codigo = "BUS-X", precioBase = java.math.BigDecimal.TEN)
-        every { financiadoraService.default() } returns
-            pe.quantum.crm.domain.financiadoras.dto.FinanciadoraDto(
-                id = 1,
-                nombre = "Calidda",
-                montoPorUnidad = null,
-                plazoMeses = null,
-                tea = null,
-                cuotaPorUnidad = null,
-                esDefault = true,
-                notas = null,
-            )
+        every { modeloService.resumen(1) } returns busX()
+        every { financiadoraService.default() } returns calidda()
         val guardada = slot<Oportunidad>()
         every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(100) }
         every { logRepository.save(any()) } returns mockk()
@@ -186,29 +191,8 @@ class OportunidadServiceImplTest {
             mapOf(3L to EmpleadoResumen(id = 3, nombres = "Jose", apellidos = "Lima"))
         every { empleadoService.idsSupervisoresActivos() } returns listOf(9)
         // Stubs adicionales requeridos por el ensamblado de OportunidadDto (toDto/toDtos).
-        every { financiadoraService.porIds(listOf(1)) } returns
-            mapOf(
-                1L to
-                    pe.quantum.crm.domain.financiadoras.dto.FinanciadoraDto(
-                        id = 1,
-                        nombre = "Calidda",
-                        montoPorUnidad = null,
-                        plazoMeses = null,
-                        tea = null,
-                        cuotaPorUnidad = null,
-                        esDefault = true,
-                        notas = null,
-                    ),
-            )
-        every { modeloService.resumenPorIds(listOf(1)) } returns
-            mapOf(
-                1L to
-                    pe.quantum.crm.domain.modelos.dto.ModeloResumen(
-                        id = 1,
-                        codigo = "BUS-X",
-                        precioBase = java.math.BigDecimal.TEN,
-                    ),
-            )
+        every { financiadoraService.porIds(listOf(1)) } returns mapOf(1L to calidda())
+        every { modeloService.resumenPorIds(listOf(1)) } returns mapOf(1L to busX())
         every { consultas.tareasPendientesPorOportunidad(listOf(100L)) } returns emptyMap()
         every { consultas.eventosPendientesPorOportunidad(listOf(100L)) } returns emptyMap()
         every { contactoOportunidadRepository.findByIdIdOportunidad(100L) } returns emptyList()

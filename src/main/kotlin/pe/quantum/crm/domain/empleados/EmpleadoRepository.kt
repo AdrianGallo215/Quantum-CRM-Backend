@@ -24,6 +24,9 @@ interface EmpleadoRepository : JpaRepository<Empleado, Long> {
         id: Long,
     ): Long
 
-    /** Broadcast de supervisores (sin jerarquia jdv->vendedor en el esquema; ver docs/superpowers/specs/2026-07-09-notificaciones-in-app-design.md). */
+    /**
+     * Broadcast de supervisores (sin jerarquia jdv->vendedor en el esquema; ver
+     * docs/superpowers/specs/2026-07-09-notificaciones-in-app-design.md).
+     */
     fun findByActivoTrueAndRolIn(roles: Collection<RolEmpleado>): List<Empleado>
 }

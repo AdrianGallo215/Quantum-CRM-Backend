@@ -123,6 +123,7 @@ class RecordatorioJob(
         val idVendedor: Long,
     )
 
+    @Suppress("ReturnCount") // Guard clauses de salida temprana; dividir la funcion no mejora la legibilidad.
     private fun destinoDe(evento: EventoRecordatorioProyeccion): Destino? {
         val idOportunidad = evento.idOportunidad
         if (idOportunidad != null) {

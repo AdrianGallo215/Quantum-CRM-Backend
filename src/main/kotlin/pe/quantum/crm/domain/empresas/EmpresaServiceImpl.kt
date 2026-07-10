@@ -224,6 +224,7 @@ class EmpresaServiceImpl(
     ): EmpresaVinculo = visible(id, usuario).toVinculo()
 
     @Transactional
+    @Suppress("ReturnCount") // Guard clauses de salida temprana; dividir la funcion no mejora la legibilidad.
     override fun aplicarEstadoDerivado(
         idEmpresa: Long,
         derivado: EstadoCartera?,
