@@ -116,7 +116,8 @@ class OportunidadServiceImpl(
             )
         }
         // Misma transaccion (reglas §3.3): la empresa sube a oportunidad_activa.
-        estadoCarteraService.actualizar(empresa.id)
+        val cambioCartera = estadoCarteraService.actualizar(empresa.id)
+        notificarConversionSiAplica(cambioCartera, empresa.id, idOportunidad, usuario)
         return toDto(oportunidad, detalle = true)
     }
 
