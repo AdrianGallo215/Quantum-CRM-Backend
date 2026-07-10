@@ -58,7 +58,7 @@ Quantum vende exclusivamente a empresas (personas jurídicas). Todo cliente es u
 
 ### 2.3 Segmentos de empresa
 - Multi-select. Una empresa puede pertenecer a más de un segmento.
-- Valores válidos: `urbano`, `personal`, `turismo`, `interprovincial`.
+- Valores válidos: `urbano`, `personal`, `turismo`, `interprovincial`, `otro`.
 - Se gestionan en la tabla `empresa_segmentos`. No hay campo de texto libre para segmentos.
 
 ### 2.4 Modelos de bus
