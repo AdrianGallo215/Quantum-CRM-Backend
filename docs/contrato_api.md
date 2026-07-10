@@ -1607,7 +1607,7 @@ Notifica a un usuario cuando ocurre una acción relacionada con él pero no acci
 
 **Respuesta 200:**
 ```json
-{ "data": { "count": 5 }, "meta": null, "error": null }
+{ "data": { "count": 5 } }
 ```
 
 ---
@@ -1617,7 +1617,7 @@ Notifica a un usuario cuando ocurre una acción relacionada con él pero no acci
 
 **Roles:** todos
 
-**Respuesta 200:** `{ "data": [ /* NotificacionDto[] */ ], "meta": null, "error": null }`
+**Respuesta 200:** `{ "data": [ /* NotificacionDto[] */ ] }`
 
 ---
 
@@ -1628,11 +1628,8 @@ Notifica a un usuario cuando ocurre una acción relacionada con él pero no acci
 
 **Respuesta 200:** `{ "data": { "leida": true } }`
 
-**Errores:**
-
-| Código | HTTP | Cuándo |
-|---|---|---|
-| `NO_ENCONTRADO` | 404 | La notificación no existe o no pertenece al usuario autenticado |
+**Notas:**
+- Si la notificación no existe o no pertenece al usuario autenticado → `404 NO_ENCONTRADO`.
 
 ---
 
