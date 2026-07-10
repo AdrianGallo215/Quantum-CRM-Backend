@@ -25,7 +25,7 @@
 ## 1. Principios generales
 
 ### 1.1 Unicidad de datos
-Ningún dato puede vivir en dos lugares. Si un valor es derivado de otro, se calcula en el backend y se lee vía JOIN. No existen campos espejo. La única excepción aceptada es el snapshot de `id_vendedor` en `oportunidades`, documentada explícitamente en la sección 8.
+Ningún dato puede vivir en dos lugares con valores que puedan divergir. Si un valor es derivado de otro, se calcula en el backend y se lee vía JOIN. La única excepción aceptada es el snapshot de `id_vendedor` en `oportunidades` (sección 8): se mantiene sincronizado automáticamente con `empresas.id_vendedor` mientras la oportunidad esté activa, así que nunca queda divergente en la práctica.
 
 ### 1.2 Atomicidad obligatoria
 Toda operación que afecte más de una tabla debe ejecutarse en una única transacción. Si cualquier paso falla, ningún cambio se persiste. Esto aplica especialmente a:
@@ -312,17 +312,17 @@ Cada empresa tiene un único `id_vendedor`. Un cliente nuevo trabajado por un ve
 
 La reasignación de `empresas.id_vendedor` es una decisión de Aldo (JdV). Solo los roles `admin`, `gerente` y `jdv` pueden modificar `empresas.id_vendedor`.
 
-Al reasignar una empresa, las oportunidades **ya cerradas** (`facturado` o `cerrado`) conservan su `id_vendedor` original — el snapshot no cambia. Las oportunidades activas pueden traspasar su `id_vendedor` mediante la operación de traspaso (sección 8.3).
+Al reasignar una empresa, las oportunidades **ya cerradas** (`facturado` o `cerrado`) conservan su `id_vendedor` original — el snapshot no cambia nunca. Todas las oportunidades **activas** (`evaluacion_calidda`, `documentos_legales`) de esa empresa cambian automáticamente al nuevo vendedor, en la misma transacción que la reasignación. No existe un traspaso manual selectivo por oportunidad individual: el único punto de entrada para cambiar el vendedor de una oportunidad activa es reasignar la empresa.
 
-### 8.3 Traspaso de oportunidad activa
+### 8.3 Cascada automática a oportunidades activas
 
-Cuando una oportunidad activa debe cambiar de vendedor:
+Cuando se reasigna `empresas.id_vendedor`:
 
-- Se hace `UPDATE oportunidades SET id_vendedor = :nuevo_vendedor` sobre la misma fila. No se duplica la oportunidad.
-- El historial completo (log de estados, eventos, tareas) permanece en la misma oportunidad.
-- El vendedor anterior deja de ver la oportunidad en su pipeline (el pipeline filtra por `id_vendedor = usuario_actual`).
-- El nuevo vendedor la hereda con todo el historial.
-- **Consecuencia aceptada**: si la oportunidad se factura después del traspaso, la comisión corresponde al vendedor actual en ese momento, no al original. El módulo de comisiones (post-MVP) deberá tener esto en cuenta.
+- El backend actualiza `oportunidades.id_vendedor` de todas las oportunidades activas de esa empresa cuyo vendedor difiera del nuevo, en la misma transacción (implementado vía evento de aplicación síncrono — ver `VendedorEmpresaReasignadoEvent`).
+- El historial completo (log de estados, eventos, tareas) permanece en la misma oportunidad; no se duplica nada.
+- El vendedor anterior deja de ver esas oportunidades en su pipeline (el pipeline filtra por `id_vendedor = usuario_actual`).
+- El nuevo vendedor las hereda con todo el historial, y recibe una notificación `oportunidad_traspasada` por cada una.
+- **Consecuencia aceptada**: si una oportunidad se factura después de la cascada, la comisión corresponde al vendedor vigente en ese momento, no al original. El módulo de comisiones (post-MVP) deberá tener esto en cuenta.
 
 ### 8.4 Snapshot de id_vendedor al crear oportunidad
 
@@ -330,7 +330,7 @@ Cuando una oportunidad activa debe cambiar de vendedor:
 oportunidades.id_vendedor = empresas.id_vendedor  (al momento de crear la oportunidad)
 ```
 
-Este valor no cambia automáticamente si la empresa se reasigna después. Solo cambia mediante un traspaso explícito (sección 8.3).
+Este valor se resincroniza automáticamente ante cualquier reasignación posterior de la empresa, mientras la oportunidad esté activa (sección 8.3). Una vez que la oportunidad cierra (`facturado` o `cerrado`), el valor queda congelado para siempre.
 
 ---
 

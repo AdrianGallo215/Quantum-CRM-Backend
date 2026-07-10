@@ -10,7 +10,7 @@
 |---|---|---|
 | `admin` | TI / sistema | Acceso total. Gestiona empleados y configuración. |
 | `gerente` | Gustavo | Visibilidad total. No gestiona empleados ni configuración de sistema. |
-| `jdv` | Aldo | Jefe de ventas. Visibilidad total del equipo. Puede reasignar y traspasar. |
+| `jdv` | Aldo | Jefe de ventas. Visibilidad total del equipo. Puede reasignar el vendedor de una empresa (cascada automáticamente a sus oportunidades activas). |
 | `vendedor` | Asesores comerciales | Solo ve y opera sobre sus propios registros. |
 | `analista` | Analista financiero | Misma visibilidad que vendedor en MVP. Puede validar paso a Facturado. |
 
@@ -89,7 +89,6 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | Editar campos negociables | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
 | Cambiar estado (cualquier estado excepto `facturado`) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
 | **Confirmar paso a `facturado`** | ✓ | ✓ | — | — | ✓ |
-| Traspasar oportunidad (cambiar `id_vendedor`) | ✓ | ✓ | ✓ | — | — |
 | Ver log de estados | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
 
 **Nota sobre el paso a `facturado`:** el vendedor y el JdV no pueden confirmar este paso porque dispara el cálculo de comisiones. Solo lo pueden confirmar `admin`, `gerente` y `analista`. Esta restricción se aplica en el endpoint `PATCH /oportunidades/:id/estado`.

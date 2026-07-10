@@ -123,8 +123,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 | Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo asignadas |
 | Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo propias |
 | Ver todas las tareas | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Reasignar empresa | ✓ | ✓ | ✓ | — | — |
-| Traspasar oportunidad | ✓ | ✓ | ✓ | — | — |
+| Reasignar empresa (cascada automática a sus oportunidades activas) | ✓ | ✓ | ✓ | — | — |
 | Validar paso a Facturado | ✓ | ✓ | — | — | ✓ |
 | Crear empleado | ✓ | — | — | — | — |
 | Modificar catálogo de eventos | ✓ | — | — | — | — |
@@ -512,6 +511,9 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 **Respuesta 200:** `{ "data": { "id_vendedor": 2 } }`
 
+**Notas:**
+- Cascada automáticamente: todas las oportunidades activas de esta empresa cambian a `id_vendedor` en la misma operación (reglas_negocio.md §8.3). Las oportunidades cerradas (`facturado`, `cerrado`) no se ven afectadas.
+
 ---
 
 ## 9. Contactos
@@ -796,21 +798,6 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - Se inserta en `oportunidad_estados_log`.
 - Se llama a `actualizarEstadoCartera` en la misma transacción.
 - Si retrocede desde `cerrado`, `motivo_cierre` se pone en `NULL` automáticamente.
-
----
-
-### PATCH /oportunidades/:id/vendedor
-> Traspasa la oportunidad a otro vendedor (traspaso activo).
-
-**Roles:** `admin` `gerente` `jdv`
-
-**Body:** `{ "id_vendedor": 2 }`
-
-**Respuesta 200:** `{ "data": { "id_vendedor": 2 } }`
-
-**Notas:**
-- Modifica `oportunidades.id_vendedor` directamente. No duplica la oportunidad.
-- El vendedor anterior deja de ver la oportunidad en su pipeline.
 
 ---
 
