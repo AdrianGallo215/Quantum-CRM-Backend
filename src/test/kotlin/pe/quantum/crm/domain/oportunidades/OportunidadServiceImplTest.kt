@@ -67,6 +67,31 @@ class OportunidadServiceImplTest {
             updatedBy = 1,
         )
 
+    /** Devuelve una copia de la oportunidad con `id` asignado, simulando lo que hace JPA al guardar. */
+    private fun Oportunidad.conId(nuevoId: Long) =
+        Oportunidad(
+            id = nuevoId,
+            idEmpresa = idEmpresa,
+            idVendedor = idVendedor,
+            idFinanciadora = idFinanciadora,
+            idModelo = idModelo,
+            estado = estado,
+            cantidad = cantidad,
+            precioUnitario = precioUnitario,
+            dcto = dcto,
+            montoTotal = montoTotal,
+            fincParalelo = fincParalelo,
+            garantia = garantia,
+            fichaVenta = fichaVenta,
+            notas = notas,
+            motivoCierre = motivoCierre,
+            fechaCierreEstimado = fechaCierreEstimado,
+            createdAt = createdAt,
+            createdBy = createdBy,
+            updatedAt = updatedAt,
+            updatedBy = updatedBy,
+        )
+
     @Test
     fun `traspasar notifica al vendedor destino`() {
         val entidad = oportunidad(idVendedor = 1)
@@ -149,15 +174,7 @@ class OportunidadServiceImplTest {
                 notas = null,
             )
         val guardada = slot<Oportunidad>()
-        every { oportunidadRepository.save(capture(guardada)) } answers {
-            // El id es autogenerado (IDENTITY); en el mock lo poblamos por reflexion
-            // igual que lo haria Hibernate al persistir, para simular el id devuelto.
-            guardada.captured.also {
-                val idField = Oportunidad::class.java.getDeclaredField("id")
-                idField.isAccessible = true
-                idField.set(it, 100L)
-            }
-        }
+        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(100) }
         every { logRepository.save(any()) } returns mockk()
         every {
             estadoCarteraService.actualizar(10)
@@ -215,7 +232,7 @@ class OportunidadServiceImplTest {
                 tipo = TipoNotificacion.empresa_convertida,
                 mensaje = "Jose Lima convirtió Kincar S.A.C. de prospección a oportunidad",
                 entidadTipo = EntidadNotificacion.oportunidad,
-                entidadId = any(),
+                entidadId = 100L,
             )
         }
     }
