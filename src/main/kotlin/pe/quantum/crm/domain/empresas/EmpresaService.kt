@@ -50,7 +50,12 @@ interface EmpresaService {
         usuario: UsuarioActual,
     ): String
 
-    /** Reasignacion de vendedor (solo admin/gerente/jdv — verificado en controller). Notifica al vendedor destino. */
+    /**
+     * Reasignacion de vendedor (solo admin/gerente/jdv — verificado en controller).
+     * Notifica al vendedor destino. Publica `VendedorEmpresaReasignadoEvent`, que
+     * cascade el mismo vendedor a las oportunidades activas de la empresa
+     * (reglas_negocio.md §8).
+     */
     fun reasignarVendedor(
         id: Long,
         idVendedor: Long,

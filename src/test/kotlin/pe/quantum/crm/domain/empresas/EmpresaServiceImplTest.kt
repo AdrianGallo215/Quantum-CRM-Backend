@@ -1,10 +1,14 @@
 package pe.quantum.crm.domain.empresas
 
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
@@ -19,7 +23,8 @@ class EmpresaServiceImplTest {
     private val empresaRepository = mockk<EmpresaRepository>()
     private val empleadoService = mockk<EmpleadoService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
-    private val service = EmpresaServiceImpl(empresaRepository, empleadoService, notificacionService)
+    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
+    private val service = EmpresaServiceImpl(empresaRepository, empleadoService, notificacionService, eventPublisher)
 
     private fun empresa(estadoCartera: EstadoCartera = EstadoCartera.prospeccion) =
         Empresa(
@@ -77,5 +82,21 @@ class EmpresaServiceImplTest {
                 entidadId = 1L,
             )
         }
+    }
+
+    @Test
+    fun `reasignarVendedor publica VendedorEmpresaReasignadoEvent con los datos del cambio`() {
+        val entidad = empresa()
+        every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empleadoService.existeActivo(2) } returns true
+        every { empresaRepository.save(entidad) } returns entidad
+        every { empleadoService.resumenPorIds(listOf(9)) } returns
+            mapOf(9L to EmpleadoResumen(id = 9, nombres = "Ana", apellidos = "Diaz"))
+        val evento = slot<VendedorEmpresaReasignadoEvent>()
+        every { eventPublisher.publishEvent(capture(evento)) } just Runs
+
+        service.reasignarVendedor(1, 2, UsuarioActual(id = 9, rol = "jdv"))
+
+        assertThat(evento.captured).isEqualTo(VendedorEmpresaReasignadoEvent(idEmpresa = 1, idVendedorNuevo = 2, idActor = 9))
     }
 }

@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.empresas
 
 import jakarta.persistence.criteria.Predicate
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,6 +36,7 @@ class EmpresaServiceImpl(
     private val empresaRepository: EmpresaRepository,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
+    private val eventPublisher: ApplicationEventPublisher,
 ) : EmpresaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -205,6 +207,7 @@ class EmpresaServiceImpl(
         empresa.idVendedor = idVendedor
         empresa.updatedAt = LocalDateTime.now()
         empresaRepository.save(empresa)
+        eventPublisher.publishEvent(VendedorEmpresaReasignadoEvent(idEmpresa = id, idVendedorNuevo = idVendedor, idActor = usuario.id))
         val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
         notificacionService.notificar(
             destinatarios = setOf(idVendedor),
