@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.oportunidades
 
 import jakarta.persistence.criteria.Predicate
+import org.springframework.context.event.EventListener
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -8,6 +9,7 @@ import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.EmpresaService
+import pe.quantum.crm.domain.empresas.VendedorEmpresaReasignadoEvent
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
@@ -231,31 +233,42 @@ class OportunidadServiceImpl(
         return CambioEstadoDto(estado = nuevo.name, esRetroceso = esRetroceso, advertencias = advertencias)
     }
 
-    /** Traspaso por mutacion de `id_vendedor`, sin duplicar (reglas §8.3). */
+    /**
+     * Cascada de vendedor (reglas §8): al reasignar `empresas.id_vendedor`, todas
+     * las oportunidades activas de esa empresa heredan el mismo vendedor. El
+     * listener corre sincrono, dentro de la misma transaccion que publico el
+     * evento (`EmpresaServiceImpl.reasignarVendedor`) — si falla, tambien se
+     * revierte la reasignacion de la empresa (atomicidad, reglas §1.2).
+     */
+    @EventListener
     @Transactional
-    override fun traspasar(
-        id: Long,
-        idVendedor: Long,
-        usuario: UsuarioActual,
-    ): Long {
-        val oportunidad = entidad(id)
-        if (!empleadoService.existeActivo(idVendedor)) {
-            throw NoEncontradoException("El vendedor no existe o está inactivo")
+    fun onVendedorEmpresaReasignado(event: VendedorEmpresaReasignadoEvent) {
+        val activas =
+            oportunidadRepository
+                .findByIdEmpresaAndEstadoIn(event.idEmpresa, EstadoCarteraService.ESTADOS_ACTIVOS)
+                .filter { it.idVendedor != event.idVendedorNuevo }
+        if (activas.isEmpty()) {
+            return
         }
-        oportunidad.idVendedor = idVendedor
-        oportunidad.updatedAt = LocalDateTime.now()
-        oportunidadRepository.save(oportunidad)
-        val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
-        val empresa = empresaService.resumenPorIds(listOf(oportunidad.idEmpresa))[oportunidad.idEmpresa]
-        notificacionService.notificar(
-            destinatarios = setOf(idVendedor),
-            idActor = usuario.id,
-            tipo = TipoNotificacion.oportunidad_traspasada,
-            mensaje = "${actor?.nombreCompleto()} te traspasó la oportunidad de ${empresa?.razonSocial}",
-            entidadTipo = EntidadNotificacion.oportunidad,
-            entidadId = id,
-        )
-        return idVendedor
+        val ahora = LocalDateTime.now()
+        activas.forEach {
+            it.idVendedor = event.idVendedorNuevo
+            it.updatedAt = ahora
+            it.updatedBy = event.idActor
+        }
+        oportunidadRepository.saveAll(activas)
+        val actor = empleadoService.resumenPorIds(listOf(event.idActor))[event.idActor]
+        val empresa = empresaService.resumenPorIds(listOf(event.idEmpresa))[event.idEmpresa]
+        activas.forEach {
+            notificacionService.notificar(
+                destinatarios = setOf(event.idVendedorNuevo),
+                idActor = event.idActor,
+                tipo = TipoNotificacion.oportunidad_traspasada,
+                mensaje = "${actor?.nombreCompleto()} te traspasó la oportunidad de ${empresa?.razonSocial}",
+                entidadTipo = EntidadNotificacion.oportunidad,
+                entidadId = requireNotNull(it.id),
+            )
+        }
     }
 
     @Transactional(readOnly = true)

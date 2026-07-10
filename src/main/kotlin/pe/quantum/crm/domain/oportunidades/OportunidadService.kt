@@ -32,13 +32,6 @@ interface OportunidadService {
         usuario: UsuarioActual,
     ): CambioEstadoDto
 
-    /** Traspaso de vendedor. Notifica al vendedor destino (oportunidad_traspasada). */
-    fun traspasar(
-        id: Long,
-        idVendedor: Long,
-        usuario: UsuarioActual,
-    ): Long
-
     fun log(
         id: Long,
         usuario: UsuarioActual,

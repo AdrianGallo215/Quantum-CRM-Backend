@@ -10,6 +10,7 @@ import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.domain.empresas.EmpresaService
+import pe.quantum.crm.domain.empresas.VendedorEmpresaReasignadoEvent
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.financiadoras.FinanciadoraService
@@ -49,23 +50,25 @@ class OportunidadServiceImplTest {
             notificacionService,
         )
 
-    private fun oportunidad(idVendedor: Long = 1) =
-        Oportunidad(
-            id = 100,
-            idEmpresa = 10,
-            idVendedor = idVendedor,
-            idFinanciadora = 1,
-            idModelo = 1,
-            estado = pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda,
-            cantidad = 1,
-            precioUnitario = java.math.BigDecimal.TEN,
-            dcto = java.math.BigDecimal.ZERO,
-            montoTotal = java.math.BigDecimal.TEN,
-            createdAt = LocalDateTime.now(),
-            createdBy = 1,
-            updatedAt = LocalDateTime.now(),
-            updatedBy = 1,
-        )
+    private fun oportunidad(
+        id: Long = 100,
+        idVendedor: Long = 1,
+    ) = Oportunidad(
+        id = id,
+        idEmpresa = 10,
+        idVendedor = idVendedor,
+        idFinanciadora = 1,
+        idModelo = 1,
+        estado = pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda,
+        cantidad = 1,
+        precioUnitario = java.math.BigDecimal.TEN,
+        dcto = java.math.BigDecimal.ZERO,
+        montoTotal = java.math.BigDecimal.TEN,
+        createdAt = LocalDateTime.now(),
+        createdBy = 1,
+        updatedAt = LocalDateTime.now(),
+        updatedBy = 1,
+    )
 
     /** Financiadora Calidda usada como stub en varios escenarios de `crear`. */
     private fun calidda() =
@@ -109,29 +112,46 @@ class OportunidadServiceImplTest {
         )
 
     @Test
-    fun `traspasar notifica al vendedor destino`() {
-        val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { empleadoService.existeActivo(2) } returns true
-        every { oportunidadRepository.save(entidad) } returns entidad
+    fun `onVendedorEmpresaReasignado actualiza y notifica las oportunidades activas con vendedor distinto`() {
+        val activa = oportunidad(id = 100, idVendedor = 1)
+        val yaAsignada = oportunidad(id = 101, idVendedor = 2)
+        every {
+            oportunidadRepository.findByIdEmpresaAndEstadoIn(10, EstadoCarteraService.ESTADOS_ACTIVOS)
+        } returns listOf(activa, yaAsignada)
+        every { oportunidadRepository.saveAll(listOf(activa)) } returns listOf(activa)
         every { empleadoService.resumenPorIds(listOf(9)) } returns
-            mapOf(9L to EmpleadoResumen(id = 9, nombres = "Luis", apellidos = "Soto"))
+            mapOf(9L to EmpleadoResumen(id = 9, nombres = "Aldo", apellidos = "Martinez"))
         every { empresaService.resumenPorIds(listOf(10)) } returns
             mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
 
-        service.traspasar(100, 2, UsuarioActual(id = 9, rol = "jdv"))
+        service.onVendedorEmpresaReasignado(VendedorEmpresaReasignadoEvent(idEmpresa = 10, idVendedorNuevo = 2, idActor = 9))
 
-        verify {
+        assertThat(activa.idVendedor).isEqualTo(2)
+        assertThat(activa.updatedBy).isEqualTo(9)
+        assertThat(yaAsignada.idVendedor).isEqualTo(2)
+        verify(exactly = 1) {
             notificacionService.notificar(
                 destinatarios = setOf(2L),
                 idActor = 9L,
                 tipo = TipoNotificacion.oportunidad_traspasada,
-                mensaje = "Luis Soto te traspasó la oportunidad de Kincar S.A.C.",
+                mensaje = "Aldo Martinez te traspasó la oportunidad de Kincar S.A.C.",
                 entidadTipo = EntidadNotificacion.oportunidad,
                 entidadId = 100L,
             )
         }
-        assertThat(entidad.idVendedor).isEqualTo(2)
+    }
+
+    @Test
+    fun `onVendedorEmpresaReasignado no hace nada si ninguna oportunidad activa cambia de vendedor`() {
+        val yaAsignada = oportunidad(id = 101, idVendedor = 2)
+        every {
+            oportunidadRepository.findByIdEmpresaAndEstadoIn(10, EstadoCarteraService.ESTADOS_ACTIVOS)
+        } returns listOf(yaAsignada)
+
+        service.onVendedorEmpresaReasignado(VendedorEmpresaReasignadoEvent(idEmpresa = 10, idVendedorNuevo = 2, idActor = 9))
+
+        verify(exactly = 0) { oportunidadRepository.saveAll(any<List<Oportunidad>>()) }
+        verify(exactly = 0) { notificacionService.notificar(any(), any(), any(), any(), any(), any()) }
     }
 
     @Test

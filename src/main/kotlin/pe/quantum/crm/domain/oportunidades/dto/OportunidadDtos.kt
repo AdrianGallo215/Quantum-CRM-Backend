@@ -110,10 +110,6 @@ data class CambioEstadoDto(
     val advertencias: List<String>,
 )
 
-data class TraspasarVendedorRequest(
-    val idVendedor: Long,
-)
-
 /** Entrada del historial de estados (contrato §10). */
 data class LogEstadoDto(
     val estadoAnterior: String?,

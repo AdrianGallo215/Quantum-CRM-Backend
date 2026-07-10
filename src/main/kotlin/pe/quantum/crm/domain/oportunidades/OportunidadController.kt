@@ -2,7 +2,6 @@ package pe.quantum.crm.domain.oportunidades
 
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
-import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -22,7 +21,6 @@ import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
-import pe.quantum.crm.domain.oportunidades.dto.TraspasarVendedorRequest
 import pe.quantum.crm.shared.ApiResponse
 import pe.quantum.crm.shared.security.UsuarioActualProvider
 
@@ -80,16 +78,6 @@ class OportunidadController(
         @PathVariable id: Long,
         @RequestBody request: CambiarEstadoRequest,
     ): ApiResponse<CambioEstadoDto> = ApiResponse.ok(oportunidadService.cambiarEstado(id, request, usuarioProvider.actual()))
-
-    @PatchMapping("/{id}/vendedor")
-    @PreAuthorize("hasAnyRole('admin', 'gerente', 'jdv')")
-    fun traspasar(
-        @PathVariable id: Long,
-        @RequestBody request: TraspasarVendedorRequest,
-    ): ApiResponse<Map<String, Long>> {
-        val idVendedor = oportunidadService.traspasar(id, request.idVendedor, usuarioProvider.actual())
-        return ApiResponse.ok(mapOf("id_vendedor" to idVendedor))
-    }
 
     @GetMapping("/{id}/log")
     fun log(
