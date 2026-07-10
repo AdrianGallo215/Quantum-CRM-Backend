@@ -209,6 +209,31 @@ class EventoServiceImplTest {
     }
 
     @Test
+    fun `crear evento en una empresa notifica con entidad_tipo empresa y el id de la propia empresa`() {
+        every { empresaService.vinculoVisible(10, any()) } returns empresaVinculo(10)
+        every { catalogoEventoService.porId(5) } returns catalogo()
+        every { catalogoEventoService.todosPorId() } returns mapOf(5L to catalogo())
+        every { eventoRepository.save(any()) } answers { (firstArg<Evento>()).conId(1) }
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(7)) } returns
+            mapOf(7L to EmpleadoResumen(id = 7, nombres = "Rosa", apellidos = "Vega"))
+
+        service.crearEnEmpresa(10, CrearEventoRequest(idCatalogoEvento = 5), UsuarioActual(id = 7, rol = "analista"))
+
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(1L),
+                idActor = 7L,
+                tipo = TipoNotificacion.evento_creado,
+                mensaje = "Rosa Vega creó un evento en Kincar S.A.C.",
+                entidadTipo = EntidadNotificacion.empresa,
+                entidadId = 10L,
+            )
+        }
+    }
+
+    @Test
     fun `pendientesParaRecordatorio proyecta solo eventos pendientes con fecha_estimada`() {
         every { eventoRepository.findByEstadoAndFechaEstimadaIsNotNull(EstadoEvento.pendiente) } returns
             listOf(
