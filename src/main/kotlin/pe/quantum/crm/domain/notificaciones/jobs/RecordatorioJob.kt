@@ -1,6 +1,5 @@
 package pe.quantum.crm.domain.notificaciones.jobs
 
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -105,17 +104,16 @@ class RecordatorioJob(
         registrarEnviado(origen, idOrigen, umbral)
     }
 
-    @Suppress("SwallowedException") // Carrera entre 2 corridas del job; uq_recordatorio ya lo cubrio.
+    // Dedup se basa en el pre-check existsByOrigenAndIdOrigenAndUmbral de procesarRecordatorio.
+    // uq_recordatorio es solo el resguardo final de integridad: si llegara a saltar (deploy de
+    // una sola instancia, cron cada hora), esta corrida del job falla limpiamente en vez de
+    // "tragarse" el error, dado que Postgres aborta toda la transaccion ante cualquier fallo.
     private fun registrarEnviado(
         origen: OrigenRecordatorio,
         idOrigen: Long,
         umbral: UmbralRecordatorio,
     ) {
-        try {
-            recordatorioEnviadoRepository.save(RecordatorioEnviado(origen = origen, idOrigen = idOrigen, umbral = umbral))
-        } catch (ex: DataIntegrityViolationException) {
-            // uq_recordatorio: otra corrida del job ya registro este mismo umbral.
-        }
+        recordatorioEnviadoRepository.save(RecordatorioEnviado(origen = origen, idOrigen = idOrigen, umbral = umbral))
     }
 
     private data class Destino(
