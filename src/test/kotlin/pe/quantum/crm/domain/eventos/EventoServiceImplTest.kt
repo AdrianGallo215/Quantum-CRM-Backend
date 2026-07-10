@@ -3,16 +3,24 @@ package pe.quantum.crm.domain.eventos
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
+import pe.quantum.crm.domain.empleados.EmpleadoService
+import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.domain.empresas.EmpresaService
+import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
+import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
+import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.NoEncontradoException
@@ -26,9 +34,12 @@ import pe.quantum.crm.shared.security.UsuarioActual
 class EventoServiceImplTest {
     private val eventoRepository = mockk<EventoRepository>()
     private val catalogoEventoService = mockk<CatalogoEventoService>()
-    private val oportunidadService = mockk<OportunidadService>()
-    private val empresaService = mockk<EmpresaService>()
-    private val service = EventoServiceImpl(eventoRepository, catalogoEventoService, oportunidadService, empresaService)
+    private val oportunidadService = mockk<OportunidadService>(relaxed = true)
+    private val empresaService = mockk<EmpresaService>(relaxed = true)
+    private val empleadoService = mockk<EmpleadoService>(relaxed = true)
+    private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val service =
+        EventoServiceImpl(eventoRepository, catalogoEventoService, oportunidadService, empresaService, empleadoService, notificacionService)
 
     private val usuario = UsuarioActual(id = 1, rol = "vendedor")
 
@@ -141,5 +152,58 @@ class EventoServiceImplTest {
         val resultado = service.marcarOcurrido(7, MarcarOcurridoRequest(), usuario)
 
         assertThat(resultado.sugerencia).isNull()
+    }
+
+    @Test
+    fun `crear evento en una oportunidad notifica al vendedor asignado cuando el actor no es el`() {
+        every { oportunidadService.vinculoVisible(50, any()) } returns
+            OportunidadVinculo(id = 50, idEmpresa = 10, idVendedor = 3, estado = "evaluacion_calidda")
+        every { catalogoEventoService.porId(5) } returns catalogo()
+        every { catalogoEventoService.todosPorId() } returns mapOf(5L to catalogo())
+        every { eventoRepository.save(any()) } answers { (firstArg<Evento>()).conId(1) }
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(7)) } returns
+            mapOf(7L to EmpleadoResumen(id = 7, nombres = "Rosa", apellidos = "Vega"))
+
+        service.crearEnOportunidad(50, CrearEventoRequest(idCatalogoEvento = 5), UsuarioActual(id = 7, rol = "analista"))
+
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(3L),
+                idActor = 7L,
+                tipo = TipoNotificacion.evento_creado,
+                mensaje = "Rosa Vega creó un evento en Kincar S.A.C.",
+                entidadTipo = EntidadNotificacion.oportunidad,
+                entidadId = 50L,
+            )
+        }
+    }
+
+    @Test
+    fun `crear evento cuando el actor es el propio vendedor notifica a supervisores en vez de a si mismo`() {
+        every { oportunidadService.vinculoVisible(50, any()) } returns
+            OportunidadVinculo(id = 50, idEmpresa = 10, idVendedor = 7, estado = "evaluacion_calidda")
+        every { catalogoEventoService.porId(5) } returns catalogo()
+        every { catalogoEventoService.todosPorId() } returns mapOf(5L to catalogo())
+        every { eventoRepository.save(any()) } answers { (firstArg<Evento>()).conId(1) }
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(7)) } returns
+            mapOf(7L to EmpleadoResumen(id = 7, nombres = "Rosa", apellidos = "Vega"))
+        every { empleadoService.idsSupervisoresActivos() } returns listOf(1, 2)
+
+        service.crearEnOportunidad(50, CrearEventoRequest(idCatalogoEvento = 5), UsuarioActual(id = 7, rol = "vendedor"))
+
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(1L, 2L),
+                idActor = 7L,
+                tipo = TipoNotificacion.evento_creado,
+                mensaje = "Rosa Vega creó un evento en Kincar S.A.C.",
+                entidadTipo = EntidadNotificacion.oportunidad,
+                entidadId = 50L,
+            )
+        }
     }
 }

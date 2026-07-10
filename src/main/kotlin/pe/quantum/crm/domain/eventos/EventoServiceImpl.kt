@@ -4,6 +4,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
+import pe.quantum.crm.domain.empleados.EmpleadoService
+import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.eventos.dto.ActualizarEventoRequest
 import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
@@ -13,6 +15,9 @@ import pe.quantum.crm.domain.eventos.dto.EventosAgrupadosDto
 import pe.quantum.crm.domain.eventos.dto.MarcarDescartadoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
 import pe.quantum.crm.domain.eventos.dto.SugerenciaDto
+import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
+import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.shared.enums.EstadoEvento
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -24,11 +29,14 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 
 @Service
+@Suppress("LongParameterList") // Cruza 3 modulos + notificaciones (evento_creado).
 class EventoServiceImpl(
     private val eventoRepository: EventoRepository,
     private val catalogoEventoService: CatalogoEventoService,
     private val oportunidadService: OportunidadService,
     private val empresaService: EmpresaService,
+    private val empleadoService: EmpleadoService,
+    private val notificacionService: NotificacionService,
 ) : EventoService {
     @Transactional(readOnly = true)
     override fun listarPorOportunidad(
@@ -46,7 +54,15 @@ class EventoServiceImpl(
         usuario: UsuarioActual,
     ): EventoDto {
         val oportunidad = oportunidadService.vinculoVisible(idOportunidad, usuario)
-        return crear(request, idOportunidad = oportunidad.id, idEmpresa = null, usuario = usuario)
+        val evento = crear(request, idOportunidad = oportunidad.id, idEmpresa = null, usuario = usuario)
+        notificarEventoCreado(
+            idVendedor = oportunidad.idVendedor,
+            idEmpresaParaNombre = oportunidad.idEmpresa,
+            entidadTipo = EntidadNotificacion.oportunidad,
+            entidadId = oportunidad.id,
+            usuario = usuario,
+        )
+        return evento
     }
 
     @Transactional
@@ -56,7 +72,15 @@ class EventoServiceImpl(
         usuario: UsuarioActual,
     ): EventoDto {
         val empresa = empresaService.vinculoVisible(idEmpresa, usuario)
-        return crear(request, idOportunidad = null, idEmpresa = empresa.id, usuario = usuario)
+        val evento = crear(request, idOportunidad = null, idEmpresa = empresa.id, usuario = usuario)
+        notificarEventoCreado(
+            idVendedor = empresa.idVendedor,
+            idEmpresaParaNombre = empresa.id,
+            entidadTipo = EntidadNotificacion.empresa,
+            entidadId = empresa.id,
+            usuario = usuario,
+        )
+        return evento
     }
 
     @Transactional(readOnly = true)
@@ -221,6 +245,35 @@ class EventoServiceImpl(
                 )
             }
         return eventoRepository.save(evento).toDto()
+    }
+
+    /**
+     * Vendedor asignado (si el actor no es el); si el actor ES el vendedor,
+     * notifica a los supervisores en su lugar (docs/superpowers/specs/2026-07-09-notificaciones-in-app-design.md).
+     */
+    private fun notificarEventoCreado(
+        idVendedor: Long?,
+        idEmpresaParaNombre: Long,
+        entidadTipo: EntidadNotificacion,
+        entidadId: Long,
+        usuario: UsuarioActual,
+    ) {
+        val empresa = empresaService.resumenPorIds(listOf(idEmpresaParaNombre))[idEmpresaParaNombre] ?: return
+        val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id] ?: return
+        val destinatarios =
+            if (idVendedor != null && idVendedor != usuario.id) {
+                setOf(idVendedor)
+            } else {
+                empleadoService.idsSupervisoresActivos().toSet()
+            }
+        notificacionService.notificar(
+            destinatarios = destinatarios,
+            idActor = usuario.id,
+            tipo = TipoNotificacion.evento_creado,
+            mensaje = "${actor.nombreCompleto()} creó un evento en ${empresa.razonSocial}",
+            entidadTipo = entidadTipo,
+            entidadId = entidadId,
+        )
     }
 
     private fun entidad(id: Long): Evento = eventoRepository.findById(id).orElseThrow { NoEncontradoException("El evento no existe") }
