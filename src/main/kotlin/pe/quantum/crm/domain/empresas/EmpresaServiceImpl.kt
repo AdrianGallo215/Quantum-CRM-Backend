@@ -251,6 +251,9 @@ class EmpresaServiceImpl(
     override fun resumenPorIds(ids: Collection<Long>): Map<Long, EmpresaResumen> =
         empresaRepository.findAllById(ids.toSet()).associate { requireNotNull(it.id) to it.toResumen() }
 
+    @Transactional(readOnly = true)
+    override fun vendedorAsignado(id: Long): Long? = empresaRepository.findById(id).map { it.idVendedor }.orElse(null)
+
     // ── privados ───────────────────────────────────────────────
 
     private fun entidad(id: Long): Empresa = empresaRepository.findById(id).orElseThrow { NoEncontradoException("La empresa no existe") }

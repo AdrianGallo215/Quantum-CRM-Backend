@@ -22,6 +22,7 @@ import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.enums.EstadoCartera
+import pe.quantum.crm.shared.enums.EstadoEvento
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.ValidacionException
@@ -205,5 +206,26 @@ class EventoServiceImplTest {
                 entidadId = 50L,
             )
         }
+    }
+
+    @Test
+    fun `pendientesParaRecordatorio proyecta solo eventos pendientes con fecha_estimada`() {
+        every { eventoRepository.findByEstadoAndFechaEstimadaIsNotNull(EstadoEvento.pendiente) } returns
+            listOf(
+                Evento(
+                    id = 1,
+                    idOportunidad = 50,
+                    idEmpresa = null,
+                    idCatalogoEvento = 5,
+                    fechaEstimada = java.time.LocalDate.of(2026, 7, 10),
+                    createdBy = 1,
+                    updatedBy = 1,
+                ),
+            )
+
+        val resultado = service.pendientesParaRecordatorio()
+
+        assertThat(resultado).hasSize(1)
+        assertThat(resultado.first().idOportunidad).isEqualTo(50)
     }
 }

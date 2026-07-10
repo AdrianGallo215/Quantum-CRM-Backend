@@ -24,6 +24,7 @@ import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
@@ -364,6 +365,13 @@ class OportunidadServiceImpl(
             estado = oportunidad.estado.name,
         )
     }
+
+    @Transactional(readOnly = true)
+    override fun datosRecordatorio(id: Long): OportunidadRecordatorioDatos? =
+        oportunidadRepository
+            .findById(id)
+            .map { OportunidadRecordatorioDatos(idEmpresa = it.idEmpresa, idVendedor = it.idVendedor) }
+            .orElse(null)
 
     // ── privados ───────────────────────────────────────────────
 

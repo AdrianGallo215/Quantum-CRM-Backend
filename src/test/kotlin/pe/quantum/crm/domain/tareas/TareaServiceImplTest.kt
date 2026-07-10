@@ -3,6 +3,7 @@ package pe.quantum.crm.domain.tareas
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -15,6 +16,7 @@ import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
+import pe.quantum.crm.shared.enums.EstadoAccion
 import pe.quantum.crm.shared.enums.TipoAccion
 import pe.quantum.crm.shared.security.UsuarioActual
 
@@ -75,5 +77,30 @@ class TareaServiceImplTest {
                 entidadId = 10L,
             )
         }
+    }
+
+    @Test
+    fun `pendientesParaRecordatorio proyecta solo tareas pendientes con asignado y fecha`() {
+        every { tareaRepository.findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionIsNotNull(EstadoAccion.pendiente) } returns
+            listOf(
+                Tarea(
+                    id = 1,
+                    idEmpresa = 10,
+                    idOportunidad = null,
+                    idAsignado = 3,
+                    tipoAccion = TipoAccion.llamada,
+                    estadoAccion = EstadoAccion.pendiente,
+                    fechaEjecucion = java.time.LocalDateTime.of(2026, 7, 10, 9, 0),
+                    createdAt = java.time.LocalDateTime.now(),
+                    createdBy = 1,
+                    updatedAt = java.time.LocalDateTime.now(),
+                    updatedBy = 1,
+                ),
+            )
+
+        val resultado = service.pendientesParaRecordatorio()
+
+        assertThat(resultado).hasSize(1)
+        assertThat(resultado.first().idAsignado).isEqualTo(3)
     }
 }

@@ -16,6 +16,7 @@ import pe.quantum.crm.domain.tareas.dto.ActualizarTareaRequest
 import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
 import pe.quantum.crm.domain.tareas.dto.TareaDto
 import pe.quantum.crm.domain.tareas.dto.TareaFiltros
+import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoAccion
@@ -172,6 +173,18 @@ class TareaServiceImpl(
         tarea.updatedBy = usuario.id
         return toDtos(listOf(tareaRepository.save(tarea))).first()
     }
+
+    @Transactional(readOnly = true)
+    override fun pendientesParaRecordatorio(): List<TareaRecordatorioProyeccion> =
+        tareaRepository.findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionIsNotNull(EstadoAccion.pendiente).map {
+            TareaRecordatorioProyeccion(
+                id = requireNotNull(it.id),
+                idAsignado = requireNotNull(it.idAsignado),
+                idEmpresa = it.idEmpresa,
+                idOportunidad = it.idOportunidad,
+                fechaEjecucion = requireNotNull(it.fechaEjecucion),
+            )
+        }
 
     // ── privados ───────────────────────────────────────────────
 

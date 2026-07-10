@@ -73,3 +73,11 @@ data class EventoOcurridoDto(
     val fechaOcurrencia: LocalDateTime?,
     val sugerencia: SugerenciaDto?,
 )
+
+/** Proyeccion de solo lectura para el job de recordatorios (notificaciones). */
+data class EventoRecordatorioProyeccion(
+    val id: Long,
+    val idOportunidad: Long?,
+    val idEmpresa: Long?,
+    val fechaEstimada: LocalDate,
+)

@@ -11,6 +11,7 @@ import pe.quantum.crm.domain.eventos.dto.ActualizarEventoRequest
 import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.eventos.dto.EventoDto
 import pe.quantum.crm.domain.eventos.dto.EventoOcurridoDto
+import pe.quantum.crm.domain.eventos.dto.EventoRecordatorioProyeccion
 import pe.quantum.crm.domain.eventos.dto.EventosAgrupadosDto
 import pe.quantum.crm.domain.eventos.dto.MarcarDescartadoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
@@ -168,6 +169,17 @@ class EventoServiceImpl(
         evento.updatedBy = usuario.id
         return eventoRepository.save(evento).toDto()
     }
+
+    @Transactional(readOnly = true)
+    override fun pendientesParaRecordatorio(): List<EventoRecordatorioProyeccion> =
+        eventoRepository.findByEstadoAndFechaEstimadaIsNotNull(EstadoEvento.pendiente).map {
+            EventoRecordatorioProyeccion(
+                id = requireNotNull(it.id),
+                idOportunidad = it.idOportunidad,
+                idEmpresa = it.idEmpresa,
+                fechaEstimada = requireNotNull(it.fechaEstimada),
+            )
+        }
 
     // ── privados ───────────────────────────────────────────────
 

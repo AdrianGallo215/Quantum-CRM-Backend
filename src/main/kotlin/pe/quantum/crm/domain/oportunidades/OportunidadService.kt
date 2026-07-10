@@ -8,6 +8,7 @@ import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
@@ -84,4 +85,7 @@ interface OportunidadService {
         id: Long,
         usuario: UsuarioActual,
     ): OportunidadVinculo
+
+    /** Sin chequeo de visibilidad (job de sistema). Null si la oportunidad no existe. */
+    fun datosRecordatorio(id: Long): OportunidadRecordatorioDatos?
 }
