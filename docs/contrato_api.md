@@ -24,6 +24,7 @@
 16. [Prospección](#16-prospección)
 17. [Inicio](#17-inicio)
 18. [Reportes](#18-reportes)
+19. [Notificaciones](#19-notificaciones)
 
 ---
 
@@ -1571,6 +1572,76 @@ Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). S
   }
 }
 ```
+
+---
+
+## 19. Notificaciones
+
+Notifica a un usuario cuando ocurre una acción relacionada con él pero no accionada por él mismo. También cubre recordatorios de tareas y eventos (job programado, sin actor humano).
+
+**Tipo (`tipo`):** `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`.
+
+**Entidad referenciada (`entidad_tipo`):** `oportunidad` | `empresa` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
+
+**DTO `Notificacion`:**
+```json
+{
+  "id": 1,
+  "tipo": "oportunidad_cambio_estado",
+  "mensaje": "Carlos Pérez cambió el estado de Transportes ABC a Documentos legales",
+  "entidad_tipo": "oportunidad",
+  "entidad_id": 101,
+  "leida": false,
+  "created_at": "2026-07-09T14:30:00Z",
+  "actor": { "id": 5, "nombres": "Carlos", "apellidos": "Pérez" }
+}
+```
+`actor` es `null` para recordatorios generados por el sistema (job programado, sin actor humano).
+
+---
+
+### GET /notificaciones/no-leidas/count
+> Cuenta las notificaciones no leídas del usuario autenticado.
+
+**Roles:** todos
+
+**Respuesta 200:**
+```json
+{ "data": { "count": 5 }, "meta": null, "error": null }
+```
+
+---
+
+### GET /notificaciones
+> Últimas 20 notificaciones (leídas + no leídas) del usuario autenticado, más recientes primero. Sin paginación.
+
+**Roles:** todos
+
+**Respuesta 200:** `{ "data": [ /* NotificacionDto[] */ ], "meta": null, "error": null }`
+
+---
+
+### PATCH /notificaciones/:id/leida
+> Marca una notificación propia como leída.
+
+**Roles:** todos (solo notificaciones propias)
+
+**Respuesta 200:** `{ "data": { "leida": true } }`
+
+**Errores:**
+
+| Código | HTTP | Cuándo |
+|---|---|---|
+| `NO_ENCONTRADO` | 404 | La notificación no existe o no pertenece al usuario autenticado |
+
+---
+
+### PATCH /notificaciones/leidas
+> Marca todas las notificaciones no leídas del usuario autenticado como leídas.
+
+**Roles:** todos
+
+**Respuesta 200:** `{ "data": { "leida": true } }`
 
 ---
 
