@@ -44,6 +44,9 @@ class ContactoControllerWebMvcTest {
     @MockkBean
     lateinit var oportunidadService: OportunidadService
 
+    @MockkBean
+    lateinit var tareaService: pe.quantum.crm.domain.tareas.TareaService
+
     @Test
     fun `GET contactos devuelve meta de paginacion y oportunidades_count por item`() {
         val item =
@@ -73,6 +76,42 @@ class ContactoControllerWebMvcTest {
             jsonPath("$.meta.per_page") { value(10) }
             jsonPath("$.meta.total") { value(11) }
             jsonPath("$.meta.total_pages") { value(2) }
+        }
+    }
+
+    @Test
+    fun `GET contactos por id inexistente devuelve 404`() {
+        every { contactoService.detalle(99) } throws pe.quantum.crm.shared.exception.NoEncontradoException("El contacto no existe")
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
+
+        mockMvc.get("/api/v1/contactos/99") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error.code") { value("NO_ENCONTRADO") }
+        }
+    }
+
+    @Test
+    fun `GET contactos por id devuelve empresas, oportunidades y actividades`() {
+        val detalle =
+            pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto(
+                id = 5, nombres = "Hugo", apellidos = "Rodríguez",
+                email1 = null, email2 = null, tlf1 = "964415122", tlf2 = null, notas = null,
+                empresas = emptyList(),
+            )
+        every { contactoService.detalle(5) } returns detalle
+        every { oportunidadService.oportunidadesPorContacto(5) } returns emptyList()
+        every { tareaService.actividadesPorContacto(5, any()) } returns emptyList()
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
+
+        mockMvc.get("/api/v1/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(5) }
+            jsonPath("$.data.oportunidades") { isEmpty() }
+            jsonPath("$.data.actividades") { isEmpty() }
         }
     }
 }

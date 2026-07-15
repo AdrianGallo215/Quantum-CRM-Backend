@@ -15,12 +15,14 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import pe.quantum.crm.domain.contactos.dto.ActualizarContactoRequest
 import pe.quantum.crm.domain.contactos.dto.ActualizarVinculoRequest
+import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VincularContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VinculoDto
 import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.shared.ApiResponse
 import pe.quantum.crm.shared.security.UsuarioActualProvider
 
@@ -30,6 +32,7 @@ import pe.quantum.crm.shared.security.UsuarioActualProvider
 class ContactoController(
     private val contactoService: ContactoService,
     private val oportunidadService: OportunidadService,
+    private val tareaService: TareaService,
     private val usuarioProvider: UsuarioActualProvider,
 ) {
     @GetMapping
@@ -42,6 +45,20 @@ class ContactoController(
         val resultado = contactoService.buscar(q, idEmpresa, usuarioProvider.actual(), page, perPage, null, null)
         val conConteo = resultado.items.map { it.copy(oportunidadesCount = oportunidadService.countPorContacto(it.id)) }
         return ApiResponse.ok(conConteo, resultado.meta)
+    }
+
+    @GetMapping("/{id}")
+    fun detalle(
+        @PathVariable id: Long,
+    ): ApiResponse<ContactoDetalleDto> {
+        val usuario = usuarioProvider.actual()
+        val contacto = contactoService.detalle(id)
+        val completo =
+            contacto.copy(
+                oportunidades = oportunidadService.oportunidadesPorContacto(id),
+                actividades = tareaService.actividadesPorContacto(id, usuario),
+            )
+        return ApiResponse.ok(completo)
     }
 
     @PostMapping
