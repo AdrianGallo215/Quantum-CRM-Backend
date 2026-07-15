@@ -366,6 +366,9 @@ class OportunidadServiceImpl(
         oportunidadRepository.existsByIdEmpresaAndEstadoIn(idEmpresa, EstadoCarteraService.ESTADOS_ACTIVOS)
 
     @Transactional(readOnly = true)
+    override fun countPorContacto(idContacto: Long): Int = contactoOportunidadRepository.countByIdIdContacto(idContacto).toInt()
+
+    @Transactional(readOnly = true)
     override fun vinculoVisible(
         id: Long,
         usuario: UsuarioActual,

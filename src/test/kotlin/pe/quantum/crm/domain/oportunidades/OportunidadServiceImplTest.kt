@@ -240,4 +240,13 @@ class OportunidadServiceImplTest {
             )
         }
     }
+
+    @Test
+    fun `countPorContacto devuelve la cantidad de vinculos del contacto`() {
+        every { contactoOportunidadRepository.countByIdIdContacto(5) } returns 3L
+
+        val resultado = service.countPorContacto(5)
+
+        assertThat(resultado).isEqualTo(3)
+    }
 }

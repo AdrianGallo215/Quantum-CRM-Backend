@@ -31,4 +31,8 @@ interface OportunidadEstadoLogRepository : JpaRepository<OportunidadEstadoLog, L
 
 interface OportunidadContactoRepository : JpaRepository<OportunidadContacto, OportunidadContactoId> {
     fun findByIdIdOportunidad(idOportunidad: Long): List<OportunidadContacto>
+
+    fun findByIdIdContacto(idContacto: Long): List<OportunidadContacto>
+
+    fun countByIdIdContacto(idContacto: Long): Long
 }

@@ -73,6 +73,9 @@ interface OportunidadService {
     /** Para tareas de prospeccion: ¿la empresa tiene oportunidades activas? */
     fun tieneOportunidadesActivas(idEmpresa: Long): Boolean
 
+    /** Cantidad de oportunidades distintas vinculadas a un contacto (listado de contactos). */
+    fun countPorContacto(idContacto: Long): Int
+
     /** Oportunidad visible para el usuario (IDOR → 404). Para eventos/tareas. */
     fun vinculoVisible(
         id: Long,
