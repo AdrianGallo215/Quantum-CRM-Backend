@@ -6,10 +6,12 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.contactos.dto.ActualizarContactoRequest
 import pe.quantum.crm.domain.contactos.dto.ActualizarVinculoRequest
+import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
+import pe.quantum.crm.domain.contactos.dto.EmpresaDeContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.EmpresaDeContactoDto
 import pe.quantum.crm.domain.contactos.dto.VincularContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VinculoDto
@@ -112,6 +114,37 @@ class ContactoServiceImpl(
             throw ContactoVinculadoException()
         }
         contactoRepository.delete(contacto)
+    }
+
+    @Transactional(readOnly = true)
+    override fun detalle(id: Long): ContactoDetalleDto {
+        val contacto = entidad(id)
+        val vinculos = empresaContactoRepository.findByIdIdContacto(id)
+        val empresas = empresaService.resumenPorIds(vinculos.map { it.id.idEmpresa })
+        val segmentos = empresaService.segmentosPorIds(vinculos.map { it.id.idEmpresa })
+        return ContactoDetalleDto(
+            id = requireNotNull(contacto.id),
+            nombres = contacto.nombres,
+            apellidos = contacto.apellidos,
+            email1 = contacto.email1,
+            email2 = contacto.email2,
+            tlf1 = contacto.tlf1,
+            tlf2 = contacto.tlf2,
+            notas = contacto.notas,
+            empresas =
+                vinculos.mapNotNull { vinculo ->
+                    empresas[vinculo.id.idEmpresa]?.let {
+                        EmpresaDeContactoDetalleDto(
+                            id = it.id,
+                            razonSocial = it.razonSocial,
+                            cargo = vinculo.cargo,
+                            tomaDecision = vinculo.tomaDecision,
+                            esPrincipal = vinculo.esPrincipal,
+                            segmentos = segmentos[vinculo.id.idEmpresa].orEmpty(),
+                        )
+                    }
+                },
+        )
     }
 
     @Transactional

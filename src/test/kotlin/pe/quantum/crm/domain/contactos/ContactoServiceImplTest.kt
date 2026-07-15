@@ -3,12 +3,15 @@ package pe.quantum.crm.domain.contactos
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import pe.quantum.crm.domain.empresas.EmpresaService
+import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
+import java.util.Optional
 
 class ContactoServiceImplTest {
     private val contactoRepository = mockk<ContactoRepository>()
@@ -62,5 +65,40 @@ class ContactoServiceImplTest {
         val resultado = service.buscar(q = null, idEmpresa = 10, usuario = usuario, page = null, perPage = null, sort = null, dir = null)
 
         assertThat(resultado.items).hasSize(1)
+    }
+
+    @Test
+    fun `detalle arma empresas con cargo, toma_decision, es_principal y segmentos`() {
+        val entidad = contacto()
+        every { contactoRepository.findById(1) } returns Optional.of(entidad)
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns
+            listOf(
+                EmpresaContacto(
+                    id = EmpresaContactoId(idEmpresa = 3, idContacto = 1),
+                    cargo = "Gerente",
+                    tomaDecision = true,
+                    esPrincipal = true,
+                ),
+            )
+        every { empresaService.resumenPorIds(listOf(3L)) } returns
+            mapOf(3L to EmpresaResumen(id = 3, razonSocial = "Transp. Sta. Anita S.A.", distrito = null))
+        every { empresaService.segmentosPorIds(listOf(3L)) } returns mapOf(3L to listOf("interprovincial"))
+
+        val resultado = service.detalle(1)
+
+        assertThat(resultado.empresas).hasSize(1)
+        val empresa = resultado.empresas.first()
+        assertThat(empresa.cargo).isEqualTo("Gerente")
+        assertThat(empresa.tomaDecision).isTrue()
+        assertThat(empresa.esPrincipal).isTrue()
+        assertThat(empresa.segmentos).containsExactly("interprovincial")
+    }
+
+    @Test
+    fun `detalle de un contacto inexistente lanza NoEncontradoException`() {
+        every { contactoRepository.findById(99) } returns Optional.empty()
+
+        assertThatThrownBy { service.detalle(99) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
     }
 }

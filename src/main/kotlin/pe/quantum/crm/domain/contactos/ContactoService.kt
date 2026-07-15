@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.contactos
 
 import pe.quantum.crm.domain.contactos.dto.ActualizarContactoRequest
 import pe.quantum.crm.domain.contactos.dto.ActualizarVinculoRequest
+import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
@@ -38,6 +39,9 @@ interface ContactoService {
 
     /** Elimina solo si no esta vinculado a ninguna empresa (reglas §11.2). */
     fun eliminar(id: Long)
+
+    /** Detalle del contacto: empresas con segmentos. `oportunidades`/`actividades` los completa el controller. */
+    fun detalle(id: Long): ContactoDetalleDto
 
     fun vincular(
         idEmpresa: Long,

@@ -2,6 +2,8 @@ package pe.quantum.crm.domain.contactos.dto
 
 import jakarta.validation.constraints.NotBlank
 import pe.quantum.crm.domain.contactos.Contacto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
+import pe.quantum.crm.domain.tareas.dto.ActividadContactoDto
 
 /** Empresa vinculada dentro de la busqueda de contactos. */
 data class EmpresaDeContactoDto(
@@ -35,6 +37,31 @@ data class ContactoListaDto(
     val notas: String?,
     val empresas: List<EmpresaDeContactoDto>,
     val oportunidadesCount: Int = 0,
+)
+
+/** Empresa vinculada en el detalle de contacto, con datos completos de la relacion. */
+data class EmpresaDeContactoDetalleDto(
+    val id: Long,
+    val razonSocial: String,
+    val cargo: String?,
+    val tomaDecision: Boolean?,
+    val esPrincipal: Boolean,
+    val segmentos: List<String>,
+)
+
+/** Detalle de contacto (contrato_api.md §9): empresas, oportunidades y actividades (solo tareas por ahora). */
+data class ContactoDetalleDto(
+    val id: Long,
+    val nombres: String,
+    val apellidos: String,
+    val email1: String?,
+    val email2: String?,
+    val tlf1: String?,
+    val tlf2: String?,
+    val notas: String?,
+    val empresas: List<EmpresaDeContactoDetalleDto>,
+    val oportunidades: List<OportunidadResumenParaContacto> = emptyList(),
+    val actividades: List<ActividadContactoDto> = emptyList(),
 )
 
 /** Body de `POST /contactos`: crea el contacto y lo vincula a una empresa. */
