@@ -519,11 +519,11 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ## 9. Contactos
 
 ### GET /contactos
-> Busca contactos. Usado para vincular un contacto existente a una empresa.
+> Busca contactos. Usado para vincular un contacto existente a una empresa, y para la vista de listado de Contactos.
 
 **Roles:** todos
 
-**Query params:** `q` (nombre o teléfono), `id_empresa` (contactos de una empresa específica)
+**Query params:** `q` (nombre o teléfono), `id_empresa` (contactos de una empresa específica), `page`, `per_page`
 
 **Respuesta 200:**
 ```json
@@ -535,13 +535,53 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "apellidos": "Rodríguez",
       "email_1": null,
       "tlf_1": "964415122",
+      "oportunidades_count": 3,
       "empresas": [
         { "id": 3, "razon_social": "Transp. Negociaciones Sta. Anita S.A.", "cargo": "Gerente" }
       ]
     }
-  ]
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
 }
 ```
+
+---
+
+### GET /contactos/:id
+> Detalle completo del contacto: empresas vinculadas, oportunidades vinculadas y su línea de tiempo de actividades.
+
+**Roles:** todos
+
+**Respuesta 200:**
+```json
+{
+  "data": {
+    "id": 5, "nombres": "Hugo", "apellidos": "Rodríguez",
+    "email_1": "h@x.com", "email_2": null, "tlf_1": "964415122", "tlf_2": null, "notas": null,
+    "empresas": [
+      { "id": 3, "razon_social": "Transp. Sta. Anita S.A.", "cargo": "Gerente",
+        "toma_decision": true, "es_principal": true, "segmentos": ["interprovincial"] }
+    ],
+    "oportunidades": [
+      { "id": 12, "empresa": { "id": 3, "razon_social": "Transp. Sta. Anita S.A." },
+        "modelo": { "id": 2, "codigo": "KinWin K9" },
+        "estado": "evaluacion_calidda", "monto_total": "450000.00",
+        "fecha_cierre_estimado": "2024-12-15", "rol_en_oportunidad": "Contacto Principal" }
+    ],
+    "actividades": [
+      { "id": 88, "tipo": "tarea", "titulo": "llamada",
+        "descripcion": "Acordar términos...", "fecha": "2024-10-24T10:30:00", "estado": "pendiente" }
+    ]
+  }
+}
+```
+
+**Notas:**
+- `actividades[]` incluye solo tareas por ahora. `eventos` no tiene columna `id_contacto` en el schema actual y no existe una entidad de notas — se agregarán cuando el schema lo soporte.
+- `oportunidades[].modelo.codigo` usa el mismo campo que el resto del contrato (§10), no `nombre`.
+- `actividades[].titulo` es el valor de `tipo_accion` (`llamada`, `correo`, `reunion`, `whatsapp`, `otro`) — `Tarea` no tiene un campo de título libre.
+- `actividades[]` respeta la visibilidad de tareas: vendedor/analista solo ven las tareas asignadas a sí mismos.
+- Errores: `404 NO_ENCONTRADO` si el contacto no existe.
 
 ---
 
