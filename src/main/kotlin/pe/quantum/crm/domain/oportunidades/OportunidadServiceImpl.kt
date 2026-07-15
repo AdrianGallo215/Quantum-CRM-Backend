@@ -27,6 +27,7 @@ import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
@@ -367,6 +368,34 @@ class OportunidadServiceImpl(
 
     @Transactional(readOnly = true)
     override fun countPorContacto(idContacto: Long): Int = contactoOportunidadRepository.countByIdIdContacto(idContacto).toInt()
+
+    @Transactional(readOnly = true)
+    override fun oportunidadesPorContacto(idContacto: Long): List<OportunidadResumenParaContacto> {
+        val vinculos = contactoOportunidadRepository.findByIdIdContacto(idContacto)
+        if (vinculos.isEmpty()) {
+            return emptyList()
+        }
+        val idsOportunidad = vinculos.map { it.id.idOportunidad }
+        val oportunidades = oportunidadRepository.findAllById(idsOportunidad).associateBy { requireNotNull(it.id) }
+        val empresas = empresaService.resumenPorIds(oportunidades.values.map { it.idEmpresa })
+        val modelos = modeloService.resumenPorIds(oportunidades.values.mapNotNull { it.idModelo })
+        return vinculos.mapNotNull { vinculo ->
+            oportunidades[vinculo.id.idOportunidad]?.let { op ->
+                OportunidadResumenParaContacto(
+                    id = requireNotNull(op.id),
+                    empresa = empresas[op.idEmpresa],
+                    modelo =
+                        op.idModelo?.let { modelos[it] }?.let {
+                            ModeloEnOportunidadDto(id = it.id, codigo = it.codigo, precioBase = it.precioBase?.toPlainString())
+                        },
+                    estado = op.estado.name,
+                    montoTotal = op.montoTotal?.toPlainString(),
+                    fechaCierreEstimado = op.fechaCierreEstimado,
+                    rolEnOportunidad = vinculo.rolEnOportunidad,
+                )
+            }
+        }
+    }
 
     @Transactional(readOnly = true)
     override fun vinculoVisible(

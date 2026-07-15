@@ -249,4 +249,37 @@ class OportunidadServiceImplTest {
 
         assertThat(resultado).isEqualTo(3)
     }
+
+    @Test
+    fun `oportunidadesPorContacto mapea empresa, modelo, monto y rol`() {
+        val vinculo =
+            OportunidadContacto(
+                id = OportunidadContactoId(idOportunidad = 100, idContacto = 5),
+                rolEnOportunidad = "Contacto Principal",
+            )
+        every { contactoOportunidadRepository.findByIdIdContacto(5) } returns listOf(vinculo)
+        every { oportunidadRepository.findAllById(listOf(100L)) } returns listOf(oportunidad(id = 100))
+        every { empresaService.resumenPorIds(listOf(10L)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Transp. Sta. Anita S.A.", distrito = null))
+        every { modeloService.resumenPorIds(listOf(1L)) } returns mapOf(1L to busX())
+
+        val resultado = service.oportunidadesPorContacto(5)
+
+        assertThat(resultado).hasSize(1)
+        val dto = resultado.first()
+        assertThat(dto.id).isEqualTo(100)
+        assertThat(dto.empresa?.razonSocial).isEqualTo("Transp. Sta. Anita S.A.")
+        assertThat(dto.modelo?.codigo).isEqualTo("BUS-X")
+        assertThat(dto.montoTotal).isEqualTo("10")
+        assertThat(dto.rolEnOportunidad).isEqualTo("Contacto Principal")
+    }
+
+    @Test
+    fun `oportunidadesPorContacto devuelve vacio si no hay vinculos`() {
+        every { contactoOportunidadRepository.findByIdIdContacto(5) } returns emptyList()
+
+        val resultado = service.oportunidadesPorContacto(5)
+
+        assertThat(resultado).isEmpty()
+    }
 }
