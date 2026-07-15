@@ -99,4 +99,14 @@ class EmpresaServiceImplTest {
 
         assertThat(evento.captured).isEqualTo(VendedorEmpresaReasignadoEvent(idEmpresa = 1, idVendedorNuevo = 2, idActor = 9))
     }
+
+    @Test
+    fun `segmentosPorIds devuelve los segmentos de cada empresa como String`() {
+        val entidad = empresa().apply { segmentos = mutableSetOf(pe.quantum.crm.shared.enums.Segmento.interprovincial) }
+        every { empresaRepository.findAllById(setOf(1L)) } returns listOf(entidad)
+
+        val resultado = service.segmentosPorIds(listOf(1L))
+
+        assertThat(resultado[1L]).containsExactly("interprovincial")
+    }
 }

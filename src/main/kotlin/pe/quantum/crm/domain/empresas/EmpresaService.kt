@@ -83,6 +83,9 @@ interface EmpresaService {
 
     fun resumenPorIds(ids: Collection<Long>): Map<Long, EmpresaResumen>
 
+    /** Segmentos por empresa (para el detalle de contacto: empresas[].segmentos). */
+    fun segmentosPorIds(ids: Collection<Long>): Map<Long, List<String>>
+
     /** Sin chequeo de visibilidad (job de sistema). Null si la empresa no existe o no tiene vendedor. */
     fun vendedorAsignado(id: Long): Long?
 }

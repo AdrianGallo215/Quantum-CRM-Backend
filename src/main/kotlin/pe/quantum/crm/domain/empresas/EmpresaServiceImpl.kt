@@ -256,6 +256,10 @@ class EmpresaServiceImpl(
         empresaRepository.findAllById(ids.toSet()).associate { requireNotNull(it.id) to it.toResumen() }
 
     @Transactional(readOnly = true)
+    override fun segmentosPorIds(ids: Collection<Long>): Map<Long, List<String>> =
+        empresaRepository.findAllById(ids.toSet()).associate { requireNotNull(it.id) to it.segmentos.map { s -> s.name }.sorted() }
+
+    @Transactional(readOnly = true)
     override fun vendedorAsignado(id: Long): Long? = empresaRepository.findById(id).map { it.idVendedor }.orElse(null)
 
     // ── privados ───────────────────────────────────────────────
