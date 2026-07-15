@@ -12,6 +12,7 @@ import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.domain.tareas.dto.ActividadContactoDto
 import pe.quantum.crm.domain.tareas.dto.ActualizarTareaRequest
 import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
 import pe.quantum.crm.domain.tareas.dto.TareaDto
@@ -172,6 +173,24 @@ class TareaServiceImpl(
         tarea.updatedAt = LocalDateTime.now()
         tarea.updatedBy = usuario.id
         return toDtos(listOf(tareaRepository.save(tarea))).first()
+    }
+
+    @Transactional(readOnly = true)
+    override fun actividadesPorContacto(
+        idContacto: Long,
+        usuario: UsuarioActual,
+    ): List<ActividadContactoDto> {
+        val tareas = tareaRepository.findByIdContactoOrdenado(idContacto)
+        val visibles = if (usuario.visibilidadRestringida) tareas.filter { it.idAsignado == usuario.id } else tareas
+        return visibles.map {
+            ActividadContactoDto(
+                id = requireNotNull(it.id),
+                titulo = it.tipoAccion.name,
+                descripcion = it.descripcion,
+                fecha = it.fechaEjecucion ?: it.createdAt,
+                estado = it.estadoAccion.name,
+            )
+        }
     }
 
     @Transactional(readOnly = true)

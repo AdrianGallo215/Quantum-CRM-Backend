@@ -103,4 +103,52 @@ class TareaServiceImplTest {
         assertThat(resultado).hasSize(1)
         assertThat(resultado.first().idAsignado).isEqualTo(3)
     }
+
+    @Test
+    fun `actividadesPorContacto mapea tipo_accion como titulo y ordena por fecha`() {
+        val tarea1 =
+            Tarea(
+                id = 1, idEmpresa = 10, idContacto = 5, idAsignado = 3,
+                tipoAccion = TipoAccion.llamada, estadoAccion = EstadoAccion.pendiente,
+                descripcion = "Llamar para seguimiento",
+                fechaEjecucion = java.time.LocalDateTime.of(2026, 7, 20, 10, 0),
+                createdAt = java.time.LocalDateTime.of(2026, 7, 1, 9, 0), createdBy = 9,
+                updatedAt = java.time.LocalDateTime.of(2026, 7, 1, 9, 0), updatedBy = 9,
+            )
+        every { tareaRepository.findByIdContactoOrdenado(5) } returns listOf(tarea1)
+
+        val resultado = service.actividadesPorContacto(5, UsuarioActual(id = 9, rol = "admin"))
+
+        assertThat(resultado).hasSize(1)
+        val actividad = resultado.first()
+        assertThat(actividad.tipo).isEqualTo("tarea")
+        assertThat(actividad.titulo).isEqualTo("llamada")
+        assertThat(actividad.descripcion).isEqualTo("Llamar para seguimiento")
+        assertThat(actividad.estado).isEqualTo("pendiente")
+        assertThat(actividad.fecha).isEqualTo(java.time.LocalDateTime.of(2026, 7, 20, 10, 0))
+    }
+
+    @Test
+    fun `actividadesPorContacto oculta tareas asignadas a otros cuando la visibilidad es restringida`() {
+        val propia =
+            Tarea(
+                id = 1, idEmpresa = 10, idContacto = 5, idAsignado = 9,
+                tipoAccion = TipoAccion.llamada, estadoAccion = EstadoAccion.pendiente,
+                createdAt = java.time.LocalDateTime.now(), createdBy = 9,
+                updatedAt = java.time.LocalDateTime.now(), updatedBy = 9,
+            )
+        val ajena =
+            Tarea(
+                id = 2, idEmpresa = 10, idContacto = 5, idAsignado = 3,
+                tipoAccion = TipoAccion.correo, estadoAccion = EstadoAccion.pendiente,
+                createdAt = java.time.LocalDateTime.now(), createdBy = 3,
+                updatedAt = java.time.LocalDateTime.now(), updatedBy = 3,
+            )
+        every { tareaRepository.findByIdContactoOrdenado(5) } returns listOf(propia, ajena)
+
+        val resultado = service.actividadesPorContacto(5, UsuarioActual(id = 9, rol = "vendedor"))
+
+        assertThat(resultado).hasSize(1)
+        assertThat(resultado.first().id).isEqualTo(1)
+    }
 }

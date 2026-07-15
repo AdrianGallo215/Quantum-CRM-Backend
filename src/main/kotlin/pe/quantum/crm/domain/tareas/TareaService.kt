@@ -1,5 +1,6 @@
 package pe.quantum.crm.domain.tareas
 
+import pe.quantum.crm.domain.tareas.dto.ActividadContactoDto
 import pe.quantum.crm.domain.tareas.dto.ActualizarTareaRequest
 import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
 import pe.quantum.crm.domain.tareas.dto.TareaDto
@@ -49,4 +50,10 @@ interface TareaService {
 
     /** Para el job de recordatorios (notificaciones): tareas pendientes, asignadas, con fecha. */
     fun pendientesParaRecordatorio(): List<TareaRecordatorioProyeccion>
+
+    /** Tareas de un contacto como linea de tiempo (detalle de contacto, §9). vendedor/analista solo ven las suyas. */
+    fun actividadesPorContacto(
+        idContacto: Long,
+        usuario: UsuarioActual,
+    ): List<ActividadContactoDto>
 }
