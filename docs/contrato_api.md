@@ -25,6 +25,7 @@
 17. [Inicio](#17-inicio)
 18. [Reportes](#18-reportes)
 19. [Notificaciones](#19-notificaciones)
+20. [Solicitudes](#20-solicitudes)
 
 ---
 
@@ -98,6 +99,11 @@ En caso de error, `data` es `null` y `error` contiene:
 | `CONTACTO_VINCULADO` | 409 | No se puede eliminar un contacto vinculado a una empresa |
 | `MONTO_NO_EDITABLE` | 400 | Se intentó enviar `monto_total` en el body |
 | `VALIDACION` | 400 | Error genérico de validación de campos |
+| `APROBACION_REQUERIDA` | 422 | El descuento supera el límite del rol; requiere una solicitud aprobada |
+| `SOLICITUD_DUPLICADA` | 409 | Ya existe una solicitud pendiente del mismo tipo sobre esa entidad |
+| `SOLICITUD_YA_RESUELTA` | 409 | Otro aprobador ya resolvió la solicitud |
+| `SOLICITUD_NO_APLICABLE` | 409 | La entidad cambió y el efecto de la solicitud ya no aplica |
+| `CARTERA_MAESTRA_CON_OPORTUNIDADES` | 409 | No se puede reservar una empresa con oportunidades activas |
 
 ---
 
@@ -118,19 +124,22 @@ Todos los endpoints de listado aceptan:
 
 La visibilidad de datos varía según el rol del usuario autenticado. El backend aplica estos filtros automáticamente — el frontend no puede sobreescribirlos.
 
-| Recurso | admin | gerente | jdv | vendedor | analista |
+| Recurso | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo asignadas |
 | Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo propias |
 | Ver todas las tareas | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Reasignar empresa (cascada automática a sus oportunidades activas) | ✓ | ✓ | ✓ | — | — |
+| Reasignar empresa directo (cascada automática a sus oportunidades activas) | ✓ | ✓ | — (vía solicitud) | — | — |
+| Ver / gestionar Cartera Maestra | ✓ | ✓ | — | — | — |
 | Validar paso a Facturado | ✓ | ✓ | — | — | ✓ |
 | Crear empleado | ✓ | — | — | — | — |
 | Modificar catálogo de eventos | ✓ | — | — | — | — |
 | Modificar financiadoras | ✓ | ✓ | — | — | — |
 | Modificar modelos | ✓ | ✓ | — | — | — |
 
-`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP.
+`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
+
+**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §19): `vendedor`/`analista` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite.
 
 ---
 
@@ -280,9 +289,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 |---|---|---|
 | `q` | string | Búsqueda por razón social o RUC |
 | `estado_cartera` | enum | Filtrar por estado de cartera |
-| `id_vendedor` | long | Filtrar por vendedor (solo admin/gerente/jdv) |
+| `id_vendedor` | long | Filtrar por vendedor (solo admin/gerencia/jdv) |
 | `segmento` | string | Filtrar por segmento |
 | `distrito` | string | Filtrar por distrito |
+| `cartera_maestra` | bool | Solo admin/gerencia: filtra por pertenencia a la Cartera Maestra. Ignorado para el resto de roles (siempre excluidas) |
 
 **Respuesta 200:**
 ```json
@@ -299,7 +309,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "id_vendedor": 1,
       "vendedor": { "id": 1, "nombres": "Aldo", "apellidos": "Martínez" },
       "segmentos": ["urbano"],
-      "contactos_count": 1
+      "contactos_count": 1,
+      "en_cartera_maestra": false
     }
   ],
   "meta": { "page": 1, "per_page": 20, "total": 10, "total_pages": 1 }
@@ -351,6 +362,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
         "tlf_1": "964415122"
       }
     ],
+    "en_cartera_maestra": false,
     "created_at": "2026-05-01T10:00:00Z",
     "created_by": 1
   }
@@ -505,7 +517,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ### PATCH /empresas/:id/vendedor
 > Reasigna el vendedor de una empresa.
 
-**Roles:** `admin` `gerente` `jdv`
+**Roles:** `admin` `gerencia`
 
 **Body:** `{ "id_vendedor": 2 }`
 
@@ -513,6 +525,25 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 **Notas:**
 - Cascada automáticamente: todas las oportunidades activas de esta empresa cambian a `id_vendedor` en la misma operación (reglas_negocio.md §8.3). Las oportunidades cerradas (`facturado`, `cerrado`) no se ven afectadas.
+- `id_vendedor` debe ser un empleado activo con rol `vendedor` o `jdv`; si no, `400 VALIDACION`.
+- El `jdv` ya no reasigna directo: recibe `403 PERMISO_INSUFICIENTE` y debe enviar una solicitud (§19) que resuelve `gerencia`.
+
+---
+
+### PATCH /empresas/:id/cartera-maestra
+> Mueve una empresa a la Cartera Maestra o la libera asignando vendedor.
+
+**Roles:** `admin` `gerencia`
+
+**Body (reservar):** `{ "en_cartera_maestra": true }`
+- Requiere que la empresa no tenga oportunidades activas → si no, `409 CARTERA_MAESTRA_CON_OPORTUNIDADES`.
+- Desasigna el vendedor (`id_vendedor` queda `null`).
+
+**Body (liberar):** `{ "en_cartera_maestra": false, "id_vendedor": 8 }`
+- `id_vendedor` obligatorio → si falta, `400 VALIDACION`.
+- Notifica `empresa_asignada` al vendedor destino. A partir de este momento la empresa es visible para el `jdv` y el vendedor asignado.
+
+**Respuesta 200:** `{ "data": { "en_cartera_maestra": false, "id_vendedor": 8 } }`
 
 ---
 
@@ -773,7 +804,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
   "fecha_cierre_estimado": "2026-07-10",
   "contactos": [
     { "id_contacto": 5, "rol_en_oportunidad": "Contacto Principal" }
-  ]
+  ],
+  "id_vendedor": null
 }
 ```
 
@@ -782,8 +814,9 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 **Notas:**
 - `monto_total` NO se acepta en el body. Si viene, se ignora y se calcula.
 - `precio_unitario` se inicializa con `modelos.precio_base` del modelo seleccionado.
-- `id_vendedor` se toma de `empresas.id_vendedor` en el momento de la creación.
+- `id_vendedor` se toma de `empresas.id_vendedor` en el momento de la creación. **Excepción:** si la empresa no tiene vendedor asignado (solo la ven roles supervisores), quien crea con `gerencia`/`admin` DEBE enviar `id_vendedor` en el body — la empresa queda asignada a ese vendedor en la misma operación. Si falta → `400 VALIDACION` (`field: "id_vendedor"`).
 - `id_financiadora` es opcional — si no viene, se usa la que tenga `es_default = true`.
+- Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: no se crea la oportunidad. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre la oportunidad ya creada.
 - Se inserta el primer registro en `oportunidad_estados_log`.
 - Se llama a `actualizarEstadoCartera` en la misma transacción.
 
@@ -799,6 +832,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 **Notas:**
 - `monto_total` NO se acepta. Si viene → `400 MONTO_NO_EDITABLE`.
 - `estado`, `id_empresa`, `id_vendedor` NO se aceptan en este endpoint.
+- Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el resto de campos puede reintentarse sin `dcto` o dentro del límite; el descuento mayor requiere una solicitud (§19).
 - Si cambia `id_modelo` y `precio_unitario` no fue editado previamente (igual al `precio_base` del modelo anterior), se actualiza automáticamente con el nuevo `precio_base`.
 - Si `precio_unitario` fue editado manualmente, el backend devuelve en la respuesta: `"advertencias": ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]`.
 - Recalcula y persiste `monto_total`.
@@ -1666,6 +1700,77 @@ Notifica a un usuario cuando ocurre una acción relacionada con él pero no acci
 **Roles:** todos
 
 **Respuesta 200:** `{ "data": { "leida": true } }`
+
+---
+
+## 20. Solicitudes
+
+Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una acción por encima de su permiso (hoy: descuentos sobre su límite y reasignación de clientes por el `jdv`), envían una Solicitud en vez de aplicar el cambio directo. El aprobador (`jdv` o `gerencia`, según el caso) la aprueba o deniega; `admin` puede resolver ambas bandejas. Ver `gerencia_solicitudes_modelo_datos.md` y `gerencia_contrato_frontend.md` para el detalle completo.
+
+### POST /solicitudes
+> Crea una solicitud de aprobación.
+
+**Roles:** `vendedor` `analista` `jdv` (según tipo; `gerencia`/`admin` no solicitan, ejecutan directo)
+
+**Body (descuento):**
+```json
+{
+  "tipo": "descuento",
+  "entidad_tipo": "oportunidad",
+  "entidad_id": 45,
+  "dcto_solicitado": "5.00",
+  "motivo": "Cliente frecuente, tercera compra del año"
+}
+```
+
+**Body (reasignación de cliente — solo `jdv`):**
+```json
+{
+  "tipo": "reasignacion_cliente",
+  "entidad_tipo": "empresa",
+  "entidad_id": 12,
+  "id_vendedor_nuevo": 8,
+  "motivo": "El vendedor actual sale de vacaciones largas"
+}
+```
+
+**Respuesta 201:** el objeto solicitud (`id`, `tipo`, `estado: "pendiente"`, `rol_aprobador`, `entidad_tipo`, `entidad_id`, `entidad_descripcion`, `dcto_solicitado`, `id_vendedor_nuevo`, `motivo`, `solicitante`, `created_at`). `rol_aprobador` lo deriva el backend (nunca se acepta en el body).
+
+**Errores:** `400 VALIDACION` (falta motivo, payload no corresponde al tipo, o el descuento está dentro del límite propio) · `403 PERMISO_INSUFICIENTE` (rol no puede solicitar ese tipo) · `404 NO_ENCONTRADO` (entidad no existe o no es visible) · `409 SOLICITUD_DUPLICADA` (ya hay una pendiente del mismo tipo sobre esa entidad).
+
+---
+
+### GET /solicitudes
+> Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista` solo las propias.
+
+**Query params:** `estado` (`pendiente|aprobada|denegada`), `tipo`, `mias=true` (fuerza "solo las que yo creé").
+
+---
+
+### GET /solicitudes/:id
+> Detalle. `404` si no es visible para el usuario (IDOR).
+
+---
+
+### PATCH /solicitudes/:id/aprobar
+> Aprueba y aplica el cambio de inmediato (misma transacción). Notifica al solicitante.
+
+**Roles:** el rol `rol_aprobador` de la solicitud, o `admin`.
+
+**Body:** vacío.
+
+**Errores:** `403 PERMISO_INSUFICIENTE` (no es el aprobador) · `409 SOLICITUD_YA_RESUELTA` · `409 SOLICITUD_NO_APLICABLE` (la entidad cambió y el efecto ya no aplica; el aprobador debe denegarla manualmente).
+
+---
+
+### PATCH /solicitudes/:id/denegar
+> Deniega. El motivo es obligatorio. Notifica al solicitante.
+
+**Roles:** el rol `rol_aprobador` de la solicitud, o `admin`.
+
+**Body:** `{ "motivo": "El margen de este modelo no soporta ese descuento" }`
+
+**Errores:** `400 VALIDACION` (falta motivo) · `409 SOLICITUD_YA_RESUELTA`.
 
 ---
 
