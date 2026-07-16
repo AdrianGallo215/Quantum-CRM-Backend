@@ -5,7 +5,13 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
+import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.shared.exception.AprobacionRequeridaException
+import java.math.BigDecimal
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
@@ -281,5 +287,29 @@ class OportunidadServiceImplTest {
         val resultado = service.oportunidadesPorContacto(5)
 
         assertThat(resultado).isEmpty()
+    }
+
+    @Test
+    fun `actualizar con dcto sobre el limite del rol lanza APROBACION_REQUERIDA sin guardar`() {
+        val vendedor = UsuarioActual(id = 5, rol = "vendedor")
+        val entidad = oportunidad(idVendedor = 5)
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+
+        assertThatThrownBy {
+            service.actualizar(100, ActualizarOportunidadRequest(dcto = BigDecimal("5.00")), vendedor)
+        }.isInstanceOf(AprobacionRequeridaException::class.java)
+
+        verify(exactly = 0) { oportunidadRepository.save(any()) }
+    }
+
+    @Test
+    fun `crear con dcto sobre el limite lanza APROBACION_REQUERIDA`() {
+        val vendedor = UsuarioActual(id = 5, rol = "vendedor")
+        every { empresaService.vinculoVisible(10, vendedor) } returns
+            EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = 5, estadoCartera = "prospeccion")
+
+        assertThatThrownBy {
+            service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, dcto = BigDecimal("4.00")), vendedor)
+        }.isInstanceOf(AprobacionRequeridaException::class.java)
     }
 }

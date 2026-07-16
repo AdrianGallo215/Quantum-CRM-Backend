@@ -31,14 +31,17 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.PoliticaDescuento
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
+import pe.quantum.crm.shared.exception.AprobacionRequeridaException
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.MontoNoEditableException
 import pe.quantum.crm.shared.exception.MotivoCierreRequeridoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.math.BigDecimal
 import java.time.LocalDateTime
 
 @Service
@@ -67,6 +70,7 @@ class OportunidadServiceImpl(
         usuario: UsuarioActual,
     ): OportunidadDto {
         val empresa = empresaService.vinculoVisible(request.idEmpresa, usuario)
+        validarLimiteDescuento(request.dcto, usuario)
         val modelo = modeloService.resumen(request.idModelo)
         val financiadora =
             request.idFinanciadora?.let { financiadoraService.porId(it) }
@@ -135,6 +139,7 @@ class OportunidadServiceImpl(
         if (request.montoTotal != null) {
             throw MontoNoEditableException()
         }
+        validarLimiteDescuento(request.dcto, usuario)
         val oportunidad = visible(id, usuario)
         val advertencias = mutableListOf<String>()
 
@@ -487,6 +492,19 @@ class OportunidadServiceImpl(
             EstadoOportunidad.facturado -> "Facturado"
             EstadoOportunidad.cerrado -> "Cerrado"
         }
+
+    /** Descuento sobre el limite del rol: 422, el cambio requiere solicitud (frontend §3.1). */
+    private fun validarLimiteDescuento(
+        dcto: BigDecimal?,
+        usuario: UsuarioActual,
+    ) {
+        if (PoliticaDescuento.excedeLimite(usuario.rol, dcto)) {
+            val limite = requireNotNull(PoliticaDescuento.limitePara(usuario.rol))
+            throw AprobacionRequeridaException(
+                "Un descuento de ${dcto!!.toPlainString()}% supera tu límite de ${limite.toPlainString()}%; requiere aprobación",
+            )
+        }
+    }
 
     private fun entidad(id: Long): Oportunidad =
         oportunidadRepository.findById(id).orElseThrow { NoEncontradoException("La oportunidad no existe") }
