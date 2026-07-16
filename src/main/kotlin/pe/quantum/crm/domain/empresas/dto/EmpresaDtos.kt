@@ -139,6 +139,16 @@ data class EmpresaFiltros(
     val carteraMaestra: Boolean? = null,
 )
 
+data class CarteraMaestraDto(
+    val enCarteraMaestra: Boolean,
+    val idVendedor: Long?,
+)
+
+data class CambiarCarteraMaestraRequest(
+    val enCarteraMaestra: Boolean? = null,
+    val idVendedor: Long? = null,
+)
+
 /** Datos minimos de una empresa para otros modulos (oportunidades, tareas...). */
 data class EmpresaVinculo(
     val id: Long,

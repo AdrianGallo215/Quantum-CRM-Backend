@@ -9,6 +9,7 @@ import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
+import pe.quantum.crm.domain.empresas.dto.CarteraMaestraDto
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
@@ -25,6 +26,7 @@ import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.Segmento
+import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
@@ -267,6 +269,54 @@ class EmpresaServiceImpl(
 
     @Transactional(readOnly = true)
     override fun vendedorAsignado(id: Long): Long? = empresaRepository.findById(id).map { it.idVendedor }.orElse(null)
+
+    @Transactional
+    override fun cambiarCarteraMaestra(
+        id: Long,
+        enCarteraMaestra: Boolean,
+        idVendedor: Long?,
+        usuario: UsuarioActual,
+    ): CarteraMaestraDto {
+        if (!usuario.puedeVerCarteraMaestra) {
+            throw PermisoInsuficienteException("La cartera maestra es exclusiva de gerencia")
+        }
+        val empresa = entidad(id)
+        if (enCarteraMaestra) {
+            // El estado derivado delata oportunidades activas sin acoplar este
+            // modulo al de oportunidades (seria una dependencia circular).
+            if (empresa.estadoCartera == EstadoCartera.oportunidad_activa) {
+                throw ConflictoException(
+                    "CARTERA_MAESTRA_CON_OPORTUNIDADES",
+                    "No se puede reservar una empresa con oportunidades activas",
+                )
+            }
+            empresa.enCarteraMaestra = true
+            empresa.idVendedor = null
+        } else {
+            val destino =
+                idVendedor ?: throw ValidacionException("id_vendedor es obligatorio al liberar", field = "id_vendedor")
+            if (!empleadoService.esAsignableComoVendedor(destino)) {
+                throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
+            }
+            empresa.enCarteraMaestra = false
+            empresa.idVendedor = destino
+        }
+        empresa.updatedAt = LocalDateTime.now()
+        empresa.updatedBy = usuario.id
+        empresaRepository.save(empresa)
+        if (!enCarteraMaestra) {
+            val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
+            notificacionService.notificar(
+                destinatarios = setOf(requireNotNull(empresa.idVendedor)),
+                idActor = usuario.id,
+                tipo = TipoNotificacion.empresa_asignada,
+                mensaje = "${actor?.nombreCompleto()} te asignó la empresa ${empresa.razonSocial} desde la cartera maestra",
+                entidadTipo = EntidadNotificacion.empresa,
+                entidadId = id,
+            )
+        }
+        return CarteraMaestraDto(enCarteraMaestra = empresa.enCarteraMaestra, idVendedor = empresa.idVendedor)
+    }
 
     // ── privados ───────────────────────────────────────────────
 

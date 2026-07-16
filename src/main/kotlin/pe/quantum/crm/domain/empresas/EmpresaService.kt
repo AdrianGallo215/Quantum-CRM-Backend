@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.empresas
 
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
+import pe.quantum.crm.domain.empresas.dto.CarteraMaestraDto
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
@@ -89,4 +90,16 @@ interface EmpresaService {
 
     /** Sin chequeo de visibilidad (job de sistema). Null si la empresa no existe o no tiene vendedor. */
     fun vendedorAsignado(id: Long): Long?
+
+    /**
+     * Mueve una empresa a la Cartera Maestra (reserva de gerencia, la desasigna)
+     * o la libera asignando vendedor (obligatorio) y notificando `empresa_asignada`.
+     * Solo gerencia/admin (el controller ya lo restringe; el servicio re-verifica).
+     */
+    fun cambiarCarteraMaestra(
+        id: Long,
+        enCarteraMaestra: Boolean,
+        idVendedor: Long?,
+        usuario: UsuarioActual,
+    ): CarteraMaestraDto
 }

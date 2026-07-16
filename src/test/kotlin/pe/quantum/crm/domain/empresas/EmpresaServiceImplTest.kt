@@ -136,6 +136,62 @@ class EmpresaServiceImplTest {
     }
 
     @Test
+    fun `mover a cartera maestra desasigna vendedor y exige que no haya oportunidades activas`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val entidad = empresa().apply { idVendedor = 5 }
+        every { empresaRepository.findById(10) } returns Optional.of(entidad)
+        every { empresaRepository.save(any()) } answers { firstArg() }
+
+        val dto = service.cambiarCarteraMaestra(10, enCarteraMaestra = true, idVendedor = null, usuario = gerencia)
+
+        assertThat(dto.enCarteraMaestra).isTrue()
+        assertThat(entidad.idVendedor).isNull()
+    }
+
+    @Test
+    fun `mover a cartera maestra con oportunidad activa es 409`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val activa = empresa(estadoCartera = EstadoCartera.oportunidad_activa)
+        every { empresaRepository.findById(10) } returns Optional.of(activa)
+        assertThatThrownBy { service.cambiarCarteraMaestra(10, true, null, gerencia) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.ConflictoException::class.java)
+    }
+
+    @Test
+    fun `liberar exige id_vendedor, asigna y notifica empresa_asignada`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val reservada = empresa().apply { enCarteraMaestra = true }
+        every { empresaRepository.findById(10) } returns Optional.of(reservada)
+        every { empleadoService.esAsignableComoVendedor(8) } returns true
+        every { empresaRepository.save(any()) } answers { firstArg() }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val dto = service.cambiarCarteraMaestra(10, enCarteraMaestra = false, idVendedor = 8, usuario = gerencia)
+
+        assertThat(dto.enCarteraMaestra).isFalse()
+        assertThat(dto.idVendedor).isEqualTo(8)
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(8L),
+                idActor = 1,
+                tipo = TipoNotificacion.empresa_asignada,
+                mensaje = any(),
+                entidadTipo = EntidadNotificacion.empresa,
+                entidadId = 10,
+            )
+        }
+    }
+
+    @Test
+    fun `liberar sin id_vendedor es VALIDACION`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val reservada = empresa().apply { enCarteraMaestra = true }
+        every { empresaRepository.findById(10) } returns Optional.of(reservada)
+        assertThatThrownBy { service.cambiarCarteraMaestra(10, false, null, gerencia) }
+            .isInstanceOf(ValidacionException::class.java)
+    }
+
+    @Test
     fun `segmentosPorIds devuelve los segmentos de cada empresa como String`() {
         val entidad = empresa().apply { segmentos = mutableSetOf(pe.quantum.crm.shared.enums.Segmento.interprovincial) }
         every { empresaRepository.findAllById(setOf(1L)) } returns listOf(entidad)

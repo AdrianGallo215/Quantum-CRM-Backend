@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
+import pe.quantum.crm.domain.empresas.dto.CambiarCarteraMaestraRequest
 import pe.quantum.crm.domain.empresas.dto.CambiarEstadoCarteraRequest
+import pe.quantum.crm.domain.empresas.dto.CarteraMaestraDto
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
@@ -24,6 +26,7 @@ import pe.quantum.crm.domain.empresas.dto.ReasignarVendedorRequest
 import pe.quantum.crm.domain.empresas.dto.RucCheckDto
 import pe.quantum.crm.shared.ApiResponse
 import pe.quantum.crm.shared.enums.Segmento
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActualProvider
 
 /** Endpoints de empresas (contrato_api.md §8). */
@@ -112,5 +115,19 @@ class EmpresaController(
     ): ApiResponse<Map<String, Long>> {
         val idVendedor = empresaService.reasignarVendedor(id, request.idVendedor, usuarioProvider.actual())
         return ApiResponse.ok(mapOf("id_vendedor" to idVendedor))
+    }
+
+    @PatchMapping("/{id}/cartera-maestra")
+    @PreAuthorize("hasAnyRole('admin', 'gerencia')")
+    fun cambiarCarteraMaestra(
+        @PathVariable id: Long,
+        @RequestBody request: CambiarCarteraMaestraRequest,
+    ): ApiResponse<CarteraMaestraDto> {
+        val enCarteraMaestra =
+            request.enCarteraMaestra
+                ?: throw ValidacionException("en_cartera_maestra es obligatorio", field = "en_cartera_maestra")
+        return ApiResponse.ok(
+            empresaService.cambiarCarteraMaestra(id, enCarteraMaestra, request.idVendedor, usuarioProvider.actual()),
+        )
     }
 }
