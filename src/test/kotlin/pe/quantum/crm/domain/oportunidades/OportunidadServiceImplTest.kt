@@ -7,12 +7,6 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
-import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
-import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
-import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
-import pe.quantum.crm.shared.exception.AprobacionRequeridaException
-import pe.quantum.crm.shared.exception.ValidacionException
-import java.math.BigDecimal
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
@@ -20,13 +14,19 @@ import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.VendedorEmpresaReasignadoEvent
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
+import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
+import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.shared.enums.EstadoCartera
+import pe.quantum.crm.shared.exception.AprobacionRequeridaException
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
 

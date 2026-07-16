@@ -18,6 +18,7 @@ interface SolicitudService {
     ): SolicitudDto
 
     /** Visibilidad: admin todo; gerencia su bandeja; jdv su bandeja + propias; resto solo propias. */
+    @Suppress("LongParameterList") // Paginacion + filtros del contrato (mismo patron que OportunidadService.listar).
     fun listar(
         filtros: SolicitudFiltros,
         usuario: UsuarioActual,

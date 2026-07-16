@@ -9,6 +9,7 @@ import java.math.BigDecimal
  * hasta 7%, gerencia/admin sin limite. Por encima del limite propio el cambio
  * requiere una solicitud aprobada.
  */
+@Suppress("MagicNumber") // 3% y 7% son los limites de negocio, no numeros arbitrarios.
 object PoliticaDescuento {
     val LIMITE_VENDEDOR: BigDecimal = BigDecimal(3)
     val LIMITE_JDV: BigDecimal = BigDecimal(7)
@@ -21,6 +22,7 @@ object PoliticaDescuento {
             else -> null
         }
 
+    @Suppress("ReturnCount") // Guard clauses de salida temprana; dividir la funcion no mejora la legibilidad.
     fun excedeLimite(
         rol: String,
         dcto: BigDecimal?,

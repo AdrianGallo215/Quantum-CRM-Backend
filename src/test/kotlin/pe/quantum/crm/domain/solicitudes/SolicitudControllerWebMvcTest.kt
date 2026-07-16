@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.solicitudes
 
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
@@ -12,7 +13,6 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
-import org.junit.jupiter.api.Test
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudDto
 import pe.quantum.crm.shared.Paginacion

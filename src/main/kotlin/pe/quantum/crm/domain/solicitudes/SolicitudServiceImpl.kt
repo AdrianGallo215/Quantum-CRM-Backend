@@ -29,6 +29,7 @@ import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 
 @Service
+@Suppress("TooManyFunctions") // Modulo de solicitudes: crear/listar/detalle/aprobar/denegar + privados de cada rama.
 class SolicitudServiceImpl(
     private val solicitudRepository: SolicitudRepository,
     private val oportunidadService: OportunidadService,
@@ -84,6 +85,7 @@ class SolicitudServiceImpl(
     )
 
     /** Descuento: solo sobre oportunidades visibles, y solo si excede el limite propio. */
+    @Suppress("ThrowsCount") // Guard clauses de validacion; dividir la funcion no mejora la legibilidad.
     private fun validarDescuento(
         request: CrearSolicitudRequest,
         usuario: UsuarioActual,
@@ -108,6 +110,7 @@ class SolicitudServiceImpl(
     }
 
     /** Reasignacion: solo la solicita el jdv y siempre la aprueba gerencia. */
+    @Suppress("ThrowsCount") // Guard clauses de validacion; dividir la funcion no mejora la legibilidad.
     private fun validarReasignacion(
         request: CrearSolicitudRequest,
         usuario: UsuarioActual,
@@ -282,6 +285,7 @@ class SolicitudServiceImpl(
     // ── privados de resolucion ─────────────────────────────────
 
     /** Lock pesimista + guardas: bandeja correcta y estado pendiente. */
+    @Suppress("ThrowsCount") // Guard clauses de validacion; dividir la funcion no mejora la legibilidad.
     private fun pendienteParaResolver(
         id: Long,
         usuario: UsuarioActual,
@@ -336,6 +340,7 @@ class SolicitudServiceImpl(
      * `empresa_asignada` incluidas. El actor es el aprobador (gerencia/admin), que
      * pasa el guard de `puedeReasignarDirecto`.
      */
+    @Suppress("SwallowedException") // Se traduce a SOLICITUD_NO_APLICABLE; el detalle original no aporta al usuario.
     private fun aplicarReasignacion(
         solicitud: Solicitud,
         usuario: UsuarioActual,

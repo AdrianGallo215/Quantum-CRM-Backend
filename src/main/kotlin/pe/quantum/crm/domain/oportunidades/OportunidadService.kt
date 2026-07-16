@@ -15,6 +15,7 @@ import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
 
 /** Interfaz publica del modulo oportunidades. */
+@Suppress("TooManyFunctions") // Nucleo del pipeline (B3.x), igual que su implementacion.
 interface OportunidadService {
     fun crear(
         request: CrearOportunidadRequest,
