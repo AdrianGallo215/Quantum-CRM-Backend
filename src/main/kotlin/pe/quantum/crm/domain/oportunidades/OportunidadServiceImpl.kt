@@ -41,6 +41,7 @@ import pe.quantum.crm.shared.exception.MontoNoEditableException
 import pe.quantum.crm.shared.exception.MotivoCierreRequeridoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.math.BigDecimal
 import java.time.LocalDateTime
@@ -72,6 +73,31 @@ class OportunidadServiceImpl(
     ): OportunidadDto {
         val empresa = empresaService.vinculoVisible(request.idEmpresa, usuario)
         validarLimiteDescuento(request.dcto, usuario)
+        // Snapshot del vendedor de la empresa (reglas §8.4). Una empresa sin vendedor
+        // solo la ven roles supervisores: quien crea DEBE asignar un vendedor real
+        // (gerencia/admin no pueden tener oportunidades propias). Se resuelve ANTES
+        // de tocar modelo/financiadora para fallar rapido sin efectos secundarios.
+        val idVendedorSnapshot =
+            empresa.idVendedor ?: run {
+                if (usuario.visibilidadRestringida) {
+                    // Inalcanzable en la practica (la empresa seria invisible), pero
+                    // el guard mantiene la invariante si la visibilidad cambia.
+                    usuario.id
+                } else {
+                    val destino =
+                        request.idVendedor
+                            ?: throw ValidacionException(
+                                "La empresa no tiene vendedor asignado; id_vendedor es obligatorio",
+                                field = "id_vendedor",
+                            )
+                    if (!empleadoService.esAsignableComoVendedor(destino)) {
+                        throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
+                    }
+                    // Misma transaccion: la empresa queda asignada y notificada.
+                    empresaService.reasignarVendedor(empresa.id, destino, usuario)
+                    destino
+                }
+            }
         val modelo = modeloService.resumen(request.idModelo)
         val financiadora =
             request.idFinanciadora?.let { financiadoraService.porId(it) }
@@ -82,8 +108,7 @@ class OportunidadServiceImpl(
             oportunidadRepository.save(
                 Oportunidad(
                     idEmpresa = empresa.id,
-                    // Snapshot del vendedor de la empresa (reglas §8.4).
-                    idVendedor = empresa.idVendedor ?: usuario.id,
+                    idVendedor = idVendedorSnapshot,
                     idFinanciadora = financiadora.id,
                     idModelo = modelo.id,
                     estado = EstadoOportunidad.evaluacion_calidda,

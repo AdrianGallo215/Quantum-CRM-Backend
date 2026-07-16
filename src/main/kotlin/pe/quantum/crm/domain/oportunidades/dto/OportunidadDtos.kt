@@ -73,6 +73,7 @@ data class CrearOportunidadRequest(
     val notas: String? = null,
     val fechaCierreEstimado: LocalDate? = null,
     val contactos: List<ContactoVinculoRequest>? = null,
+    val idVendedor: Long? = null,
 )
 
 data class ContactoVinculoRequest(

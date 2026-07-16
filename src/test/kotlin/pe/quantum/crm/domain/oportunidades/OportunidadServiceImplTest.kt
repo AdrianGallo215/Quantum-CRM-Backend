@@ -11,6 +11,7 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.shared.exception.AprobacionRequeridaException
+import pe.quantum.crm.shared.exception.ValidacionException
 import java.math.BigDecimal
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -311,6 +312,74 @@ class OportunidadServiceImplTest {
         assertThatThrownBy {
             service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, dcto = BigDecimal("4.00")), vendedor)
         }.isInstanceOf(AprobacionRequeridaException::class.java)
+    }
+
+    @Test
+    fun `gerencia crea oportunidad en empresa sin vendedor - exige id_vendedor y lo asigna a la empresa`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaService.vinculoVisible(10, gerencia) } returns
+            EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = null, estadoCartera = "prospeccion")
+        every { empleadoService.esAsignableComoVendedor(8) } returns true
+        every { empresaService.reasignarVendedor(10, 8, gerencia) } returns 8
+        every { modeloService.resumen(1) } returns busX()
+        every { financiadoraService.default() } returns calidda()
+        val guardada = slot<Oportunidad>()
+        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(200) }
+        every { logRepository.save(any()) } returns mockk()
+        every { estadoCarteraService.actualizar(10) } returns null
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "ABC", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(8)) } returns
+            mapOf(8L to EmpleadoResumen(id = 8, nombres = "Luis", apellidos = "Vera"))
+        every { financiadoraService.porIds(listOf(1)) } returns mapOf(1L to calidda())
+        every { modeloService.resumenPorIds(listOf(1)) } returns mapOf(1L to busX())
+        every { consultas.tareasPendientesPorOportunidad(listOf(200L)) } returns emptyMap()
+        every { consultas.eventosPendientesPorOportunidad(listOf(200L)) } returns emptyMap()
+        every { contactoOportunidadRepository.findByIdIdOportunidad(200L) } returns emptyList()
+        every { contactoService.resumenPorIds(emptyList()) } returns emptyMap()
+        every { logRepository.findFirstByIdOportunidadOrderByChangedAtDescIdDesc(200L) } returns null
+
+        val dto = service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, idVendedor = 8), gerencia)
+
+        assertThat(dto.idVendedor).isEqualTo(8)
+        verify { empresaService.reasignarVendedor(10, 8, gerencia) }
+    }
+
+    @Test
+    fun `gerencia crea oportunidad en empresa sin vendedor sin id_vendedor es VALIDACION`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaService.vinculoVisible(10, gerencia) } returns
+            EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = null, estadoCartera = "prospeccion")
+        assertThatThrownBy { service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1), gerencia) }
+            .isInstanceOf(ValidacionException::class.java)
+    }
+
+    @Test
+    fun `la oportunidad creada por gerencia en empresa con vendedor queda para ese vendedor, no para gerencia`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaService.vinculoVisible(10, gerencia) } returns
+            EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = 5, estadoCartera = "cliente")
+        every { modeloService.resumen(1) } returns busX()
+        every { financiadoraService.default() } returns calidda()
+        val guardada = slot<Oportunidad>()
+        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(201) }
+        every { logRepository.save(any()) } returns mockk()
+        every { estadoCarteraService.actualizar(10) } returns null
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "ABC", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(5)) } returns
+            mapOf(5L to EmpleadoResumen(id = 5, nombres = "Ana", apellidos = "Diaz"))
+        every { financiadoraService.porIds(listOf(1)) } returns mapOf(1L to calidda())
+        every { modeloService.resumenPorIds(listOf(1)) } returns mapOf(1L to busX())
+        every { consultas.tareasPendientesPorOportunidad(listOf(201L)) } returns emptyMap()
+        every { consultas.eventosPendientesPorOportunidad(listOf(201L)) } returns emptyMap()
+        every { contactoOportunidadRepository.findByIdIdOportunidad(201L) } returns emptyList()
+        every { contactoService.resumenPorIds(emptyList()) } returns emptyMap()
+        every { logRepository.findFirstByIdOportunidadOrderByChangedAtDescIdDesc(201L) } returns null
+
+        val dto = service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1), gerencia)
+
+        assertThat(dto.idVendedor).isEqualTo(5)
     }
 
     @Test
