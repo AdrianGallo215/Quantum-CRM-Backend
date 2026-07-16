@@ -1,5 +1,7 @@
 package pe.quantum.crm.domain.solicitudes
 
+import jakarta.persistence.criteria.Predicate
+import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -13,6 +15,7 @@ import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.solicitudes.dto.CrearSolicitudRequest
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudDto
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudFiltros
+import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.PoliticaDescuento
 import pe.quantum.crm.shared.enums.AprobadorSolicitud
@@ -20,6 +23,7 @@ import pe.quantum.crm.shared.enums.EntidadSolicitud
 import pe.quantum.crm.shared.enums.EstadoSolicitud
 import pe.quantum.crm.shared.enums.TipoSolicitud
 import pe.quantum.crm.shared.exception.ConflictoException
+import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
@@ -179,7 +183,7 @@ class SolicitudServiceImpl(
         }
     }
 
-    // listar/detalle: Task 6 · aprobar: Task 7-8 · denegar: Task 8
+    @Transactional(readOnly = true)
     override fun listar(
         filtros: SolicitudFiltros,
         usuario: UsuarioActual,
@@ -187,12 +191,72 @@ class SolicitudServiceImpl(
         perPage: Int?,
         sort: String?,
         dir: String?,
-    ): Paginado<SolicitudDto> = throw NotImplementedError("Task 6")
+    ): Paginado<SolicitudDto> {
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "createdAt")
+        val resultado = solicitudRepository.findAll(especificacion(filtros, usuario), pageRequest)
+        val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
+        return Paginado(toDto(resultado.content), meta)
+    }
 
+    @Transactional(readOnly = true)
     override fun detalle(
         id: Long,
         usuario: UsuarioActual,
-    ): SolicitudDto = throw NotImplementedError("Task 6")
+    ): SolicitudDto = toDto(listOf(visible(id, usuario))).first()
+
+    // ── privados de visibilidad ────────────────────────────────
+
+    /** IDOR: solicitud fuera del alcance del rol → 404, no 403. */
+    private fun visible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): Solicitud {
+        val solicitud =
+            solicitudRepository.findById(id).orElseThrow { NoEncontradoException("La solicitud no existe") }
+        val alcanzable =
+            when (usuario.rol) {
+                "admin" -> true
+                "gerencia" -> solicitud.rolAprobador == AprobadorSolicitud.gerencia
+                "jdv" -> solicitud.rolAprobador == AprobadorSolicitud.jdv || solicitud.idSolicitante == usuario.id
+                else -> solicitud.idSolicitante == usuario.id
+            }
+        if (!alcanzable) {
+            throw NoEncontradoException("La solicitud no existe")
+        }
+        return solicitud
+    }
+
+    private fun especificacion(
+        filtros: SolicitudFiltros,
+        usuario: UsuarioActual,
+    ): Specification<Solicitud> =
+        Specification { root, _, cb ->
+            val predicados = mutableListOf<Predicate>()
+            when {
+                filtros.mias || usuario.rol == "vendedor" || usuario.rol == "analista" ->
+                    predicados += cb.equal(root.get<Long>("idSolicitante"), usuario.id)
+                usuario.rol == "gerencia" ->
+                    predicados += cb.equal(root.get<AprobadorSolicitud>("rolAprobador"), AprobadorSolicitud.gerencia)
+                usuario.rol == "jdv" ->
+                    predicados +=
+                        cb.or(
+                            cb.equal(root.get<AprobadorSolicitud>("rolAprobador"), AprobadorSolicitud.jdv),
+                            cb.equal(root.get<Long>("idSolicitante"), usuario.id),
+                        )
+                // admin: sin predicado de alcance.
+            }
+            filtros.estado?.let { estado ->
+                runCatching { EstadoSolicitud.valueOf(estado) }.getOrNull()?.let {
+                    predicados += cb.equal(root.get<EstadoSolicitud>("estado"), it)
+                }
+            }
+            filtros.tipo?.let { tipo ->
+                runCatching { TipoSolicitud.valueOf(tipo) }.getOrNull()?.let {
+                    predicados += cb.equal(root.get<TipoSolicitud>("tipo"), it)
+                }
+            }
+            cb.and(*predicados.toTypedArray())
+        }
 
     override fun aprobar(
         id: Long,

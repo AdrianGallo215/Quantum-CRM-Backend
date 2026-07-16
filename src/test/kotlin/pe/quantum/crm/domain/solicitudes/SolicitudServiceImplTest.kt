@@ -161,4 +161,48 @@ class SolicitudServiceImplTest {
         assertThat(dto.rolAprobador).isEqualTo("gerencia")
         assertThat(dto.entidadDescripcion).contains("ABC S.A.")
     }
+
+    private fun solicitudDescuentoDe(idSolicitante: Long) =
+        Solicitud(
+            id = 9,
+            tipo = TipoSolicitud.descuento,
+            rolAprobador = pe.quantum.crm.shared.enums.AprobadorSolicitud.jdv,
+            idSolicitante = idSolicitante,
+            entidadTipo = EntidadSolicitud.oportunidad,
+            entidadId = 45,
+            entidadDescripcion = "X — Oportunidad #45",
+            motivo = "m",
+            dctoSolicitado = BigDecimal("5"),
+        )
+
+    @Test
+    fun `listar como gerencia filtra su bandeja sin lanzar`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every {
+            solicitudRepository.findAll(
+                any<org.springframework.data.jpa.domain.Specification<Solicitud>>(),
+                any<org.springframework.data.domain.PageRequest>(),
+            )
+        } returns org.springframework.data.domain.PageImpl(emptyList())
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val resultado = service.listar(pe.quantum.crm.domain.solicitudes.dto.SolicitudFiltros(), gerencia, null, null, null, null)
+
+        assertThat(resultado.items).isEmpty()
+        assertThat(resultado.meta.page).isEqualTo(1)
+    }
+
+    @Test
+    fun `detalle de solicitud ajena para vendedor es 404`() {
+        every { solicitudRepository.findById(9) } returns java.util.Optional.of(solicitudDescuentoDe(99))
+        assertThatThrownBy { service.detalle(9, vendedor) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+    }
+
+    @Test
+    fun `detalle propio para vendedor si es visible`() {
+        every { solicitudRepository.findById(9) } returns java.util.Optional.of(solicitudDescuentoDe(5))
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        assertThat(service.detalle(9, vendedor).id).isEqualTo(9)
+    }
 }
