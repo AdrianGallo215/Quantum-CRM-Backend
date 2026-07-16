@@ -17,6 +17,7 @@ import pe.quantum.crm.domain.notificaciones.RecordatorioEnviadoRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadContactoRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadEstadoLogRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadRepository
+import pe.quantum.crm.domain.solicitudes.SolicitudRepository
 import pe.quantum.crm.domain.tareas.TareaRepository
 
 /**
@@ -67,6 +68,9 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun recordatorioEnviadoRepository(): RecordatorioEnviadoRepository = mockk(relaxed = true)
+
+    @Bean
+    fun solicitudRepository(): SolicitudRepository = mockk(relaxed = true)
 
     @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mockk(relaxed = true)

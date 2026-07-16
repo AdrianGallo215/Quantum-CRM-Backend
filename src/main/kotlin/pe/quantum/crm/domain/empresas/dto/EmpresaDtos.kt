@@ -22,6 +22,7 @@ data class EmpresaListaDto(
     val vendedor: EmpleadoResumen?,
     val segmentos: List<String>,
     val contactosCount: Int,
+    val enCarteraMaestra: Boolean = false,
 )
 
 /** Contacto embebido en el detalle de empresa (cargo/rol de la vinculacion). */
@@ -32,8 +33,8 @@ data class ContactoDeEmpresaDto(
     val cargo: String?,
     val tomaDecision: Boolean?,
     val esPrincipal: Boolean,
-    val email1: String?,
-    val tlf1: String?,
+    val email_1: String?,
+    val tlf_1: String?,
 )
 
 /** Detalle completo de empresa (contrato_api.md §8). */
@@ -61,6 +62,7 @@ data class EmpresaDetalleDto(
     val vendedor: EmpleadoResumen?,
     val segmentos: List<String>,
     val contactos: List<ContactoDeEmpresaDto>?,
+    val enCarteraMaestra: Boolean = false,
     val createdAt: LocalDateTime,
     val createdBy: Long,
 )
@@ -134,6 +136,7 @@ data class EmpresaFiltros(
     val idVendedor: Long? = null,
     val segmento: Segmento? = null,
     val distrito: String? = null,
+    val carteraMaestra: Boolean? = null,
 )
 
 /** Datos minimos de una empresa para otros modulos (oportunidades, tareas...). */

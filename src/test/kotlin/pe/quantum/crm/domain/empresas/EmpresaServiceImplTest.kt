@@ -120,6 +120,22 @@ class EmpresaServiceImplTest {
     }
 
     @Test
+    fun `detalle de empresa en cartera maestra para jdv es 404 - IDOR`() {
+        val jdv = UsuarioActual(id = 2, rol = "jdv")
+        every { empresaRepository.findById(10) } returns Optional.of(empresa().apply { enCarteraMaestra = true })
+        assertThatThrownBy { service.detalle(10, jdv) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+    }
+
+    @Test
+    fun `detalle de empresa en cartera maestra para gerencia responde normal`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaRepository.findById(10) } returns Optional.of(empresa().apply { enCarteraMaestra = true })
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        assertThat(service.detalle(10, gerencia).enCarteraMaestra).isTrue()
+    }
+
+    @Test
     fun `segmentosPorIds devuelve los segmentos de cada empresa como String`() {
         val entidad = empresa().apply { segmentos = mutableSetOf(pe.quantum.crm.shared.enums.Segmento.interprovincial) }
         every { empresaRepository.findAllById(setOf(1L)) } returns listOf(entidad)

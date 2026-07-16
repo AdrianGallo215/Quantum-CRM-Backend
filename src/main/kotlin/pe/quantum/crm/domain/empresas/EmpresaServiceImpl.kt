@@ -67,6 +67,7 @@ class EmpresaServiceImpl(
                     vendedor = empresa.idVendedor?.let { vendedores[it] },
                     segmentos = empresa.segmentos.map { it.name }.sorted(),
                     contactosCount = 0,
+                    enCarteraMaestra = empresa.enCarteraMaestra,
                 )
             }
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
@@ -277,6 +278,9 @@ class EmpresaServiceImpl(
         usuario: UsuarioActual,
     ): Empresa {
         val empresa = entidad(id)
+        if (empresa.enCarteraMaestra && !usuario.puedeVerCarteraMaestra) {
+            throw NoEncontradoException("La empresa no existe")
+        }
         if (usuario.visibilidadRestringida && empresa.idVendedor != usuario.id) {
             throw NoEncontradoException("La empresa no existe")
         }
@@ -289,6 +293,13 @@ class EmpresaServiceImpl(
     ): Specification<Empresa> =
         Specification { root, query, cb ->
             val predicados = mutableListOf<Predicate>()
+            if (!usuario.puedeVerCarteraMaestra) {
+                predicados += cb.isFalse(root.get("enCarteraMaestra"))
+            } else {
+                filtros.carteraMaestra?.let {
+                    predicados += cb.equal(root.get<Boolean>("enCarteraMaestra"), it)
+                }
+            }
             if (usuario.visibilidadRestringida) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), usuario.id)
             } else if (filtros.idVendedor != null) {
@@ -344,6 +355,7 @@ class EmpresaServiceImpl(
             vendedor = vendedor,
             segmentos = segmentos.map { it.name }.sorted(),
             contactos = emptyList(),
+            enCarteraMaestra = enCarteraMaestra,
             createdAt = createdAt,
             createdBy = createdBy,
         )

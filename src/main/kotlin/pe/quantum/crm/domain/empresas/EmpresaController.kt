@@ -42,6 +42,7 @@ class EmpresaController(
         @RequestParam(name = "id_vendedor", required = false) idVendedor: Long?,
         @RequestParam(required = false) segmento: Segmento?,
         @RequestParam(required = false) distrito: String?,
+        @RequestParam(name = "cartera_maestra", required = false) carteraMaestra: Boolean?,
         @RequestParam(required = false) page: Int?,
         @RequestParam(name = "per_page", required = false) perPage: Int?,
         @RequestParam(required = false) sort: String?,
@@ -55,6 +56,7 @@ class EmpresaController(
                 idVendedor = idVendedor,
                 segmento = segmento,
                 distrito = distrito,
+                carteraMaestra = carteraMaestra,
             )
         val resultado = empresaService.listar(filtros, usuario, page, perPage, sort, dir)
         val conContactos =
