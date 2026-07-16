@@ -11,11 +11,15 @@ enum class TipoNotificacion {
     oportunidad_traspasada,
     tarea_recordatorio,
     evento_recordatorio,
+    solicitud_creada,
+    solicitud_aprobada,
+    solicitud_denegada,
 }
 
-/** Valores de `entidad_notificacion_enum` (migracion V22). */
+/** Valores de `entidad_notificacion_enum` (migracion V22, V28). */
 @Suppress("ktlint:standard:enum-entry-name-case", "EnumNaming", "EnumEntryName")
 enum class EntidadNotificacion {
     oportunidad,
     empresa,
+    solicitud,
 }
