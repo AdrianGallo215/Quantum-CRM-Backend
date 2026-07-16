@@ -1,5 +1,7 @@
 package pe.quantum.crm.domain.solicitudes.dto
 
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.shared.enums.EntidadSolicitud
 import pe.quantum.crm.shared.enums.TipoSolicitud
@@ -7,15 +9,20 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 data class CrearSolicitudRequest(
+    @field:NotNull(message = "tipo es obligatorio")
     val tipo: TipoSolicitud? = null,
+    @field:NotNull(message = "entidad_tipo es obligatorio")
     val entidadTipo: EntidadSolicitud? = null,
+    @field:NotNull(message = "entidad_id es obligatorio")
     val entidadId: Long? = null,
+    @field:NotBlank(message = "motivo es obligatorio")
     val motivo: String? = null,
     val dctoSolicitado: BigDecimal? = null,
     val idVendedorNuevo: Long? = null,
 )
 
 data class DenegarSolicitudRequest(
+    @field:NotBlank(message = "motivo es obligatorio")
     val motivo: String? = null,
 )
 

@@ -331,14 +331,36 @@ class SolicitudServiceImpl(
         )
     }
 
+    /**
+     * Reutiliza reasignarVendedor: cascada a oportunidades activas y notificacion
+     * `empresa_asignada` incluidas. El actor es el aprobador (gerencia/admin), que
+     * pasa el guard de `puedeReasignarDirecto`.
+     */
     private fun aplicarReasignacion(
         solicitud: Solicitud,
         usuario: UsuarioActual,
-    ): Unit = throw NotImplementedError("Task 8")
+    ) {
+        try {
+            empresaService.reasignarVendedor(solicitud.entidadId, requireNotNull(solicitud.idVendedorNuevo), usuario)
+        } catch (ex: NoEncontradoException) {
+            throw ConflictoException("SOLICITUD_NO_APLICABLE", "La empresa de la solicitud ya no existe")
+        } catch (ex: ValidacionException) {
+            throw ConflictoException("SOLICITUD_NO_APLICABLE", "El vendedor destino ya no es asignable")
+        }
+    }
 
+    @Transactional
     override fun denegar(
         id: Long,
         motivo: String,
         usuario: UsuarioActual,
-    ): SolicitudDto = throw NotImplementedError("Task 8")
+    ): SolicitudDto {
+        if (motivo.isBlank()) {
+            throw ValidacionException("El motivo de la denegación es obligatorio", field = "motivo")
+        }
+        val solicitud = pendienteParaResolver(id, usuario)
+        resolver(solicitud, EstadoSolicitud.denegada, usuario, motivoResolucion = motivo)
+        notificarResolucion(solicitud, usuario, TipoNotificacion.solicitud_denegada, "denegó")
+        return toDto(listOf(solicitud)).first()
+    }
 }

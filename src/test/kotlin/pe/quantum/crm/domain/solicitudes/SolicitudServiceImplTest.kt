@@ -264,4 +264,64 @@ class SolicitudServiceImplTest {
             .isInstanceOf(ConflictoException::class.java)
             .hasMessageContaining("resuelta")
     }
+
+    private fun solicitudReasignacionPendiente(
+        entidadId: Long,
+        idVendedorNuevo: Long,
+    ) = Solicitud(
+        id = 9,
+        tipo = TipoSolicitud.reasignacion_cliente,
+        rolAprobador = pe.quantum.crm.shared.enums.AprobadorSolicitud.gerencia,
+        idSolicitante = 2,
+        entidadTipo = EntidadSolicitud.empresa,
+        entidadId = entidadId,
+        entidadDescripcion = "ABC S.A.",
+        motivo = "Vacaciones largas",
+        idVendedorNuevo = idVendedorNuevo,
+    )
+
+    @Test
+    fun `aprobar reasignacion ejecuta reasignarVendedor con el usuario aprobador`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val pendiente = solicitudReasignacionPendiente(entidadId = 12, idVendedorNuevo = 8)
+        every { solicitudRepository.findParaResolver(9) } returns pendiente
+        every { empresaService.reasignarVendedor(12, 8, gerencia) } returns 8
+        every { solicitudRepository.save(any()) } answers { firstArg() }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val dto = service.aprobar(9, gerencia)
+
+        assertThat(dto.estado).isEqualTo("aprobada")
+        verify { empresaService.reasignarVendedor(12, 8, gerencia) }
+    }
+
+    @Test
+    fun `denegar exige motivo y notifica con el mensaje de gerencia`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val pendiente = solicitudDescuentoPendiente(pe.quantum.crm.shared.enums.AprobadorSolicitud.gerencia)
+        every { solicitudRepository.findParaResolver(9) } returns pendiente
+        every { solicitudRepository.save(any()) } answers { firstArg() }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val dto = service.denegar(9, "El margen no lo soporta", gerencia)
+
+        assertThat(dto.estado).isEqualTo("denegada")
+        assertThat(dto.motivoResolucion).isEqualTo("El margen no lo soporta")
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(pendiente.idSolicitante),
+                idActor = 1,
+                tipo = TipoNotificacion.solicitud_denegada,
+                mensaje = match { it.contains("El margen no lo soporta") },
+                entidadTipo = EntidadNotificacion.solicitud,
+                entidadId = 9,
+            )
+        }
+    }
+
+    @Test
+    fun `denegar con motivo en blanco es VALIDACION`() {
+        assertThatThrownBy { service.denegar(9, "  ", UsuarioActual(id = 1, rol = "gerencia")) }
+            .isInstanceOf(ValidacionException::class.java)
+    }
 }
