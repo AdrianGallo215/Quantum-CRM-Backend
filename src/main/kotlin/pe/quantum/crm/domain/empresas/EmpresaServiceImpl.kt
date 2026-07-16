@@ -27,7 +27,9 @@ import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.Segmento
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
+import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.RucDuplicadoException
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 
@@ -200,9 +202,12 @@ class EmpresaServiceImpl(
         idVendedor: Long,
         usuario: UsuarioActual,
     ): Long {
+        if (!usuario.puedeReasignarDirecto) {
+            throw PermisoInsuficienteException("La reasignación directa es exclusiva de gerencia; envía una solicitud")
+        }
         val empresa = entidad(id)
-        if (!empleadoService.existeActivo(idVendedor)) {
-            throw NoEncontradoException("El vendedor no existe o está inactivo")
+        if (!empleadoService.esAsignableComoVendedor(idVendedor)) {
+            throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
         }
         empresa.idVendedor = idVendedor
         empresa.updatedAt = LocalDateTime.now()

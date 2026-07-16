@@ -46,6 +46,12 @@ interface EmpleadoService {
     /** Verifica que el empleado exista y este activo (para asignaciones). */
     fun existeActivo(id: Long): Boolean
 
+    /** true si el empleado esta activo y su rol puede tener cartera (vendedor o jdv). */
+    fun esAsignableComoVendedor(id: Long): Boolean
+
+    /** Ids de empleados activos con el rol dado (destinatarios de notificaciones). */
+    fun idsActivosPorRol(rol: RolEmpleado): List<Long>
+
     /** Resumenes (id, nombres, apellidos) para DTOs compuestos de otros modulos. */
     fun resumenPorIds(ids: Collection<Long>): Map<Long, EmpleadoResumen>
 

@@ -121,6 +121,17 @@ class EmpleadoServiceImpl(
     override fun existeActivo(id: Long): Boolean = empleadoRepository.findById(id).map { it.activo }.orElse(false)
 
     @Transactional(readOnly = true)
+    override fun esAsignableComoVendedor(id: Long): Boolean =
+        empleadoRepository
+            .findById(id)
+            .map { it.activo && (it.rol == RolEmpleado.vendedor || it.rol == RolEmpleado.jdv) }
+            .orElse(false)
+
+    @Transactional(readOnly = true)
+    override fun idsActivosPorRol(rol: RolEmpleado): List<Long> =
+        empleadoRepository.findByActivoAndRol(true, rol).map { requireNotNull(it.id) }
+
+    @Transactional(readOnly = true)
     override fun resumenPorIds(ids: Collection<Long>): Map<Long, EmpleadoResumen> =
         empleadoRepository.findAllById(ids.toSet()).associate { requireNotNull(it.id) to it.toResumen() }
 

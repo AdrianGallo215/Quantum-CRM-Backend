@@ -7,6 +7,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -15,6 +16,8 @@ import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.shared.enums.EstadoCartera
+import pe.quantum.crm.shared.exception.PermisoInsuficienteException
+import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 import java.util.Optional
@@ -66,11 +69,11 @@ class EmpresaServiceImplTest {
     fun `reasignarVendedor notifica al vendedor destino con el nombre del actor y de la empresa`() {
         val entidad = empresa()
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
-        every { empleadoService.existeActivo(2) } returns true
+        every { empleadoService.esAsignableComoVendedor(2) } returns true
         every { empresaRepository.save(entidad) } returns entidad
         every { empleadoService.resumenPorIds(listOf(9)) } returns mapOf(9L to EmpleadoResumen(id = 9, nombres = "Ana", apellidos = "Diaz"))
 
-        service.reasignarVendedor(1, 2, UsuarioActual(id = 9, rol = "jdv"))
+        service.reasignarVendedor(1, 2, UsuarioActual(id = 9, rol = "gerencia"))
 
         verify {
             notificacionService.notificar(
@@ -88,16 +91,32 @@ class EmpresaServiceImplTest {
     fun `reasignarVendedor publica VendedorEmpresaReasignadoEvent con los datos del cambio`() {
         val entidad = empresa()
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
-        every { empleadoService.existeActivo(2) } returns true
+        every { empleadoService.esAsignableComoVendedor(2) } returns true
         every { empresaRepository.save(entidad) } returns entidad
         every { empleadoService.resumenPorIds(listOf(9)) } returns
             mapOf(9L to EmpleadoResumen(id = 9, nombres = "Ana", apellidos = "Diaz"))
         val evento = slot<VendedorEmpresaReasignadoEvent>()
         every { eventPublisher.publishEvent(capture(evento)) } just Runs
 
-        service.reasignarVendedor(1, 2, UsuarioActual(id = 9, rol = "jdv"))
+        service.reasignarVendedor(1, 2, UsuarioActual(id = 9, rol = "gerencia"))
 
         assertThat(evento.captured).isEqualTo(VendedorEmpresaReasignadoEvent(idEmpresa = 1, idVendedorNuevo = 2, idActor = 9))
+    }
+
+    @Test
+    fun `reasignarVendedor por jdv lanza PERMISO_INSUFICIENTE - debe usar solicitud`() {
+        val jdv = UsuarioActual(id = 2, rol = "jdv")
+        assertThatThrownBy { service.reasignarVendedor(10, 8, jdv) }
+            .isInstanceOf(PermisoInsuficienteException::class.java)
+    }
+
+    @Test
+    fun `reasignarVendedor rechaza destino que no es vendedor ni jdv`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaRepository.findById(10) } returns Optional.of(empresa())
+        every { empleadoService.esAsignableComoVendedor(99) } returns false
+        assertThatThrownBy { service.reasignarVendedor(10, 99, gerencia) }
+            .isInstanceOf(ValidacionException::class.java)
     }
 
     @Test
