@@ -258,10 +258,83 @@ class SolicitudServiceImpl(
             cb.and(*predicados.toTypedArray())
         }
 
+    @Transactional
     override fun aprobar(
         id: Long,
         usuario: UsuarioActual,
-    ): SolicitudDto = throw NotImplementedError("Task 7")
+    ): SolicitudDto {
+        val solicitud = pendienteParaResolver(id, usuario)
+        // El efecto corre en ESTA transaccion: si falla, la solicitud sigue pendiente.
+        when (solicitud.tipo) {
+            TipoSolicitud.descuento ->
+                oportunidadService.aplicarDescuentoAprobado(
+                    solicitud.entidadId,
+                    requireNotNull(solicitud.dctoSolicitado),
+                    usuario.id,
+                )
+            TipoSolicitud.reasignacion_cliente -> aplicarReasignacion(solicitud, usuario) // Task 8
+        }
+        resolver(solicitud, EstadoSolicitud.aprobada, usuario, motivoResolucion = null)
+        notificarResolucion(solicitud, usuario, TipoNotificacion.solicitud_aprobada, "aprobó")
+        return toDto(listOf(solicitud)).first()
+    }
+
+    // ── privados de resolucion ─────────────────────────────────
+
+    /** Lock pesimista + guardas: bandeja correcta y estado pendiente. */
+    private fun pendienteParaResolver(
+        id: Long,
+        usuario: UsuarioActual,
+    ): Solicitud {
+        val solicitud =
+            solicitudRepository.findParaResolver(id)
+                ?: throw NoEncontradoException("La solicitud no existe")
+        if (!usuario.puedeAprobar(solicitud.rolAprobador.name)) {
+            throw PermisoInsuficienteException("Esta solicitud la resuelve ${solicitud.rolAprobador.name}")
+        }
+        if (solicitud.estado != EstadoSolicitud.pendiente) {
+            throw ConflictoException("SOLICITUD_YA_RESUELTA", "La solicitud ya fue resuelta")
+        }
+        return solicitud
+    }
+
+    private fun resolver(
+        solicitud: Solicitud,
+        estado: EstadoSolicitud,
+        usuario: UsuarioActual,
+        motivoResolucion: String?,
+    ) {
+        solicitud.estado = estado
+        solicitud.idResolutor = usuario.id
+        solicitud.motivoResolucion = motivoResolucion
+        solicitud.resolvedAt = java.time.LocalDateTime.now()
+        solicitud.updatedAt = java.time.LocalDateTime.now()
+        solicitudRepository.save(solicitud)
+    }
+
+    private fun notificarResolucion(
+        solicitud: Solicitud,
+        usuario: UsuarioActual,
+        tipo: TipoNotificacion,
+        verbo: String,
+    ) {
+        val resolutor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
+        val nombre = resolutor?.nombreCompleto() ?: "Gerencia"
+        val sufijo = solicitud.motivoResolucion?.let { ": $it" } ?: ""
+        notificacionService.notificar(
+            destinatarios = setOf(solicitud.idSolicitante),
+            idActor = usuario.id,
+            tipo = tipo,
+            mensaje = "$nombre $verbo tu solicitud de ${etiquetaTipo(solicitud.tipo)} sobre ${solicitud.entidadDescripcion}$sufijo",
+            entidadTipo = EntidadNotificacion.solicitud,
+            entidadId = requireNotNull(solicitud.id),
+        )
+    }
+
+    private fun aplicarReasignacion(
+        solicitud: Solicitud,
+        usuario: UsuarioActual,
+    ): Unit = throw NotImplementedError("Task 8")
 
     override fun denegar(
         id: Long,

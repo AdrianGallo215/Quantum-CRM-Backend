@@ -35,6 +35,7 @@ import pe.quantum.crm.shared.PoliticaDescuento
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.AprobacionRequeridaException
+import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.MontoNoEditableException
 import pe.quantum.crm.shared.exception.MotivoCierreRequeridoException
@@ -414,6 +415,29 @@ class OportunidadServiceImpl(
             idVendedor = oportunidad.idVendedor,
             estado = oportunidad.estado.name,
         )
+    }
+
+    @Transactional
+    override fun aplicarDescuentoAprobado(
+        id: Long,
+        dcto: BigDecimal,
+        idAprobador: Long,
+    ) {
+        val oportunidad =
+            oportunidadRepository.findById(id).orElseThrow {
+                ConflictoException("SOLICITUD_NO_APLICABLE", "La oportunidad de la solicitud ya no existe")
+            }
+        if (oportunidad.estado == EstadoOportunidad.cerrado || oportunidad.estado == EstadoOportunidad.facturado) {
+            throw ConflictoException(
+                "SOLICITUD_NO_APLICABLE",
+                "La oportunidad está en ${oportunidad.estado.name}; el descuento ya no aplica",
+            )
+        }
+        oportunidad.dcto = dcto
+        oportunidad.montoTotal = MontoTotal.calcular(oportunidad.cantidad, oportunidad.precioUnitario, dcto)
+        oportunidad.updatedAt = LocalDateTime.now()
+        oportunidad.updatedBy = idAprobador
+        oportunidadRepository.save(oportunidad)
     }
 
     @Transactional(readOnly = true)

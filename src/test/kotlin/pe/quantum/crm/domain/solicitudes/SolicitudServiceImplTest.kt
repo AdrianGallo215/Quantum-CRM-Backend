@@ -1,6 +1,8 @@
 package pe.quantum.crm.domain.solicitudes
 
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -204,5 +206,62 @@ class SolicitudServiceImplTest {
         every { solicitudRepository.findById(9) } returns java.util.Optional.of(solicitudDescuentoDe(5))
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
         assertThat(service.detalle(9, vendedor).id).isEqualTo(9)
+    }
+
+    private fun solicitudDescuentoPendiente(rolAprobador: pe.quantum.crm.shared.enums.AprobadorSolicitud) =
+        Solicitud(
+            id = 9,
+            tipo = TipoSolicitud.descuento,
+            rolAprobador = rolAprobador,
+            idSolicitante = 5,
+            entidadTipo = EntidadSolicitud.oportunidad,
+            entidadId = 45,
+            entidadDescripcion = "Transportes Lima Norte S.A.C. — Oportunidad #45",
+            motivo = "Cliente frecuente",
+            dctoSolicitado = BigDecimal("8.00"),
+        )
+
+    @Test
+    fun `aprobar descuento aplica el cambio, marca aprobada y notifica al solicitante`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val pendiente = solicitudDescuentoPendiente(pe.quantum.crm.shared.enums.AprobadorSolicitud.gerencia)
+        every { solicitudRepository.findParaResolver(9) } returns pendiente
+        every { oportunidadService.aplicarDescuentoAprobado(45, BigDecimal("8.00"), 1) } just Runs
+        every { solicitudRepository.save(any()) } answers { firstArg() }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val dto = service.aprobar(9, gerencia)
+
+        assertThat(dto.estado).isEqualTo("aprobada")
+        verify { oportunidadService.aplicarDescuentoAprobado(45, BigDecimal("8.00"), 1) }
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(5L),
+                idActor = 1,
+                tipo = TipoNotificacion.solicitud_aprobada,
+                mensaje = any(),
+                entidadTipo = EntidadNotificacion.solicitud,
+                entidadId = 9,
+            )
+        }
+    }
+
+    @Test
+    fun `aprobar una bandeja ajena es PERMISO_INSUFICIENTE`() {
+        val pendienteJdv = solicitudDescuentoPendiente(pe.quantum.crm.shared.enums.AprobadorSolicitud.jdv)
+        every { solicitudRepository.findParaResolver(9) } returns pendienteJdv
+        assertThatThrownBy { service.aprobar(9, UsuarioActual(id = 1, rol = "gerencia")) }
+            .isInstanceOf(PermisoInsuficienteException::class.java)
+    }
+
+    @Test
+    fun `aprobar una ya resuelta es 409 SOLICITUD_YA_RESUELTA`() {
+        val resuelta =
+            solicitudDescuentoPendiente(pe.quantum.crm.shared.enums.AprobadorSolicitud.gerencia)
+                .apply { estado = EstadoSolicitud.aprobada }
+        every { solicitudRepository.findParaResolver(9) } returns resuelta
+        assertThatThrownBy { service.aprobar(9, UsuarioActual(id = 1, rol = "gerencia")) }
+            .isInstanceOf(ConflictoException::class.java)
+            .hasMessageContaining("resuelta")
     }
 }

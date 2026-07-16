@@ -312,4 +312,29 @@ class OportunidadServiceImplTest {
             service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, dcto = BigDecimal("4.00")), vendedor)
         }.isInstanceOf(AprobacionRequeridaException::class.java)
     }
+
+    @Test
+    fun `aplicarDescuentoAprobado setea dcto y recalcula monto_total`() {
+        val entidad =
+            oportunidad(idVendedor = 5).apply {
+                cantidad = 2
+                precioUnitario = BigDecimal("100.00")
+            }
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.save(any()) } answers { firstArg() }
+
+        service.aplicarDescuentoAprobado(100, BigDecimal("5.00"), idAprobador = 2)
+
+        assertThat(entidad.dcto).isEqualByComparingTo(BigDecimal("5.00"))
+        assertThat(entidad.montoTotal).isEqualByComparingTo(BigDecimal("190.00"))
+        assertThat(entidad.updatedBy).isEqualTo(2)
+    }
+
+    @Test
+    fun `aplicarDescuentoAprobado sobre oportunidad cerrada es SOLICITUD_NO_APLICABLE`() {
+        val cerrada = oportunidad(idVendedor = 5).apply { estado = pe.quantum.crm.shared.enums.EstadoOportunidad.cerrado }
+        every { oportunidadRepository.findById(100) } returns Optional.of(cerrada)
+        assertThatThrownBy { service.aplicarDescuentoAprobado(100, BigDecimal("5.00"), 2) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.ConflictoException::class.java)
+    }
 }
