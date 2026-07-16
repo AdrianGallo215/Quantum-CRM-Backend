@@ -192,9 +192,9 @@ class OportunidadServiceImpl(
         if (nuevo == anterior) {
             throw EstadoInvalidoException("La oportunidad ya está en el estado ${nuevo.name}")
         }
-        // Paso a facturado: solo admin, gerente, analista (verificado en servicio).
+        // Paso a facturado: solo admin, gerencia, analista (verificado en servicio).
         if (nuevo == EstadoOportunidad.facturado && !usuario.puedeValidarFacturado) {
-            throw PermisoInsuficienteException("Solo admin, gerente o analista pueden validar el paso a facturado")
+            throw PermisoInsuficienteException("Solo admin, gerencia o analista pueden validar el paso a facturado")
         }
         // motivo_cierre obligatorio al cerrar (reglas §4.4).
         if (nuevo == EstadoOportunidad.cerrado) {

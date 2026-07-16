@@ -103,7 +103,7 @@ class EmpresaController(
     }
 
     @PatchMapping("/{id}/vendedor")
-    @PreAuthorize("hasAnyRole('admin', 'gerente', 'jdv')")
+    @PreAuthorize("hasAnyRole('admin', 'gerencia')")
     fun reasignarVendedor(
         @PathVariable id: Long,
         @RequestBody request: ReasignarVendedorRequest,

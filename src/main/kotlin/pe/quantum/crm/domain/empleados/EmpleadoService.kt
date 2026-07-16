@@ -49,6 +49,6 @@ interface EmpleadoService {
     /** Resumenes (id, nombres, apellidos) para DTOs compuestos de otros modulos. */
     fun resumenPorIds(ids: Collection<Long>): Map<Long, EmpleadoResumen>
 
-    /** Empleados activos con rol admin, gerente o jdv (broadcast de notificaciones). */
+    /** Empleados activos con rol admin, gerencia o jdv (broadcast de notificaciones). */
     fun idsSupervisoresActivos(): List<Long>
 }

@@ -111,9 +111,9 @@ class EmpleadoServiceTest {
     }
 
     @Test
-    fun `idsSupervisoresActivos devuelve los ids de admin, gerente y jdv activos`() {
+    fun `idsSupervisoresActivos devuelve los ids de admin, gerencia y jdv activos`() {
         every {
-            repository.findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerente, RolEmpleado.jdv))
+            repository.findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerencia, RolEmpleado.jdv))
         } returns
             listOf(
                 empleado().let {

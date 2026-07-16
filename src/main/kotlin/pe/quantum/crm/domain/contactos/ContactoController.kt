@@ -74,7 +74,7 @@ class ContactoController(
     ): ApiResponse<ContactoDto> = ApiResponse.ok(contactoService.actualizar(id, request, usuarioProvider.actual()))
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('admin', 'gerente', 'jdv')")
+    @PreAuthorize("hasAnyRole('admin', 'gerencia', 'jdv')")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun eliminar(
         @PathVariable id: Long,

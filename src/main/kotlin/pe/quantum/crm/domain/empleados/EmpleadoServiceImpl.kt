@@ -127,7 +127,7 @@ class EmpleadoServiceImpl(
     @Transactional(readOnly = true)
     override fun idsSupervisoresActivos(): List<Long> =
         empleadoRepository
-            .findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerente, RolEmpleado.jdv))
+            .findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerencia, RolEmpleado.jdv))
             .map { requireNotNull(it.id) }
 
     /** Regla B1.4: el sistema nunca se queda sin un admin activo. */

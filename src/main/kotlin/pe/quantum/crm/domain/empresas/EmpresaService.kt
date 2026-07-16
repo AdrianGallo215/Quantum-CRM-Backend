@@ -51,7 +51,8 @@ interface EmpresaService {
     ): String
 
     /**
-     * Reasignacion de vendedor (solo admin/gerente/jdv — verificado en controller).
+     * Reasignacion de vendedor (solo admin/gerencia — verificado en controller;
+     * el jdv requiere una solicitud aprobada, ver modulo `solicitudes`).
      * Notifica al vendedor destino. Publica `VendedorEmpresaReasignadoEvent`, que
      * cascade el mismo vendedor a las oportunidades activas de la empresa
      * (reglas_negocio.md §8).
