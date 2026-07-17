@@ -94,6 +94,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | Cambiar estado (cualquier estado excepto `facturado`) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
 | **Confirmar paso a `facturado`** | ✓ | ✓ | — | — | ✓ |
 | Ver log de estados | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
+| Eliminar oportunidad (definitivo, cascada a tareas/eventos/log) | ✓ | — | — | — | — |
 
 **Nota sobre el paso a `facturado`:** el vendedor y el JdV no pueden confirmar este paso porque dispara el cálculo de comisiones. Solo lo pueden confirmar `admin`, `gerencia` y `analista`. Esta restricción se aplica en el endpoint `PATCH /oportunidades/:id/estado`.
 

@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.oportunidades
 
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -108,5 +109,14 @@ class OportunidadController(
         @PathVariable idContacto: Long,
     ) {
         oportunidadService.desvincularContacto(id, idContacto, usuarioProvider.actual())
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('admin')")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun eliminar(
+        @PathVariable id: Long,
+    ) {
+        oportunidadService.eliminar(id)
     }
 }

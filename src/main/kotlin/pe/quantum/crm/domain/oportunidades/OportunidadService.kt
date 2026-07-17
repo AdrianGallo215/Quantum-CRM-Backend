@@ -101,4 +101,13 @@ interface OportunidadService {
         dcto: java.math.BigDecimal,
         idAprobador: Long,
     )
+
+    /**
+     * Elimina definitivamente la oportunidad (hard delete, exclusivo admin —
+     * verificado en el controller). Cascada de base de datos (V29): arrastra
+     * su log de estados, sus vinculos de contacto, sus eventos y sus tareas.
+     * Recalcula `estado_cartera` de la empresa (reglas_negocio.md §3.3) ya que
+     * esta oportunidad deja de contar.
+     */
+    fun eliminar(id: Long)
 }

@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.oportunidades
 
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -405,5 +406,28 @@ class OportunidadServiceImplTest {
         every { oportunidadRepository.findById(100) } returns Optional.of(cerrada)
         assertThatThrownBy { service.aplicarDescuentoAprobado(100, BigDecimal("5.00"), 2) }
             .isInstanceOf(pe.quantum.crm.shared.exception.ConflictoException::class.java)
+    }
+
+    @Test
+    fun `eliminar borra la oportunidad y recalcula el estado de cartera de su empresa`() {
+        val entidad = oportunidad(id = 100)
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.delete(entidad) } just io.mockk.Runs
+        every { estadoCarteraService.actualizar(10) } returns null
+
+        service.eliminar(100)
+
+        verify { oportunidadRepository.delete(entidad) }
+        verify { estadoCarteraService.actualizar(10) }
+    }
+
+    @Test
+    fun `eliminar lanza NoEncontradoException si la oportunidad no existe`() {
+        every { oportunidadRepository.findById(999) } returns Optional.empty()
+
+        assertThatThrownBy { service.eliminar(999) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+        verify(exactly = 0) { oportunidadRepository.delete(any<Oportunidad>()) }
+        verify(exactly = 0) { estadoCarteraService.actualizar(any()) }
     }
 }

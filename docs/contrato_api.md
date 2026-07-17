@@ -136,7 +136,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 | Modificar catálogo de eventos | ✓ | — | — | — | — |
 | Modificar financiadoras | ✓ | ✓ | — | — | — |
 | Modificar modelos | ✓ | ✓ | — | — | — |
-| Eliminar empresa (definitivo, cascada) | ✓ | — | — | — | — |
+| Eliminar empresa / oportunidad (definitivo, cascada) | ✓ | — | — | — | — |
 
 `vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
 
@@ -853,6 +853,20 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - Recalcula y persiste `monto_total`.
 
 **Respuesta 200:** la oportunidad actualizada.
+
+---
+
+### DELETE /oportunidades/:id
+> Elimina definitivamente una oportunidad.
+
+**Roles:** `admin`
+
+**Respuesta 204:** sin body.
+
+**Notas:**
+- Elimina en cascada su log de estados, sus vínculos de contacto (`oportunidad_contactos`), sus eventos y sus tareas. Los contactos en sí **no** se eliminan, solo el vínculo.
+- Recalcula `estado_cartera` de la empresa tras eliminar (reglas_negocio.md §3.3): si la empresa se queda sin oportunidades activas/facturadas, vuelve a su estado manual (o `null`).
+- Sin restricción por estado: incluye oportunidades en `facturado`. Operación irreversible.
 
 ---
 

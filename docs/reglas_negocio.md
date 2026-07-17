@@ -121,7 +121,7 @@ actualizarEstadoCartera(id_empresa):
 
 - Al **crear** una oportunidad → potencialmente pasa a `oportunidad_activa`
 - Al **cambiar el estado** de una oportunidad → potencialmente pasa a `cliente` o vuelve a `oportunidad_activa`
-- Al **eliminar** una oportunidad (si se implementa) → recalcular
+- Al **eliminar** una oportunidad (`DELETE /oportunidades/:id`, exclusivo `admin`) → recalcular
 - Al **retroceder** el estado de una oportunidad → recalcular
 
 La función siempre recalcula mirando **el conjunto completo de oportunidades** de la empresa. Nunca asume el nuevo estado desde la transición individual.

@@ -472,6 +472,14 @@ class OportunidadServiceImpl(
             .map { OportunidadRecordatorioDatos(idEmpresa = it.idEmpresa, idVendedor = it.idVendedor) }
             .orElse(null)
 
+    @Transactional
+    override fun eliminar(id: Long) {
+        val oportunidad = entidad(id)
+        val idEmpresa = oportunidad.idEmpresa
+        oportunidadRepository.delete(oportunidad)
+        estadoCarteraService.actualizar(idEmpresa)
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     /**
