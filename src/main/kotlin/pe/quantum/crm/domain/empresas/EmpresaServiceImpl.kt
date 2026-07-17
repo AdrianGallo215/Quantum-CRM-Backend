@@ -318,6 +318,12 @@ class EmpresaServiceImpl(
         return CarteraMaestraDto(enCarteraMaestra = empresa.enCarteraMaestra, idVendedor = empresa.idVendedor)
     }
 
+    @Transactional
+    override fun eliminar(id: Long) {
+        val empresa = entidad(id)
+        empresaRepository.delete(empresa)
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     private fun entidad(id: Long): Empresa = empresaRepository.findById(id).orElseThrow { NoEncontradoException("La empresa no existe") }

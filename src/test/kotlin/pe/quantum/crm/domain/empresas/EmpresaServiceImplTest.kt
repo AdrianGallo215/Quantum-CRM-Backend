@@ -200,4 +200,24 @@ class EmpresaServiceImplTest {
 
         assertThat(resultado[1L]).containsExactly("interprovincial")
     }
+
+    @Test
+    fun `eliminar borra la empresa cuando existe`() {
+        val entidad = empresa()
+        every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empresaRepository.delete(entidad) } just Runs
+
+        service.eliminar(1)
+
+        verify { empresaRepository.delete(entidad) }
+    }
+
+    @Test
+    fun `eliminar lanza NoEncontradoException si la empresa no existe`() {
+        every { empresaRepository.findById(99) } returns Optional.empty()
+
+        assertThatThrownBy { service.eliminar(99) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+        verify(exactly = 0) { empresaRepository.delete(any<Empresa>()) }
+    }
 }

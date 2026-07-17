@@ -102,4 +102,12 @@ interface EmpresaService {
         idVendedor: Long?,
         usuario: UsuarioActual,
     ): CarteraMaestraDto
+
+    /**
+     * Elimina definitivamente la empresa (hard delete, exclusivo admin —
+     * verificado en el controller). Cascada de base de datos (V29): arrastra
+     * sus oportunidades, tareas, eventos y el log de estados. Los contactos
+     * vinculados NO se eliminan, solo se desvinculan.
+     */
+    fun eliminar(id: Long)
 }

@@ -416,7 +416,7 @@ Al agregar un contacto a una empresa, el frontend debe ofrecer búsqueda de cont
 
 `ON DELETE RESTRICT` en `empresa_contactos`. No se puede eliminar un contacto que está vinculado a alguna empresa. Se desvincula primero de todas las empresas y luego se elimina.
 
-No se puede eliminar una empresa que tiene oportunidades (`ON DELETE RESTRICT` en `oportunidades`).
+`DELETE /empresas/:id` (exclusivo `admin`) elimina la empresa en cascada: se eliminan sus oportunidades, las tareas y eventos de esas oportunidades, el log de estados, y las tareas/eventos propios de la empresa. Los contactos vinculados nunca se eliminan — solo se borra la fila de `empresa_contactos` (`ON DELETE CASCADE` desde V29). Sin restricción por estado de las oportunidades (incluye `facturado`).
 
 ### 11.3 Contactos en oportunidades
 

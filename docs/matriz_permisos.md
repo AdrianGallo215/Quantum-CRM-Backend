@@ -60,6 +60,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | Cambiar `estado_cartera` manual | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
 | Ver check de RUC duplicado | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Mover/liberar Cartera Maestra | ✓ | ✓ | — | — | — |
+| Eliminar empresa (definitivo, cascada a oportunidades/tareas/eventos) | ✓ | — | — | — | — |
 
 **Nota sobre `estado_cartera` manual:** solo se permiten los estados `no_contactado`, `no_aplica`, `no_interesado`, `prospeccion`. Los estados `oportunidad_activa` y `cliente` son derivados y nunca editables manualmente por ningún rol.
 

@@ -136,6 +136,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 | Modificar catálogo de eventos | ✓ | — | — | — | — |
 | Modificar financiadoras | ✓ | ✓ | — | — | — |
 | Modificar modelos | ✓ | ✓ | — | — | — |
+| Eliminar empresa (definitivo, cascada) | ✓ | — | — | — | — |
 
 `vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
 
@@ -544,6 +545,20 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - Notifica `empresa_asignada` al vendedor destino. A partir de este momento la empresa es visible para el `jdv` y el vendedor asignado.
 
 **Respuesta 200:** `{ "data": { "en_cartera_maestra": false, "id_vendedor": 8 } }`
+
+---
+
+### DELETE /empresas/:id
+> Elimina definitivamente una empresa y todo lo que cuelga de ella en el pipeline comercial.
+
+**Roles:** `admin`
+
+**Respuesta 204:** sin body.
+
+**Notas:**
+- Elimina en cascada sus oportunidades, las tareas y eventos de esas oportunidades, el log de estados, y las tareas/eventos propios de la empresa (sin oportunidad asociada).
+- Los contactos vinculados **no** se eliminan: solo se borra el vínculo (`empresa_contactos`). El contacto sigue existiendo y puede estar vinculado a otras empresas.
+- Sin restricción por estado: incluye empresas con oportunidades en `facturado`. Operación irreversible.
 
 ---
 
@@ -1443,10 +1458,11 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
     "resumen_pipeline": {
       "valor_total": "3050752.00",
       "oportunidades_activas": 6,
+      "cantidad_unidades": 25,
       "por_etapa": {
-        "evaluacion_calidda": { "count": 3, "valor": "1980800.00" },
-        "documentos_legales": { "count": 2, "valor": "1184702.00" },
-        "facturado":          { "count": 1, "valor": "884800.00"  }
+        "evaluacion_calidda": { "count": 3, "valor": "1980800.00", "cantidad_unidades": 15 },
+        "documentos_legales": { "count": 2, "valor": "1184702.00", "cantidad_unidades": 10 },
+        "facturado":          { "count": 1, "valor": "884800.00",  "cantidad_unidades": 10 }
       }
     },
     "resumen_prospeccion": {
