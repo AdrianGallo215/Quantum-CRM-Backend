@@ -45,19 +45,23 @@ ALTER TABLE empresa_contactos
 
 `empresa_contactos_id_contacto_fkey` (lado contacto) **no se toca** — se queda `RESTRICT`, así el contacto en sí sigue protegido de borrado mientras tenga vínculos.
 
-No se necesita ningún otro cambio de constraint: `eventos.id_empresa` ya es `CASCADE` (V21), y al eliminar una oportunidad (por cascada desde empresa, o directo) ya arrastran limpio `oportunidad_estados_log` (`CASCADE`, V11), `oportunidad_contactos` del lado oportunidad (`CASCADE`, V12 — el lado contacto sigue `RESTRICT` y no aplica aquí), `eventos.id_oportunidad` (`CASCADE`, V14) y `tareas.id_oportunidad` (`CASCADE`, V15).
+`eventos.id_empresa` ya es `CASCADE` (V21), y al eliminar una oportunidad (por cascada desde empresa, o directo) ya arrastran limpio `oportunidad_estados_log` (`CASCADE`, V11), `oportunidad_contactos` del lado oportunidad (`CASCADE`, V12 — el lado contacto sigue `RESTRICT` y no aplica aquí), `eventos.id_oportunidad` (`CASCADE`, V14) y `tareas.id_oportunidad` (`CASCADE`, V15).
+
+**Follow-up (revisión final de la feature):** la revisión de la rama completa encontró que `buses_entregados.id_oportunidad` (V16) había quedado en `RESTRICT` — la única FK hacia `oportunidades(id)` sin migrar. Como `buses_entregados` está fuera del MVP la tabla está vacía hoy, así que el gap era latente, no vivo; pero con la decisión de la línea 17 (admin puede eliminar incluso `facturado`, y `facturado` es justo el estado donde existirían entregas), dejarlo en `RESTRICT` habría producido un 500 no controlado en cuanto ese módulo exista. Se corrigió con `V30__cascada_buses_entregados.sql`, que cambia esa constraint a `CASCADE` siguiendo el mismo patrón.
 
 Cadena resultante al hacer `DELETE FROM empresas WHERE id = X`:
 ```
 empresa
  ├─ empresa_contactos (fila de vínculo borrada; contacto intacto)
+ ├─ empresa_segmentos.id_empresa = X (borrados, CASCADE desde V7)
  ├─ eventos.id_empresa = X (borrados)
  ├─ tareas.id_empresa = X (borradas)
  └─ oportunidades.id_empresa = X (borradas), y para cada una:
      ├─ oportunidad_estados_log (borrado)
      ├─ oportunidad_contactos (fila de vínculo borrada; contacto intacto)
      ├─ eventos.id_oportunidad = esa oportunidad (borrados)
-     └─ tareas.id_oportunidad = esa oportunidad (borradas)
+     ├─ tareas.id_oportunidad = esa oportunidad (borradas)
+     └─ buses_entregados.id_oportunidad = esa oportunidad (borrados, CASCADE desde V30)
 ```
 
 ### 2. `DELETE /api/v1/empresas/{id}`

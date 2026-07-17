@@ -9,9 +9,9 @@ import org.springframework.jdbc.core.JdbcTemplate
 import pe.quantum.crm.support.IntegrationTestBase
 
 /**
- * Verifica la cascada de V29 (reglas_negocio.md §11.2): al eliminar una empresa
- * se eliminan sus oportunidades, tareas, eventos y el log de estados, pero los
- * contactos vinculados sobreviven (solo se borra la fila de vinculo).
+ * Verifica la cascada de V29/V30 (reglas_negocio.md §11.2): al eliminar una empresa
+ * se eliminan sus oportunidades, tareas, eventos, log de estados y buses entregados,
+ * pero los contactos vinculados sobreviven (solo se borra la fila de vinculo).
  */
 @Tag("integration")
 @SpringBootTest
@@ -79,6 +79,10 @@ class EmpresaEliminacionCascadaIntegrationTest : IntegrationTestBase() {
         jdbcTemplate.update(
             "INSERT INTO empresa_contactos (id_empresa, id_contacto, es_principal) VALUES ($empresa, $contacto, false)",
         )
+        jdbcTemplate.update(
+            "INSERT INTO buses_entregados (id_oportunidad, id_modelo, estado_entrega) " +
+                "VALUES ($oportunidad, $modelo, 'pendiente')",
+        )
 
         jdbcTemplate.update("DELETE FROM empresas WHERE id = $empresa")
 
@@ -87,6 +91,7 @@ class EmpresaEliminacionCascadaIntegrationTest : IntegrationTestBase() {
         assertThat(count("SELECT COUNT(*) FROM tareas WHERE id IN ($tareaDeEmpresa, $tareaDeOportunidad)")).isZero()
         assertThat(count("SELECT COUNT(*) FROM eventos WHERE id = $eventoDeEmpresa")).isZero()
         assertThat(count("SELECT COUNT(*) FROM empresa_contactos WHERE id_empresa = $empresa")).isZero()
+        assertThat(count("SELECT COUNT(*) FROM buses_entregados WHERE id_oportunidad = $oportunidad")).isZero()
         assertThat(count("SELECT COUNT(*) FROM contactos WHERE id = $contacto")).isEqualTo(1)
     }
 }
