@@ -1458,11 +1458,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
     "resumen_pipeline": {
       "valor_total": "3050752.00",
       "oportunidades_activas": 6,
-      "cantidad_unidades": 25,
       "por_etapa": {
-        "evaluacion_calidda": { "count": 3, "valor": "1980800.00", "cantidad_unidades": 15 },
-        "documentos_legales": { "count": 2, "valor": "1184702.00", "cantidad_unidades": 10 },
-        "facturado":          { "count": 1, "valor": "884800.00",  "cantidad_unidades": 10 }
+        "evaluacion_calidda": { "count": 3, "valor": "1980800.00" },
+        "documentos_legales": { "count": 2, "valor": "1184702.00" },
+        "facturado":          { "count": 1, "valor": "884800.00"  }
       }
     },
     "resumen_prospeccion": {
