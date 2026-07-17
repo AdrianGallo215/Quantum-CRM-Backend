@@ -430,4 +430,17 @@ class OportunidadServiceImplTest {
         verify(exactly = 0) { oportunidadRepository.delete(any<Oportunidad>()) }
         verify(exactly = 0) { estadoCarteraService.actualizar(any()) }
     }
+
+    @Test
+    fun `eliminar permite borrar una oportunidad en estado facturado sin bloqueo de negocio`() {
+        val entidad = oportunidad(id = 200)
+        entidad.estado = pe.quantum.crm.shared.enums.EstadoOportunidad.facturado
+        every { oportunidadRepository.findById(200) } returns Optional.of(entidad)
+        every { oportunidadRepository.delete(entidad) } just io.mockk.Runs
+        every { estadoCarteraService.actualizar(10) } returns null
+
+        service.eliminar(200)
+
+        verify { oportunidadRepository.delete(entidad) }
+    }
 }
