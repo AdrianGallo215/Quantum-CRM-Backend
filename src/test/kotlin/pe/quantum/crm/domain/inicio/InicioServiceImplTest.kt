@@ -33,7 +33,8 @@ class InicioServiceImplTest {
             Paginado(emptyList(), Paginacion.meta(1, 50, 0))
         every { inicioDao.eventosPorSeguir(any()) } returns emptyList()
         every { inicioDao.resumenPipeline(any()) } returns emptyList()
-        every { prospeccionService.resumen(usuario) } returns ResumenProspeccionDto(total = 0, listasParaConvertir = 0, requierenAtencion = 0)
+        every { prospeccionService.resumen(usuario) } returns
+            ResumenProspeccionDto(total = 0, listasParaConvertir = 0, requierenAtencion = 0)
     }
 
     @Test
