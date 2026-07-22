@@ -160,6 +160,41 @@ class MetaVentaServiceImplTest {
     }
 
     @Test
+    fun `aprobar una propuesta la deja aprobada y notifica al proponente y al empleado`() {
+        val meta = MetaVenta(id = 9, idEmpleado = 5, anio = 2027, idPropuestoPor = 2).apply { establecerMeses(List(12) { 10 }) }
+        every { metaVentaRepository.findByIdForUpdate(9) } returns meta
+        every { metaVentaRepository.save(meta) } returns meta
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val dto = service.aprobar(9, gerencia)
+
+        assertThat(dto.estado).isEqualTo("aprobada")
+        assertThat(dto.resolvedAt).isNotNull()
+        verify {
+            notificacionService.notificar(
+                destinatarios = setOf(2L, 5L),
+                idActor = 1,
+                tipo = TipoNotificacion.meta_aprobada,
+                mensaje = any(),
+                entidadTipo = EntidadNotificacion.meta_venta,
+                entidadId = 9L,
+            )
+        }
+    }
+
+    @Test
+    fun `editar una meta rechazada es 409 META_RECHAZADA`() {
+        val meta =
+            MetaVenta(id = 9, idEmpleado = 5, anio = 2027, idPropuestoPor = 2, estado = EstadoMeta.rechazada)
+                .apply { establecerMeses(List(12) { 10 }) }
+        every { metaVentaRepository.findById(9) } returns java.util.Optional.of(meta)
+
+        assertThatThrownBy { service.editar(9, EditarMetaVentaRequest(metaMarzo = 50), gerencia) }
+            .isInstanceOf(ConflictoException::class.java)
+            .hasMessageContaining("rechazada")
+    }
+
+    @Test
     fun `rechazar exige motivo y notifica al proponente y al empleado`() {
         val meta = MetaVenta(id = 9, idEmpleado = 5, anio = 2027, idPropuestoPor = 2).apply { establecerMeses(List(12) { 10 }) }
         every { metaVentaRepository.findByIdForUpdate(9) } returns meta
