@@ -56,6 +56,8 @@ class Oportunidad(
     var motivoCierre: String? = null,
     @Column(name = "fecha_cierre_estimado")
     var fechaCierreEstimado: LocalDate? = null,
+    @Column(name = "facturado_en")
+    var facturadoEn: LocalDateTime? = null,
     @Column(name = "created_at", nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
     @Column(name = "created_by", nullable = false)

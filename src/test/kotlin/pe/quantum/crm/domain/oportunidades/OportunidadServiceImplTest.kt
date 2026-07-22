@@ -113,6 +113,7 @@ class OportunidadServiceImplTest {
             notas = notas,
             motivoCierre = motivoCierre,
             fechaCierreEstimado = fechaCierreEstimado,
+            facturadoEn = facturadoEn,
             createdAt = createdAt,
             createdBy = createdBy,
             updatedAt = updatedAt,
@@ -442,5 +443,57 @@ class OportunidadServiceImplTest {
         service.eliminar(200)
 
         verify { oportunidadRepository.delete(entidad) }
+    }
+
+    @Test
+    fun `cambiarEstado a facturado fija facturado_en`() {
+        val entidad = oportunidad(idVendedor = 1)
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.save(entidad) } returns entidad
+        every { logRepository.save(any()) } returns mockk()
+        every {
+            consultas.eventosRecomendadosSinRegistrar(100, pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda)
+        } returns emptyList()
+        every { estadoCarteraService.actualizar(10) } returns null
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(1)) } returns mapOf(1L to EmpleadoResumen(id = 1, nombres = "Ana", apellidos = "Diaz"))
+        every { empleadoService.idsSupervisoresActivos() } returns listOf(1)
+
+        service.cambiarEstado(
+            100,
+            pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest(estado = "facturado"),
+            UsuarioActual(id = 1, rol = "admin"),
+        )
+
+        assertThat(entidad.facturadoEn).isNotNull()
+    }
+
+    @Test
+    fun `cambiarEstado que retrocede desde facturado limpia facturado_en`() {
+        val entidad =
+            oportunidad(idVendedor = 1).apply {
+                estado = pe.quantum.crm.shared.enums.EstadoOportunidad.facturado
+                facturadoEn = LocalDateTime.now().minusDays(5)
+            }
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.save(entidad) } returns entidad
+        every { logRepository.save(any()) } returns mockk()
+        every {
+            consultas.eventosRecomendadosSinRegistrar(100, pe.quantum.crm.shared.enums.EstadoOportunidad.facturado)
+        } returns emptyList()
+        every { estadoCarteraService.actualizar(10) } returns null
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(1)) } returns mapOf(1L to EmpleadoResumen(id = 1, nombres = "Ana", apellidos = "Diaz"))
+        every { empleadoService.idsSupervisoresActivos() } returns listOf(1)
+
+        service.cambiarEstado(
+            100,
+            pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest(estado = "documentos_legales"),
+            UsuarioActual(id = 1, rol = "admin"),
+        )
+
+        assertThat(entidad.facturadoEn).isNull()
     }
 }

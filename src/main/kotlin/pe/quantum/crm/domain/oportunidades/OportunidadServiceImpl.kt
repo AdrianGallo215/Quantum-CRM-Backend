@@ -247,6 +247,7 @@ class OportunidadServiceImpl(
                 .map { "$it no fue registrado" }
 
         oportunidad.estado = nuevo
+        oportunidad.facturadoEn = if (nuevo == EstadoOportunidad.facturado) LocalDateTime.now() else null
         oportunidad.updatedAt = LocalDateTime.now()
         oportunidad.updatedBy = usuario.id
         oportunidadRepository.save(oportunidad)
