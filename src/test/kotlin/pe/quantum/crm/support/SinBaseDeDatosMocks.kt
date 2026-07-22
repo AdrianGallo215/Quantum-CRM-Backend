@@ -11,6 +11,7 @@ import pe.quantum.crm.domain.empleados.EmpleadoRepository
 import pe.quantum.crm.domain.empresas.EmpresaRepository
 import pe.quantum.crm.domain.eventos.EventoRepository
 import pe.quantum.crm.domain.financiadoras.FinanciadoraRepository
+import pe.quantum.crm.domain.metasventa.MetaVentaRepository
 import pe.quantum.crm.domain.modelos.ModeloRepository
 import pe.quantum.crm.domain.notificaciones.NotificacionRepository
 import pe.quantum.crm.domain.notificaciones.RecordatorioEnviadoRepository
@@ -71,6 +72,9 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun solicitudRepository(): SolicitudRepository = mockk(relaxed = true)
+
+    @Bean
+    fun metaVentaRepository(): MetaVentaRepository = mockk(relaxed = true)
 
     @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mockk(relaxed = true)
