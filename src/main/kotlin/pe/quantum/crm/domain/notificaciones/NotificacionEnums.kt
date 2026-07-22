@@ -14,6 +14,10 @@ enum class TipoNotificacion {
     solicitud_creada,
     solicitud_aprobada,
     solicitud_denegada,
+    meta_propuesta,
+    meta_aprobada,
+    meta_rechazada,
+    meta_modificada,
 }
 
 /** Valores de `entidad_notificacion_enum` (migracion V22, V28). */
@@ -22,4 +26,5 @@ enum class EntidadNotificacion {
     oportunidad,
     empresa,
     solicitud,
+    meta_venta,
 }

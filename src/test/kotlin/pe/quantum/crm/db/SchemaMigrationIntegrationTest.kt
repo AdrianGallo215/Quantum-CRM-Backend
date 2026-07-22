@@ -64,6 +64,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
             "buses_entregados",
             "notificaciones",
             "recordatorios_enviados",
+            "metas_venta",
         )
     }
 
@@ -85,6 +86,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
             "entidad_notificacion_enum",
             "origen_recordatorio_enum",
             "umbral_recordatorio_enum",
+            "estado_meta_enum",
         )
     }
 
