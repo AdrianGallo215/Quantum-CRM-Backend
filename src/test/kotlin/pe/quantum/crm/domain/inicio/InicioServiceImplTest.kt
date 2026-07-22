@@ -94,6 +94,31 @@ class InicioServiceImplTest {
     }
 
     @Test
+    fun `jdv equipo solo cuenta logradas de vendedores con meta aprobada`() {
+        val jdv = UsuarioActual(id = 2, rol = "jdv")
+        stubsComunes(jdv)
+        every { metaVentaService.aprobadasPorEmpleadosYAnio(listOf(2L), anio) } returns emptyMap()
+        every { inicioDao.unidadesFacturadasPorVendedor(listOf(2L), anio, null) } returns emptyMap()
+        every { inicioDao.unidadesFacturadasPorVendedor(listOf(2L), anio, mes) } returns emptyMap()
+        every { empleadoService.idsActivosPorRol(RolEmpleado.vendedor) } returns listOf(5L, 6L, 7L)
+        // vendedor 7 no tiene meta aprobada este año (nuevo ingreso / propuesta pendiente o rechazada)
+        every { metaVentaService.aprobadasPorEmpleadosYAnio(listOf(5L, 6L, 7L), anio) } returns
+            mapOf(
+                5L to MetaVentaResumen(idEmpleado = 5, anio = anio, metaAnual = 120, metaPorMes = List(12) { 10 }),
+                6L to MetaVentaResumen(idEmpleado = 6, anio = anio, metaAnual = 60, metaPorMes = List(12) { 5 }),
+            )
+        // vendedor 7 vendió unidades igual, pese a no tener meta propia: no debe contar en el total del equipo
+        every { inicioDao.unidadesFacturadasPorVendedor(listOf(5L, 6L, 7L), anio, null) } returns mapOf(5L to 60, 6L to 30, 7L to 100)
+        every { inicioDao.unidadesFacturadasPorVendedor(listOf(5L, 6L, 7L), anio, mes) } returns mapOf(5L to 5, 6L to 5, 7L to 10)
+
+        val panel = service.panel(jdv)
+
+        assertThat(panel.metaVentas?.equipo?.anual?.unidadesMeta).isEqualTo(180)
+        assertThat(panel.metaVentas?.equipo?.anual?.unidadesLogradas).isEqualTo(90)
+        assertThat(panel.metaVentas?.equipo?.mensual?.unidadesLogradas).isEqualTo(10)
+    }
+
+    @Test
     fun `gerencia no ve bloque de metas de venta en inicio`() {
         val gerencia = UsuarioActual(id = 1, rol = "gerencia")
         stubsComunes(gerencia)

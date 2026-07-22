@@ -126,8 +126,8 @@ class InicioService(
         val logradasMesPorVendedor = inicioDao.unidadesFacturadasPorVendedor(idsVendedores, anio, mes)
         val metaAnualTotal = metas.values.sumOf { it.metaAnual }.takeIf { metas.isNotEmpty() }
         val metaMesTotal = metas.values.sumOf { it.metaPorMes[mes - 1] }.takeIf { metas.isNotEmpty() }
-        val logradasAnualTotal = idsVendedores.sumOf { logradasAnualPorVendedor[it] ?: 0 }
-        val logradasMesTotal = idsVendedores.sumOf { logradasMesPorVendedor[it] ?: 0 }
+        val logradasAnualTotal = metas.keys.sumOf { logradasAnualPorVendedor[it] ?: 0 }
+        val logradasMesTotal = metas.keys.sumOf { logradasMesPorVendedor[it] ?: 0 }
         return MetaVentaAgregadoDto(
             mensual = medidor(metaMesTotal, logradasMesTotal),
             anual = medidor(metaAnualTotal, logradasAnualTotal),
