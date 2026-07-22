@@ -203,6 +203,23 @@ Ningún rol `vendedor` ni `analista` tiene acceso a reportes en el MVP.
 
 ---
 
+### 2.13 Metas de venta
+
+| Operación | admin | gerencia | jdv | vendedor | analista |
+|---|---|---|---|---|---|
+| Proponer meta de un vendedor o de sí mismo | — (crea directo) | — (crea directo) | ✓ | — | — |
+| Crear/modificar meta directo (queda aprobada) | ✓ | ✓ | — | — | — |
+| Aprobar / rechazar propuesta | ✓ | ✓ | — | — | — |
+| Ver metas propias | ✓ | ✓ | ✓ | ✓ | — (no aplica, no tiene meta) |
+| Ver metas del equipo (todos los vendedores) | ✓ | ✓ | ✓ | — | — |
+| Ver medidor de cumplimiento en Inicio | — (no vende) | — (no vende) | ✓ (propio + equipo) | ✓ (propio) | — |
+
+**Notas:**
+- La meta es en unidades vendidas, no en monto. Un vendedor solo aparece en la tabla como `id_empleado`, nunca `gerencia`/`admin` (no tienen cartera propia, igual que en reasignación de vendedor).
+- Las unidades de una oportunidad cuentan para el cumplimiento del vendedor únicamente mientras esté en estado `facturado` (`oportunidades.facturado_en`); al cancelarse (retroceder de estado) o eliminarse estando facturada, dejan de contar sin acción manual.
+
+---
+
 ## 3. Reglas de implementación en Spring Security
 
 ### 3.1 Estructura recomendada

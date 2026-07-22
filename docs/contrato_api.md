@@ -1482,6 +1482,11 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "total": 4,
       "listas_para_convertir": 1,
       "requieren_atencion": 2
+    },
+    "meta_ventas": {
+      "mensual": { "tiene_meta": true, "unidades_meta": 10, "unidades_logradas": 6, "porcentaje": 60 },
+      "anual": { "tiene_meta": true, "unidades_meta": 120, "unidades_logradas": 60, "porcentaje": 50 },
+      "equipo": null
     }
   }
 }
@@ -1491,6 +1496,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - `tareas_pendientes` ordenadas por `fecha_ejecucion ASC` (vencidas primero, luego hoy, luego próximas).
 - `eventos_por_seguir` ordenados por `fecha_seguimiento ASC`.
 - `resumen_prospeccion.requieren_atencion` = empresas con `checkpoints = 0` y `dias_sin_actividad >= 15`.
+- `meta_ventas` es `null` para roles distintos de `vendedor`/`jdv` (no venden). Cuando no hay meta `aprobada` para el periodo, `tiene_meta` es `false` y `unidades_meta`/`porcentaje` vienen `null` (`unidades_logradas` siempre se calcula). `equipo` solo viene con datos para `jdv` (agregado de vendedores activos); para `vendedor` es `null`.
 
 ---
 
@@ -1800,6 +1806,81 @@ Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una 
 **Body:** `{ "motivo": "El margen de este modelo no soporta ese descuento" }`
 
 **Errores:** `400 VALIDACION` (falta motivo) · `409 SOLICITUD_YA_RESUELTA`.
+
+---
+
+## 21. Metas de venta
+
+Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anual (calculada = suma de los meses). Una fila por `(id_empleado, año)`. El JDV propone el año completo de un vendedor (o el suyo propio); Gerencia aprueba, rechaza (con motivo) o modifica directamente (auto-aprobado). Las unidades de una oportunidad solo cuentan para el cumplimiento cuando está `facturado`; si se cancela o se elimina estando facturada, dejan de contar automáticamente (sin acción manual).
+
+### POST /metas-venta
+> Propone (jdv) o crea/sobreescribe directo y aprobado (gerencia/admin) la meta de un empleado para un año.
+
+**Roles:** `jdv` `gerencia` `admin`
+
+**Body:**
+```json
+{
+  "id_empleado": 5,
+  "anio": 2027,
+  "meta_enero": 8, "meta_febrero": 8, "meta_marzo": 10, "meta_abril": 10,
+  "meta_mayo": 10, "meta_junio": 12, "meta_julio": 12, "meta_agosto": 10,
+  "meta_septiembre": 10, "meta_octubre": 10, "meta_noviembre": 12, "meta_diciembre": 12
+}
+```
+
+**Respuesta 201:** el objeto meta (`id`, `id_empleado`, `empleado`, `anio`, `meta_enero`..`meta_diciembre`, `meta_anual`, `estado`, `propuesto_por`, `resolutor`, `motivo_rechazo`, `resolved_at`, `created_at`). `meta_anual` lo calcula el backend (suma de los 12 meses); nunca se acepta como input.
+
+**Errores:** `400 VALIDACION` (falta algún mes o `id_empleado`/`anio`) · `403 PERMISO_INSUFICIENTE` (rol no puede proponer) · `404` no aplica (id_empleado inválido es `400 VALIDACION`, campo `id_empleado`) · `409 META_YA_EXISTE` (jdv sobre una fila `propuesta`/`aprobada` existente; usar `PATCH`).
+
+---
+
+### PATCH /metas-venta/:id
+> Edita cualquier subconjunto de los 12 meses de una meta existente. Recalcula `meta_anual` y deja la meta `aprobada`.
+
+**Roles:** `gerencia` `admin`
+
+**Body:** cualquier subconjunto de `meta_enero`..`meta_diciembre`, por ejemplo `{ "meta_marzo": 15 }`.
+
+**Errores:** `400 VALIDACION` · `403 PERMISO_INSUFICIENTE` · `404 NO_ENCONTRADO` · `409 META_RECHAZADA` (no se edita una rechazada; debe volver a proponerse).
+
+---
+
+### PATCH /metas-venta/:id/aprobar
+> Aprueba una meta `propuesta` tal cual fue propuesta. Notifica al JDV proponente.
+
+**Roles:** `gerencia` `admin`
+
+**Body:** vacío.
+
+**Errores:** `403 PERMISO_INSUFICIENTE` · `409 META_YA_RESUELTA`.
+
+---
+
+### PATCH /metas-venta/:id/rechazar
+> Rechaza una meta `propuesta`. El motivo es obligatorio (ahí se especifica qué corregir). Notifica al JDV.
+
+**Roles:** `gerencia` `admin`
+
+**Body:** `{ "motivo": "Marzo está muy alto respecto al histórico del vendedor" }`
+
+**Errores:** `400 VALIDACION` (falta motivo) · `403 PERMISO_INSUFICIENTE` · `409 META_YA_RESUELTA`.
+
+---
+
+### GET /metas-venta
+> Lista metas, paginado estándar (§4). `admin`/`gerencia`/`jdv` ven todas (el jdv ve todo el equipo, incluida la suya); `vendedor`/`analista` solo las propias.
+
+**Query params:** `id_empleado`, `anio`, `estado` (`propuesta|aprobada|rechazada`).
+
+---
+
+### GET /metas-venta/:id
+> Detalle. `404` si no es visible para el usuario (IDOR).
+
+---
+
+**Nota — panel de Inicio:** `GET /inicio` (§17) incluye `meta_ventas` (null para roles distintos de `vendedor`/`jdv`) con el cumplimiento mensual/anual y, para `jdv`, el agregado del equipo. Ver §17.
 
 ---
 
