@@ -23,6 +23,7 @@ import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.exception.AprobacionRequeridaException
 import pe.quantum.crm.shared.exception.ValidacionException
@@ -43,6 +44,7 @@ class OportunidadServiceImplTest {
     private val contactoService = mockk<ContactoService>()
     private val consultas = mockk<OportunidadConsultas>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -56,7 +58,14 @@ class OportunidadServiceImplTest {
             contactoService,
             consultas,
             notificacionService,
+            driveStorageService,
         )
+
+    init {
+        // Toda creacion de oportunidad abre su carpeta en Drive. Los escenarios que
+        // verifican ese comportamiento lo re-declaran con valores concretos.
+        every { empresaService.asegurarCarpetaDrive(any()) } returns "carpeta-empresa"
+    }
 
     private fun oportunidad(
         id: Long = 100,
@@ -495,5 +504,170 @@ class OportunidadServiceImplTest {
         )
 
         assertThat(entidad.facturadoEn).isNull()
+    }
+
+    // ── Carpeta de Google Drive ───────────────────────────────
+
+    @Test
+    fun `crear abre la subcarpeta de Drive dentro de la carpeta de la empresa`() {
+        stubsDeCreacion(driveFolderIdEmpresa = "carpeta-empresa")
+        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") } returns "carpeta-op"
+
+        val dto =
+            service.crear(
+                CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, dcto = BigDecimal.ZERO),
+                UsuarioActual(id = 3, rol = "vendedor"),
+            )
+
+        verify { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") }
+        assertThat(dto.driveFolderId).isEqualTo("carpeta-op")
+    }
+
+    @Test
+    fun `crear abre primero la carpeta de la empresa si esta aun no tiene`() {
+        stubsDeCreacion(driveFolderIdEmpresa = null)
+        every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa-nueva"
+        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa-nueva") } returns "carpeta-op"
+
+        service.crear(
+            CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, dcto = BigDecimal.ZERO),
+            UsuarioActual(id = 3, rol = "vendedor"),
+        )
+
+        verify { empresaService.asegurarCarpetaDrive(10) }
+        verify { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa-nueva") }
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive no llama a Drive si la oportunidad ya tiene carpeta`() {
+        val entidad = oportunidadConVendedor(3).apply { driveFolderId = "ya-existe" }
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+
+        val carpeta = service.asegurarCarpetaDrive(100, UsuarioActual(id = 3, rol = "vendedor"))
+
+        assertThat(carpeta).isEqualTo("ya-existe")
+        verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive responde 404 en una oportunidad ajena antes de tocar Drive`() {
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidadConVendedor(3))
+
+        assertThatThrownBy {
+            service.asegurarCarpetaDrive(100, UsuarioActual(id = 77, rol = "vendedor"))
+        }.isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+
+        verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+    }
+
+    private fun oportunidadConVendedor(idVendedor: Long) =
+        Oportunidad(
+            id = 100,
+            idEmpresa = 10,
+            idVendedor = idVendedor,
+            idFinanciadora = 1,
+            idModelo = 1,
+            createdBy = idVendedor,
+            updatedBy = idVendedor,
+        )
+
+    /** Stubs minimos para que `crear` llegue hasta el ensamblado del DTO. */
+    private fun stubsDeCreacion(driveFolderIdEmpresa: String?) {
+        every { empresaService.vinculoVisible(10, any()) } returns
+            EmpresaVinculo(
+                id = 10,
+                razonSocial = "Kincar S.A.C.",
+                idVendedor = 3,
+                estadoCartera = "prospeccion",
+                driveFolderId = driveFolderIdEmpresa,
+            )
+        every { modeloService.resumen(1) } returns busX()
+        every { financiadoraService.default() } returns calidda()
+        val guardada = slot<Oportunidad>()
+        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(100) }
+        every { logRepository.save(any()) } returns mockk()
+        every { estadoCarteraService.actualizar(10) } returns null
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(listOf(3)) } returns
+            mapOf(3L to EmpleadoResumen(id = 3, nombres = "Jose", apellidos = "Lima"))
+        every { financiadoraService.porIds(listOf(1)) } returns mapOf(1L to calidda())
+        every { modeloService.resumenPorIds(listOf(1)) } returns mapOf(1L to busX())
+        every { consultas.tareasPendientesPorOportunidad(listOf(100L)) } returns emptyMap()
+        every { consultas.eventosPendientesPorOportunidad(listOf(100L)) } returns emptyMap()
+        every { contactoOportunidadRepository.findByIdIdOportunidad(100L) } returns emptyList()
+        every { contactoService.resumenPorIds(emptyList()) } returns emptyMap()
+        every { logRepository.findFirstByIdOportunidadOrderByChangedAtDescIdDesc(100L) } returns null
+    }
+
+    // ── archivosDrive ─────────────────────────────────────────
+
+    @Test
+    fun `archivosDrive devuelve los documentos de la carpeta de la oportunidad`() {
+        val entidad = oportunidadConVendedor(3).apply { driveFolderId = "carpeta-op" }
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { driveStorageService.listarArchivos("carpeta-op") } returns
+            listOf(
+                pe.quantum.crm.integracion.drive.DriveArchivoSubido(
+                    id = "archivo-1",
+                    nombre = "contrato.pdf",
+                    url = "https://drive.google.com/file/d/archivo-1/view",
+                    tamanoBytes = 1024,
+                    mimeType = "application/pdf",
+                ),
+            )
+
+        val resultado = service.archivosDrive(100, UsuarioActual(id = 3, rol = "vendedor"))
+
+        assertThat(resultado).hasSize(1)
+        assertThat(resultado[0].nombre).isEqualTo("contrato.pdf")
+    }
+
+    @Test
+    fun `archivosDrive de una oportunidad sin carpeta devuelve lista vacia sin llamar a Drive`() {
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidadConVendedor(3))
+
+        assertThat(service.archivosDrive(100, UsuarioActual(id = 3, rol = "vendedor"))).isEmpty()
+
+        verify(exactly = 0) { driveStorageService.listarArchivos(any()) }
+    }
+
+    @Test
+    fun `archivosDrive de una oportunidad ajena responde 404`() {
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidadConVendedor(3))
+
+        assertThatThrownBy {
+            service.archivosDrive(100, UsuarioActual(id = 77, rol = "vendedor"))
+        }.isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+    }
+
+    @Test
+    fun `idsSinCarpetaDrive delega en el repositorio y devuelve los ids pendientes`() {
+        every { oportunidadRepository.findIdsSinCarpetaDrive() } returns listOf(11L, 12L)
+
+        assertThat(service.idsSinCarpetaDrive()).containsExactly(11L, 12L)
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive de sistema crea la carpeta sin exigir visibilidad`() {
+        val entidad = oportunidadConVendedor(3)
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
+        every { modeloService.resumen(1) } returns busX()
+        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") } returns "carpeta-op"
+        every { oportunidadRepository.save(entidad) } returns entidad
+
+        assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("carpeta-op")
+        assertThat(entidad.driveFolderId).isEqualTo("carpeta-op")
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive de sistema es idempotente`() {
+        val entidad = oportunidadConVendedor(3).apply { driveFolderId = "ya-existe" }
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+
+        assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("ya-existe")
+
+        verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
     }
 }

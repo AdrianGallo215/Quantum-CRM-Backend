@@ -22,6 +22,8 @@ import pe.quantum.crm.domain.empresas.dto.toVinculo
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
+import pe.quantum.crm.integracion.drive.DriveArchivoSubido
+import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -36,11 +38,13 @@ import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 
 @Service
+@Suppress("TooManyFunctions") // Cartera, cascadas y Drive; igual que su interfaz.
 class EmpresaServiceImpl(
     private val empresaRepository: EmpresaRepository,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
     private val eventPublisher: ApplicationEventPublisher,
+    private val driveStorageService: DriveStorageService,
 ) : EmpresaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -128,8 +132,34 @@ class EmpresaServiceImpl(
                 updatedAt = ahora,
                 updatedBy = usuario.id,
             )
+        // Carpeta de Drive dentro de la transaccion: si Drive falla, la empresa no
+        // se crea. Decision explicita — nunca queda una empresa sin carpeta.
+        empresa.driveFolderId = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
         return empresaRepository.save(empresa).toDetalle()
     }
+
+    @Transactional
+    override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
+
+    @Transactional
+    override fun asegurarCarpetaDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+
+    private fun asegurarCarpetaDriveDe(empresa: Empresa): String {
+        empresa.driveFolderId?.let { return it }
+        val carpeta = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
+        empresa.driveFolderId = carpeta
+        empresaRepository.save(empresa)
+        return carpeta
+    }
+
+    @Transactional(readOnly = true)
+    override fun archivosDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): List<DriveArchivoSubido> = visible(id, usuario).driveFolderId?.let { driveStorageService.listarArchivos(it) } ?: emptyList()
 
     @Transactional
     override fun actualizar(
@@ -324,6 +354,9 @@ class EmpresaServiceImpl(
         empresaRepository.delete(empresa)
     }
 
+    @Transactional(readOnly = true)
+    override fun idsSinCarpetaDrive(): List<Long> = empresaRepository.findIdsSinCarpetaDrive()
+
     // ── privados ───────────────────────────────────────────────
 
     private fun entidad(id: Long): Empresa = empresaRepository.findById(id).orElseThrow { NoEncontradoException("La empresa no existe") }
@@ -385,6 +418,12 @@ class EmpresaServiceImpl(
             cb.and(*predicados.toTypedArray())
         }
 
+    /** `{ruc} - {razon social}`: ordena alfabeticamente y es rastreable desde Drive. */
+    private fun nombreCarpetaDrive(
+        ruc: String,
+        razonSocial: String,
+    ): String = "$ruc - $razonSocial"
+
     private fun Empresa.toDetalle(): EmpresaDetalleDto {
         val vendedor = idVendedor?.let { empleadoService.resumenPorIds(listOf(it))[it] }
         return EmpresaDetalleDto(
@@ -405,6 +444,7 @@ class EmpresaServiceImpl(
             origenLead = origenLead?.name,
             estadoCartera = estadoCartera.name,
             fileDrive = fileDrive,
+            driveFolderId = driveFolderId,
             sitioWeb = sitioWeb,
             notas = notas,
             idVendedor = idVendedor,

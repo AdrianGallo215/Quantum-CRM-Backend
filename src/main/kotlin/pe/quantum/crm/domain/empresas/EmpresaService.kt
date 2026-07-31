@@ -10,11 +10,13 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaListaDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.empresas.dto.RucCheckDto
+import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.security.UsuarioActual
 
 /** Interfaz publica del modulo empresas. */
+@Suppress("TooManyFunctions") // Cartera, cascadas y Drive; igual que su implementacion.
 interface EmpresaService {
     fun listar(
         filtros: EmpresaFiltros,
@@ -92,6 +94,32 @@ interface EmpresaService {
     fun vendedorAsignado(id: Long): Long?
 
     /**
+     * Devuelve la carpeta de Drive de la empresa, creandola si aun no existe.
+     * Idempotente: si ya hay una, no toca Drive. Cubre las empresas anteriores a
+     * V35 y cualquier hueco. Sin chequeo de visibilidad: uso interno entre modulos,
+     * donde quien llama ya la verifico (p. ej. al crear una oportunidad).
+     */
+    fun asegurarCarpetaDrive(id: Long): String
+
+    /**
+     * Igual que [asegurarCarpetaDrive], pero para uso HTTP directo: verifica
+     * visibilidad primero (ajena o inexistente → 404, IDOR SECURITY §3.2).
+     */
+    fun asegurarCarpetaDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): String
+
+    /**
+     * Documentos de la carpeta de Drive de la empresa. Lista vacia si aun no tiene
+     * carpeta (no la crea: una lectura no debe tener efectos secundarios).
+     */
+    fun archivosDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): List<DriveArchivoSubido>
+
+    /**
      * Mueve una empresa a la Cartera Maestra (reserva de gerencia, la desasigna)
      * o la libera asignando vendedor (obligatorio) y notificando `empresa_asignada`.
      * Solo gerencia/admin (el controller ya lo restringe; el servicio re-verifica).
@@ -110,4 +138,10 @@ interface EmpresaService {
      * vinculados NO se eliminan, solo se desvinculan.
      */
     fun eliminar(id: Long)
+
+    /**
+     * Ids de empresas sin carpeta de Drive. Sin chequeo de visibilidad: lo consume
+     * el backfill administrativo, que corre sobre todo el sistema.
+     */
+    fun idsSinCarpetaDrive(): List<Long>
 }

@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.oportunidades
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
+import org.springframework.data.jpa.repository.Query
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 
 interface OportunidadRepository :
@@ -21,6 +22,10 @@ interface OportunidadRepository :
         idEmpresa: Long,
         estados: Collection<EstadoOportunidad>,
     ): List<Oportunidad>
+
+    /** Ids de oportunidades sin carpeta de Drive (backfill, ver modulo `mantenimiento`). */
+    @Query("select o.id from Oportunidad o where o.driveFolderId is null order by o.id")
+    fun findIdsSinCarpetaDrive(): List<Long>
 }
 
 interface OportunidadEstadoLogRepository : JpaRepository<OportunidadEstadoLog, Long> {

@@ -11,6 +11,7 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
+import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
 
@@ -110,4 +111,41 @@ interface OportunidadService {
      * esta oportunidad deja de contar.
      */
     fun eliminar(id: Long)
+
+    /**
+     * Devuelve la carpeta de Drive de la oportunidad, creandola (y la de su empresa
+     * si hiciera falta) cuando aun no existe. Verifica visibilidad: ajena o
+     * inexistente → 404 (IDOR, SECURITY §3.2).
+     *
+     * Es una operacion corta y transaccional a proposito: la subida del archivo
+     * ocurre DESPUES y fuera de la transaccion, para no retener una conexion a la
+     * base de datos mientras se transfieren megabytes a Drive.
+     */
+    fun asegurarCarpetaDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): String
+
+    /**
+     * Igual que la sobrecarga con usuario, pero sin chequeo de visibilidad: uso
+     * interno de jobs de sistema (backfill administrativo). Crea antes la carpeta
+     * de la empresa si le falta.
+     */
+    fun asegurarCarpetaDrive(id: Long): String
+
+    /**
+     * Documentos de la carpeta de Drive de la oportunidad. Lista vacia si aun no
+     * tiene carpeta (no la crea: una lectura no debe tener efectos secundarios).
+     * Ajena o inexistente → 404 (IDOR, SECURITY §3.2).
+     */
+    fun archivosDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): List<DriveArchivoSubido>
+
+    /**
+     * Ids de oportunidades sin carpeta de Drive. Sin chequeo de visibilidad: lo
+     * consume el backfill administrativo, que corre sobre todo el sistema.
+     */
+    fun idsSinCarpetaDrive(): List<Long>
 }

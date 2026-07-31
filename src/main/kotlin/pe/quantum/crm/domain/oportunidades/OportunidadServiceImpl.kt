@@ -29,6 +29,8 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
+import pe.quantum.crm.integracion.drive.DriveArchivoSubido
+import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.PoliticaDescuento
@@ -60,6 +62,7 @@ class OportunidadServiceImpl(
     private val contactoService: ContactoService,
     private val consultas: OportunidadConsultas,
     private val notificacionService: NotificacionService,
+    private val driveStorageService: DriveStorageService,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -149,6 +152,13 @@ class OportunidadServiceImpl(
                 ),
             )
         }
+        // Subcarpeta bajo la carpeta de la empresa, ya con el id definitivo.
+        // Dentro de la transaccion: si Drive falla, la oportunidad no se crea.
+        oportunidad.driveFolderId =
+            driveStorageService.crearCarpeta(
+                nombre = nombreCarpetaDrive(idOportunidad, modelo.codigo),
+                parentFolderId = empresa.driveFolderId ?: empresaService.asegurarCarpetaDrive(empresa.id),
+            )
         // Misma transaccion (reglas §3.3): la empresa sube a oportunidad_activa.
         val cambioCartera = estadoCarteraService.actualizar(empresa.id)
         notificarConversionSiAplica(cambioCartera, empresa.id, idOportunidad, usuario)
@@ -568,6 +578,47 @@ class OportunidadServiceImpl(
         oportunidadRepository.findById(id).orElseThrow { NoEncontradoException("La oportunidad no existe") }
 
     /** IDOR: oportunidad ajena para vendedor/analista → 404, no 403. */
+    @Transactional
+    override fun asegurarCarpetaDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+
+    @Transactional
+    override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
+
+    private fun asegurarCarpetaDriveDe(oportunidad: Oportunidad): String {
+        oportunidad.driveFolderId?.let { return it }
+        val carpetaEmpresa = empresaService.asegurarCarpetaDrive(oportunidad.idEmpresa)
+        val codigoModelo = oportunidad.idModelo?.let { modeloService.resumen(it).codigo }
+        val carpeta =
+            driveStorageService.crearCarpeta(
+                nombre = nombreCarpetaDrive(requireNotNull(oportunidad.id), codigoModelo),
+                parentFolderId = carpetaEmpresa,
+            )
+        oportunidad.driveFolderId = carpeta
+        oportunidadRepository.save(oportunidad)
+        return carpeta
+    }
+
+    @Transactional(readOnly = true)
+    override fun archivosDrive(
+        id: Long,
+        usuario: UsuarioActual,
+    ): List<DriveArchivoSubido> = visible(id, usuario).driveFolderId?.let { driveStorageService.listarArchivos(it) } ?: emptyList()
+
+    @Transactional(readOnly = true)
+    override fun idsSinCarpetaDrive(): List<Long> = oportunidadRepository.findIdsSinCarpetaDrive()
+
+    /**
+     * `OP-{id} - {codigo modelo}`: identifica la oportunidad dentro de la carpeta de
+     * la empresa sin ambiguedad, aunque haya varias del mismo modelo.
+     */
+    private fun nombreCarpetaDrive(
+        idOportunidad: Long,
+        codigoModelo: String?,
+    ): String = listOfNotNull("OP-$idOportunidad", codigoModelo).joinToString(" - ")
+
     private fun visible(
         id: Long,
         usuario: UsuarioActual,
@@ -667,6 +718,7 @@ class OportunidadServiceImpl(
                 garantia = op.garantia,
                 fincParalelo = op.fincParalelo,
                 fichaVenta = op.fichaVenta,
+                driveFolderId = op.driveFolderId,
                 notas = op.notas,
                 motivoCierre = op.motivoCierre,
                 fechaCierreEstimado = op.fechaCierreEstimado,
