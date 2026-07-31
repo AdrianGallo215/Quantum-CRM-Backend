@@ -58,6 +58,8 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | Editar empresa (datos) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
 | Reasignar vendedor directo | ✓ | ✓ | — (vía solicitud a gerencia) | — | — |
 | Cambiar `estado_cartera` manual | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Ver/subir archivos en Drive (`GET`/`POST /empresas/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Crear carpeta de Drive (`POST /empresas/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
 | Ver check de RUC duplicado | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Mover/liberar Cartera Maestra | ✓ | ✓ | — | — | — |
 | Eliminar empresa (definitivo, cascada a oportunidades/tareas/eventos) | ✓ | — | — | — | — |
@@ -89,6 +91,8 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 |---|---|---|---|---|---|
 | Crear oportunidad | ✓ | ✓ (asigna vendedor si la empresa no tiene) | ✓ | ✓ Solo en sus empresas | ✓ Solo en sus empresas |
 | Editar campos negociables | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Ver/subir archivos en Drive (`GET`/`POST /oportunidades/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Crear carpeta de Drive (`POST /oportunidades/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
 | Aplicar descuento directo | Sin límite | Sin límite | Hasta 7% | Hasta 3% | Hasta 3% |
 | Solicitar descuento sobre su límite | — | — | ✓ (>7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) |
 | Cambiar estado (cualquier estado excepto `facturado`) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
@@ -217,6 +221,14 @@ Ningún rol `vendedor` ni `analista` tiene acceso a reportes en el MVP.
 **Notas:**
 - La meta es en unidades vendidas, no en monto. Un vendedor solo aparece en la tabla como `id_empleado`, nunca `gerencia`/`admin` (no tienen cartera propia, igual que en reasignación de vendedor).
 - Las unidades de una oportunidad cuentan para el cumplimiento del vendedor únicamente mientras esté en estado `facturado` (`oportunidades.facturado_en`); al cancelarse (retroceder de estado) o eliminarse estando facturada, dejan de contar sin acción manual.
+
+---
+
+### 2.14 Mantenimiento
+
+| Operación | admin | gerencia | jdv | vendedor | analista |
+|---|---|---|---|---|---|
+| Backfill de carpetas de Drive (`POST /mantenimiento/carpetas-drive`) | ✓ | — | — | — | — |
 
 ---
 

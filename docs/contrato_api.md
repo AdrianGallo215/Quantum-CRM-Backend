@@ -104,6 +104,9 @@ En caso de error, `data` es `null` y `error` contiene:
 | `SOLICITUD_YA_RESUELTA` | 409 | Otro aprobador ya resolvió la solicitud |
 | `SOLICITUD_NO_APLICABLE` | 409 | La entidad cambió y el efecto de la solicitud ya no aplica |
 | `CARTERA_MAESTRA_CON_OPORTUNIDADES` | 409 | No se puede reservar una empresa con oportunidades activas |
+| `ARCHIVO_DEMASIADO_GRANDE` | 413 | El archivo supera `DRIVE_MAX_FILE_SIZE_BYTES` |
+| `DRIVE_NO_DISPONIBLE` | 502 | Google Drive no respondió |
+| `DRIVE_SIN_CUOTA` | 502 | `ROOT_DRIVE_FOLDER_ID` no apunta a una unidad compartida |
 
 ---
 
@@ -346,6 +349,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
     "origen_lead": "visita_fria",
     "estado_cartera": "oportunidad_activa",
     "file_drive": "https://drive.google.com/...",
+    "drive_folder_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
     "sitio_web": null,
     "notas": null,
     "id_vendedor": 1,
@@ -425,6 +429,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ```
 
 **Respuesta 201:** el objeto empresa completo.
+
+**Notas:**
+- Se crea la carpeta de Google Drive de la empresa bajo la unidad compartida raíz, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la empresa **no se crea** (`502 DRIVE_NO_DISPONIBLE`).
+- `drive_folder_id` es de **solo lectura**: lo administra el backend y nunca se acepta en el body. No confundir con `file_drive`, que es una URL suelta editable por el usuario.
 
 **Notas:**
 - `segmentos` se inserta en `empresa_segmentos` de forma atómica.
@@ -545,6 +553,65 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - Notifica `empresa_asignada` al vendedor destino. A partir de este momento la empresa es visible para el `jdv` y el vendedor asignado.
 
 **Respuesta 200:** `{ "data": { "en_cartera_maestra": false, "id_vendedor": 8 } }`
+
+---
+
+### POST /empresas/:id/carpeta-drive
+> Crea la carpeta de Google Drive de la empresa. Idempotente.
+
+**Roles:** los mismos que ven la empresa (un vendedor solo las suyas).
+
+**Body:** vacío.
+
+**Respuesta 200:** `{ "data": { "drive_folder_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz" } }`
+
+**Notas:**
+- Si la empresa ya tiene carpeta, la devuelve sin tocar Drive. El frontend puede llamarlo sin verificar antes.
+- El botón "Crear File del Cliente" debe **ocultarse** cuando `drive_folder_id` ya viene distinto de `null` en `GET /empresas/:id`.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE` / `DRIVE_SIN_CUOTA`.
+
+---
+
+### GET /empresas/:id/archivos
+> Lista los documentos de la carpeta de Google Drive de la empresa.
+
+**Roles:** los mismos que ven la empresa (un vendedor solo ve las suyas).
+
+**Respuesta 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+      "nombre": "ficha-ruc.pdf",
+      "url": "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+      "tamano_bytes": 284512,
+      "mime_type": "application/pdf"
+    }
+  ]
+}
+```
+
+**Notas:**
+- Orden alfabético por nombre. No incluye subcarpetas de oportunidades ni elementos en la papelera de Drive.
+- Si la empresa aún no tiene carpeta, devuelve `"data": []`. Esta llamada **nunca crea la carpeta**.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE`.
+
+---
+
+### POST /empresas/:id/archivos
+> Sube un documento a la carpeta de Google Drive de la empresa.
+
+**Roles:** los mismos que ven la empresa (un vendedor solo sube a las suyas).
+
+**Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
+
+El backend no almacena el archivo: lo transmite en streaming hacia Drive.
+
+**Respuesta 201:** igual forma que el listado, un solo objeto en `data` (ver `POST /oportunidades/:id/archivos`).
+
+**Errores:** los mismos que `POST /oportunidades/:id/archivos` — `400 VALIDACION` · `404 NO_ENCONTRADO` · `413 ARCHIVO_DEMASIADO_GRANDE` · `502 DRIVE_NO_DISPONIBLE` / `DRIVE_SIN_CUOTA`.
 
 ---
 
@@ -761,6 +828,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "garantia": true,
       "finc_paralelo": false,
       "ficha_venta": null,
+      "drive_folder_id": "1XyZaBcDeFgHiJkLmNoPqRsTuV",
       "notas": null,
       "motivo_cierre": null,
       "fecha_cierre_estimado": "2026-07-10",
@@ -834,6 +902,91 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: no se crea la oportunidad. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre la oportunidad ya creada.
 - Se inserta el primer registro en `oportunidad_estados_log`.
 - Se llama a `actualizarEstadoCartera` en la misma transacción.
+- Se crea la subcarpeta de Google Drive de la oportunidad dentro de la carpeta de su empresa, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la oportunidad **no se crea** (`502 DRIVE_NO_DISPONIBLE`).
+
+---
+
+### POST /oportunidades/:id/carpeta-drive
+> Crea la carpeta de Google Drive de la oportunidad, dentro de la de su empresa. Idempotente.
+
+**Roles:** los mismos que ven la oportunidad (un vendedor solo las suyas).
+
+**Body:** vacío.
+
+**Respuesta 200:** `{ "data": { "drive_folder_id": "1XyZaBcDeFgHiJkLmNoPqRsTuV" } }`
+
+**Notas:**
+- Si la empresa de esa oportunidad tampoco tiene carpeta, se crean **ambas**: primero la de la empresa, y la de la oportunidad dentro.
+- Si la oportunidad ya tiene carpeta, la devuelve sin tocar Drive.
+- El botón "Crear File de la Oportunidad" debe **ocultarse** cuando `drive_folder_id` ya viene distinto de `null` en `GET /oportunidades/:id`.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE` / `DRIVE_SIN_CUOTA`.
+
+---
+
+### GET /oportunidades/:id/archivos
+> Lista los documentos de la carpeta de Google Drive de la oportunidad.
+
+**Roles:** los mismos que ven la oportunidad (un vendedor solo ve las suyas).
+
+**Respuesta 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+      "nombre": "contrato-firmado.pdf",
+      "url": "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+      "tamano_bytes": 284512,
+      "mime_type": "application/pdf"
+    }
+  ]
+}
+```
+
+**Notas:**
+- Orden alfabético por nombre. No incluye subcarpetas ni elementos en la papelera de Drive.
+- Si la oportunidad aún no tiene carpeta (nunca se subió nada), devuelve `"data": []`. Esta llamada **nunca crea la carpeta** — a diferencia de `POST`, una lectura no tiene efectos secundarios.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE`.
+
+---
+
+### POST /oportunidades/:id/archivos
+> Sube un documento a la carpeta de Google Drive de la oportunidad.
+
+**Roles:** los mismos que ven la oportunidad (un vendedor solo sube a las suyas).
+
+**Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
+
+El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay límite práctico de tamaño por memoria del servidor, solo el tope configurado (`DRIVE_MAX_FILE_SIZE_BYTES`, 100 MB por defecto).
+
+**Respuesta 201:**
+
+```json
+{
+  "data": {
+    "id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+    "nombre": "contrato-firmado.pdf",
+    "url": "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+    "tamano_bytes": 284512,
+    "mime_type": "application/pdf"
+  }
+}
+```
+
+**Errores:**
+
+| Código HTTP | `code` | Cuándo |
+|---|---|---|
+| 400 | `VALIDACION` | No es `multipart/form-data`, falta el campo `file`, o el archivo no tiene nombre |
+| 404 | `NO_ENCONTRADO` | La oportunidad no existe o es ajena (IDOR → 404, nunca 403) |
+| 413 | `ARCHIVO_DEMASIADO_GRANDE` | Supera `DRIVE_MAX_FILE_SIZE_BYTES` |
+| 502 | `DRIVE_NO_DISPONIBLE` | Google Drive no responde |
+| 502 | `DRIVE_SIN_CUOTA` | `ROOT_DRIVE_FOLDER_ID` no apunta a una unidad compartida |
+
+**Notas:**
+- Si la oportunidad aún no tiene carpeta (creada antes de la migración V35), se crea en esta llamada.
+- La visibilidad se verifica **antes** de leer un solo byte del cuerpo.
 
 ---
 
@@ -1881,6 +2034,38 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 ---
 
 **Nota — panel de Inicio:** `GET /inicio` (§17) incluye `meta_ventas` (null para roles distintos de `vendedor`/`jdv`) con el cumplimiento mensual/anual y, para `jdv`, el agregado del equipo. Ver §17.
+
+---
+
+## 22. Mantenimiento
+
+### POST /mantenimiento/carpetas-drive
+> Crea las carpetas de Google Drive que faltan en empresas y oportunidades anteriores a la integración.
+
+**Roles:** `admin`
+
+**Query params:** `tamano_lote` (opcional). Sin él procesa **todos** los pendientes en un solo llamado.
+
+**Respuesta 200:**
+
+```json
+{
+  "data": {
+    "empresas_procesadas": 12,
+    "oportunidades_procesadas": 30,
+    "errores": [
+      { "entidad": "empresa", "id": 7, "motivo": "Google Drive no pudo crear la carpeta" }
+    ],
+    "pendientes_restantes": 1
+  }
+}
+```
+
+**Notas:**
+- Idempotente y re-ejecutable. Si no hay pendientes responde todo en cero sin tocar Drive.
+- Cada carpeta se persiste en su propia transacción: si la llamada se corta a la mitad, lo ya procesado queda guardado y repetir el endpoint retoma donde quedó.
+- Un registro que falle no aborta el resto: se lista en `errores` y sigue pendiente. Repetir el endpoint lo reintenta.
+- `pendientes_restantes > 0` significa que hace falta volver a llamarlo (por `tamano_lote` o por errores).
 
 ---
 
