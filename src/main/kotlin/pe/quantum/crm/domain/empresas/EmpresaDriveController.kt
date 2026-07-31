@@ -49,6 +49,5 @@ class EmpresaDriveController(
     @PostMapping("/carpeta-drive")
     fun crearCarpeta(
         @PathVariable id: Long,
-    ): ApiResponse<CarpetaDriveDto> =
-        ApiResponse.ok(CarpetaDriveDto(empresaService.asegurarCarpetaDrive(id, usuarioProvider.actual())))
+    ): ApiResponse<CarpetaDriveDto> = ApiResponse.ok(CarpetaDriveDto(empresaService.asegurarCarpetaDrive(id, usuarioProvider.actual())))
 }
