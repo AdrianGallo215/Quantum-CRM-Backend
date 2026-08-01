@@ -139,15 +139,28 @@ class EmpresaServiceImpl(
     }
 
     @Transactional
-    override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
+    override fun asegurarCarpetaDrive(id: Long): String {
+        entidad(id)
+        return asegurarCarpetaDriveDe(id)
+    }
 
     @Transactional
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+    ): String {
+        visible(id, usuario)
+        return asegurarCarpetaDriveDe(id)
+    }
 
-    private fun asegurarCarpetaDriveDe(empresa: Empresa): String {
+    /**
+     * Bloqueo pesimista de fila (hallazgo Important de la revision final): si dos
+     * requests llegan a la vez para la misma empresa sin carpeta, el segundo espera
+     * a que el primero termine su transaccion y ve `driveFolderId` ya asignado, en
+     * vez de crear una carpeta duplicada en Drive.
+     */
+    private fun asegurarCarpetaDriveDe(id: Long): String {
+        val empresa = empresaRepository.findByIdForUpdate(id) ?: throw NoEncontradoException("La empresa no existe")
         empresa.driveFolderId?.let { return it }
         val carpeta = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
         empresa.driveFolderId = carpeta

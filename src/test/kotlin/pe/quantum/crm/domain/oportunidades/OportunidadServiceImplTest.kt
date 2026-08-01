@@ -542,11 +542,27 @@ class OportunidadServiceImplTest {
     fun `asegurarCarpetaDrive no llama a Drive si la oportunidad ya tiene carpeta`() {
         val entidad = oportunidadConVendedor(3).apply { driveFolderId = "ya-existe" }
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
 
         val carpeta = service.asegurarCarpetaDrive(100, UsuarioActual(id = 3, rol = "vendedor"))
 
         assertThat(carpeta).isEqualTo("ya-existe")
         verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive usa el fetch con bloqueo pesimista, no el fetch simple`() {
+        val entidad = oportunidadConVendedor(3)
+        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
+        every { modeloService.resumen(1) } returns busX()
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-op"
+        every { oportunidadRepository.save(entidad) } returns entidad
+
+        service.asegurarCarpetaDrive(100)
+
+        verify { oportunidadRepository.findByIdForUpdate(100) }
     }
 
     @Test
@@ -652,6 +668,7 @@ class OportunidadServiceImplTest {
     fun `asegurarCarpetaDrive de sistema crea la carpeta sin exigir visibilidad`() {
         val entidad = oportunidadConVendedor(3)
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
         every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
         every { modeloService.resumen(1) } returns busX()
         every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") } returns "carpeta-op"
@@ -665,6 +682,7 @@ class OportunidadServiceImplTest {
     fun `asegurarCarpetaDrive de sistema es idempotente`() {
         val entidad = oportunidadConVendedor(3).apply { driveFolderId = "ya-existe" }
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
 
         assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("ya-existe")
 

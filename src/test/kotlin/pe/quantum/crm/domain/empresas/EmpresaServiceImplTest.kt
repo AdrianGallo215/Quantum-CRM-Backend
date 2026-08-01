@@ -268,6 +268,7 @@ class EmpresaServiceImplTest {
     fun `asegurarCarpetaDrive no vuelve a llamar a Drive si la empresa ya tiene carpeta`() {
         val entidad = empresa().apply { driveFolderId = "ya-existe" }
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empresaRepository.findByIdForUpdate(1) } returns entidad
 
         assertThat(service.asegurarCarpetaDrive(1)).isEqualTo("ya-existe")
 
@@ -278,11 +279,25 @@ class EmpresaServiceImplTest {
     fun `asegurarCarpetaDrive crea la carpeta de una empresa anterior a la migracion`() {
         val entidad = empresa()
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empresaRepository.findByIdForUpdate(1) } returns entidad
         every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-nueva"
         every { empresaRepository.save(entidad) } returns entidad
 
         assertThat(service.asegurarCarpetaDrive(1)).isEqualTo("carpeta-nueva")
         assertThat(entidad.driveFolderId).isEqualTo("carpeta-nueva")
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive usa el fetch con bloqueo pesimista, no el fetch simple`() {
+        val entidad = empresa()
+        every { empresaRepository.findByIdForUpdate(1) } returns entidad
+        every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-nueva"
+        every { empresaRepository.save(entidad) } returns entidad
+
+        service.asegurarCarpetaDrive(1)
+
+        verify { empresaRepository.findByIdForUpdate(1) }
     }
 
     @Test
@@ -301,6 +316,7 @@ class EmpresaServiceImplTest {
         val gerencia = UsuarioActual(id = 1, rol = "gerencia")
         val entidad = empresa()
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empresaRepository.findByIdForUpdate(1) } returns entidad
         every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-nueva"
         every { empresaRepository.save(entidad) } returns entidad
 

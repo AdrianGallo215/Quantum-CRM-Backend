@@ -582,18 +582,29 @@ class OportunidadServiceImpl(
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+    ): String {
+        visible(id, usuario)
+        return asegurarCarpetaDriveDe(id)
+    }
 
     @Transactional
-    override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
+    override fun asegurarCarpetaDrive(id: Long): String {
+        entidad(id)
+        return asegurarCarpetaDriveDe(id)
+    }
 
-    private fun asegurarCarpetaDriveDe(oportunidad: Oportunidad): String {
+    /**
+     * Bloqueo pesimista de fila (hallazgo Important de la revision final): evita
+     * que dos requests concurrentes sobre la misma oportunidad creen dos carpetas.
+     */
+    private fun asegurarCarpetaDriveDe(id: Long): String {
+        val oportunidad = oportunidadRepository.findByIdForUpdate(id) ?: throw NoEncontradoException("La oportunidad no existe")
         oportunidad.driveFolderId?.let { return it }
         val carpetaEmpresa = empresaService.asegurarCarpetaDrive(oportunidad.idEmpresa)
         val codigoModelo = oportunidad.idModelo?.let { modeloService.resumen(it).codigo }
         val carpeta =
             driveStorageService.crearCarpeta(
-                nombre = nombreCarpetaDrive(requireNotNull(oportunidad.id), codigoModelo),
+                nombre = nombreCarpetaDrive(id, codigoModelo),
                 parentFolderId = carpetaEmpresa,
             )
         oportunidad.driveFolderId = carpeta
