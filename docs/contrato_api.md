@@ -26,6 +26,8 @@
 18. [Reportes](#18-reportes)
 19. [Notificaciones](#19-notificaciones)
 20. [Solicitudes](#20-solicitudes)
+21. [Metas de venta](#21-metas-de-venta)
+22. [Mantenimiento](#22-mantenimiento)
 
 ---
 

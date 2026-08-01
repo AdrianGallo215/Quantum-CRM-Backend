@@ -82,6 +82,20 @@ class CarpetasDriveBackfillServiceTest {
     }
 
     @Test
+    fun `tamano_lote negativo no lanza excepcion - procesa cero y reporta todo pendiente`() {
+        every { empresaService.idsSinCarpetaDrive() } returns listOf(1L, 2L)
+        every { oportunidadService.idsSinCarpetaDrive() } returns listOf(10L)
+
+        val resultado = service.ejecutar(tamanoLote = -5)
+
+        assertThat(resultado.empresasProcesadas).isZero()
+        assertThat(resultado.oportunidadesProcesadas).isZero()
+        assertThat(resultado.pendientesRestantes).isEqualTo(3)
+        verify(exactly = 0) { empresaService.asegurarCarpetaDrive(any<Long>()) }
+        verify(exactly = 0) { oportunidadService.asegurarCarpetaDrive(any<Long>()) }
+    }
+
+    @Test
     fun `sin pendientes no toca Drive y reporta cero`() {
         every { empresaService.idsSinCarpetaDrive() } returns emptyList()
         every { oportunidadService.idsSinCarpetaDrive() } returns emptyList()

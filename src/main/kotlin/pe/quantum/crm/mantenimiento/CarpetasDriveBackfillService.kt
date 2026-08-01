@@ -36,7 +36,7 @@ class CarpetasDriveBackfillService(
         // Empresas primero: la carpeta de una oportunidad cuelga de la de su
         // empresa, asi se evita trabajo redundante.
         var presupuesto = tamanoLote ?: (empresasPendientes.size + oportunidadesPendientes.size)
-        val empresasTomadas = empresasPendientes.take(presupuesto)
+        val empresasTomadas = empresasPendientes.take(maxOf(presupuesto, 0))
         val empresasCreadas =
             empresasTomadas.count { id ->
                 procesar("empresa", id, errores) { empresaService.asegurarCarpetaDrive(id) }
