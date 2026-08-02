@@ -54,7 +54,7 @@ class MetaVentaControllerWebMvcTest {
             resolvedAt = null, createdAt = LocalDateTime.now(),
         )
 
-    private fun bodyAnioCompleto() =
+    private val bodyAnioCompleto =
         """{"id_empleado":5,"anio":2027,"meta_enero":10,"meta_febrero":10,"meta_marzo":10,"meta_abril":10,
            "meta_mayo":10,"meta_junio":10,"meta_julio":10,"meta_agosto":10,"meta_septiembre":10,
            "meta_octubre":10,"meta_noviembre":10,"meta_diciembre":10}"""
@@ -65,7 +65,7 @@ class MetaVentaControllerWebMvcTest {
         mockMvc.post("/api/v1/metas-venta") {
             header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenJdv()}")
             contentType = MediaType.APPLICATION_JSON
-            content = bodyAnioCompleto()
+            content = bodyAnioCompleto
         }.andExpect {
             status { isCreated() }
             jsonPath("$.data.id") { value(9) }

@@ -49,7 +49,10 @@ data class PeriodoReporte(
  * del MVP son bajos). El permiso admin/gerencia/jdv se verifica en el controller.
  */
 @Service
-@Suppress("TooManyFunctions")
+// Un metodo por reporte del contrato §18. Cada uno es SQL + mapeo de filas +
+// agregacion en un unico DTO: extraer trozos separaria la consulta de la forma
+// que produce, que es justo lo que hace el reporte legible.
+@Suppress("TooManyFunctions", "LongMethod")
 class ReporteService(
     private val jdbc: NamedParameterJdbcTemplate,
 ) {

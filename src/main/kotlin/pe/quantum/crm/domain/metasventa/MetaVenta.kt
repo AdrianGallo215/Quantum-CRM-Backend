@@ -64,12 +64,14 @@ class MetaVenta(
         )
 
     /** Valor del mes (1=enero..12=diciembre). */
+    @Suppress("MagicNumber") // 1..12 son los meses del año, no una constante configurable.
     fun valorMes(mes: Int): Int {
         require(mes in 1..12) { "Mes inválido: $mes" }
         return meses()[mes - 1]
     }
 
     /** Reemplaza los 12 meses y recalcula `metaAnual` (SOLO LECTURA, igual que `monto_total`). */
+    @Suppress("MagicNumber") // Indices posicionales de los 12 meses; nombrarlos uno a uno no aporta.
     fun establecerMeses(valores: List<Int>) {
         require(valores.size == 12) { "Se requieren 12 valores mensuales, se recibieron ${valores.size}" }
         metaEnero = valores[0]

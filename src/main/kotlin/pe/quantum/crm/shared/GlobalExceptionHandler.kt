@@ -33,7 +33,7 @@ class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException::class)
-    fun handleAccessDenied(ex: org.springframework.security.access.AccessDeniedException): ResponseEntity<ApiResponse<Nothing>> {
+    fun handleAccessDenied(): ResponseEntity<ApiResponse<Nothing>> {
         val error = ApiError(code = "PERMISO_INSUFICIENTE", message = "El rol no tiene acceso a esta operación")
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.fail(error))
     }
@@ -51,7 +51,7 @@ class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
-    fun handleMalformedBody(ex: HttpMessageNotReadableException): ResponseEntity<ApiResponse<Nothing>> {
+    fun handleMalformedBody(): ResponseEntity<ApiResponse<Nothing>> {
         val error = ApiError(code = "VALIDACION", message = "El cuerpo de la petición es inválido o le faltan campos obligatorios")
         return ResponseEntity.badRequest().body(ApiResponse.fail(error))
     }
@@ -61,7 +61,7 @@ class GlobalExceptionHandler {
      * solo). No es un error de la aplicacion: 404 silencioso, sin loguear.
      */
     @ExceptionHandler(NoResourceFoundException::class)
-    fun handleNoResourceFound(ex: NoResourceFoundException): ResponseEntity<ApiResponse<Nothing>> {
+    fun handleNoResourceFound(): ResponseEntity<ApiResponse<Nothing>> {
         val error = ApiError(code = "NO_ENCONTRADO", message = "El recurso no existe")
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.fail(error))
     }

@@ -74,6 +74,7 @@ class MetaVentaServiceImpl(
     }
 
     @Transactional
+    @Suppress("MagicNumber") // Indices posicionales de los 12 meses; nombrarlos uno a uno no aporta.
     override fun editar(
         id: Long,
         request: EditarMetaVentaRequest,

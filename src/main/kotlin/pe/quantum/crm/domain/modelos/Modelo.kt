@@ -22,6 +22,7 @@ import java.math.BigDecimal
  */
 @Entity
 @Table(name = "modelos")
+@Suppress("LongParameterList") // Entidad JPA: un parametro por columna de la tabla.
 class Modelo(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

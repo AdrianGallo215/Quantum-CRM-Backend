@@ -15,7 +15,11 @@ data class TareaResponsableId(
     val idTarea: Long = 0,
     @Column(name = "id_empleado")
     val idEmpleado: Long = 0,
-) : Serializable
+) : Serializable {
+    private companion object {
+        private const val serialVersionUID: Long = 1L
+    }
+}
 
 /**
  * Colaborador adicional de una tarea (tabla `tarea_responsables`, migracion V31).

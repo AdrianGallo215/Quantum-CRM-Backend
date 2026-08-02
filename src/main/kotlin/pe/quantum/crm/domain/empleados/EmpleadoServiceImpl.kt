@@ -14,6 +14,7 @@ import pe.quantum.crm.shared.exception.CredencialesInvalidasException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 
 @Service
+@Suppress("TooManyFunctions") // Igual que su interfaz: autenticacion, CRUD y resumenes.
 class EmpleadoServiceImpl(
     private val empleadoRepository: EmpleadoRepository,
     private val passwordEncoder: PasswordEncoder,

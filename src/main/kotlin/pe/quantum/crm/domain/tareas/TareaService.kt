@@ -9,7 +9,11 @@ import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
 
-/** Interfaz publica del modulo tareas. */
+/**
+ * Interfaz publica del modulo tareas. `listar` arrastra los 4 parametros de
+ * paginacion del contrato (page, per_page, sort, dir).
+ */
+@Suppress("LongParameterList")
 interface TareaService {
     fun listar(
         filtros: TareaFiltros,

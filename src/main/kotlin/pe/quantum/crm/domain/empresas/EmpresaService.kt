@@ -15,8 +15,12 @@ import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.security.UsuarioActual
 
-/** Interfaz publica del modulo empresas. */
-@Suppress("TooManyFunctions") // Cartera, cascadas y Drive; igual que su implementacion.
+/**
+ * Interfaz publica del modulo empresas: cartera, cascadas y Drive, igual que su
+ * implementacion. `listar` arrastra los 4 parametros de paginacion del contrato
+ * (page, per_page, sort, dir).
+ */
+@Suppress("TooManyFunctions", "LongParameterList")
 interface EmpresaService {
     fun listar(
         filtros: EmpresaFiltros,

@@ -27,6 +27,7 @@ import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 
 @Service
+@Suppress("TooManyFunctions") // Igual que su interfaz: vinculacion con empresas y oportunidades.
 class ContactoServiceImpl(
     private val contactoRepository: ContactoRepository,
     private val empresaContactoRepository: EmpresaContactoRepository,

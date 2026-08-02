@@ -15,8 +15,12 @@ import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
 
-/** Interfaz publica del modulo oportunidades. */
-@Suppress("TooManyFunctions") // Nucleo del pipeline (B3.x), igual que su implementacion.
+/**
+ * Interfaz publica del modulo oportunidades: nucleo del pipeline (B3.x), igual
+ * que su implementacion. `listar` arrastra los 4 parametros de paginacion del
+ * contrato (page, per_page, sort, dir).
+ */
+@Suppress("TooManyFunctions", "LongParameterList")
 interface OportunidadService {
     fun crear(
         request: CrearOportunidadRequest,

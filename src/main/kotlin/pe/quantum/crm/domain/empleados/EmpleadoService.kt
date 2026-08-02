@@ -10,6 +10,7 @@ import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
  * interfaz, nunca el repository ni la entidad directamente (regla del monolito
  * modular, CLAUDE.md §12).
  */
+@Suppress("TooManyFunctions") // Autenticacion, CRUD y los resumenes que consumen los demas modulos.
 interface EmpleadoService {
     /**
      * Valida email + contraseña. Devuelve el empleado si son correctos; lanza

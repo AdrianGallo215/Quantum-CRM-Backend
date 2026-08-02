@@ -41,13 +41,14 @@ data class UsuarioActual(
 @Component
 class UsuarioActualProvider {
     fun actual(): UsuarioActual {
-        val auth =
-            SecurityContextHolder.getContext().authentication
-                ?: throw CredencialesInvalidasException()
-        val id = auth.principal as? Long ?: throw CredencialesInvalidasException()
-        val rol =
-            auth.authorities.firstOrNull()?.authority?.removePrefix("ROLE_")
-                ?: throw CredencialesInvalidasException()
+        // Los tres datos se resuelven antes de decidir: falte el que falte, la
+        // respuesta es la misma (401), asi que un unico punto de fallo basta.
+        val auth = SecurityContextHolder.getContext().authentication
+        val id = auth?.principal as? Long
+        val rol = auth?.authorities?.firstOrNull()?.authority?.removePrefix("ROLE_")
+        if (id == null || rol == null) {
+            throw CredencialesInvalidasException()
+        }
         return UsuarioActual(id = id, rol = rol)
     }
 }

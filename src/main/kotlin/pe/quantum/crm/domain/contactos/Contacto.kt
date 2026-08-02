@@ -14,6 +14,7 @@ import java.time.LocalDateTime
  */
 @Entity
 @Table(name = "contactos")
+@Suppress("LongParameterList") // Entidad JPA: un parametro por columna de la tabla.
 class Contacto(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

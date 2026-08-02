@@ -30,7 +30,8 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 
 @Service
-@Suppress("LongParameterList") // Cruza 3 modulos + notificaciones (evento_creado).
+// Cruza 3 modulos + notificaciones (evento_creado); de ahi tambien el numero de operaciones publicas.
+@Suppress("LongParameterList", "TooManyFunctions")
 class EventoServiceImpl(
     private val eventoRepository: EventoRepository,
     private val catalogoEventoService: CatalogoEventoService,
@@ -187,6 +188,7 @@ class EventoServiceImpl(
      * Origen mutuamente excluyente (reglas §5.1): del catalogo hereda
      * dispara/destino; personalizado exige nombre y nunca dispara.
      */
+    @Suppress("LongMethod", "ThrowsCount") // Guard clauses del origen excluyente; separarlas dispersaria la regla §5.1.
     private fun crear(
         request: CrearEventoRequest,
         idOportunidad: Long?,

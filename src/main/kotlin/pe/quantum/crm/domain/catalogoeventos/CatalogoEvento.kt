@@ -16,6 +16,7 @@ import pe.quantum.crm.shared.enums.EstadoOportunidad
  */
 @Entity
 @Table(name = "catalogo_eventos")
+@Suppress("LongParameterList") // Entidad JPA: un parametro por columna de la tabla.
 class CatalogoEvento(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

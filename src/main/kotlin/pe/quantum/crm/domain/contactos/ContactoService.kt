@@ -13,7 +13,12 @@ import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
 
-/** Interfaz publica del modulo contactos. */
+/**
+ * Interfaz publica del modulo contactos: vinculacion con empresas y con
+ * oportunidades, de ahi el numero de operaciones. `buscar` arrastra los 4
+ * parametros de paginacion del contrato (page, per_page, sort, dir).
+ */
+@Suppress("TooManyFunctions", "LongParameterList")
 interface ContactoService {
     fun buscar(
         q: String?,

@@ -15,6 +15,7 @@ import java.math.BigDecimal
  */
 @Entity
 @Table(name = "financiadoras")
+@Suppress("LongParameterList") // Entidad JPA: un parametro por columna de la tabla.
 class Financiadora(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

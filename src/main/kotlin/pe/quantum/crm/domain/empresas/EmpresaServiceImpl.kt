@@ -175,6 +175,7 @@ class EmpresaServiceImpl(
     ): List<DriveArchivoSubido> = visible(id, usuario).driveFolderId?.let { driveStorageService.listarArchivos(it) } ?: emptyList()
 
     @Transactional
+    @Suppress("CyclomaticComplexMethod") // Un `?.let` por campo opcional del PATCH; la complejidad es la del DTO, no logica ramificada.
     override fun actualizar(
         id: Long,
         request: ActualizarEmpresaRequest,

@@ -24,6 +24,7 @@ class EmpresaEliminacionCascadaIntegrationTest : IntegrationTestBase() {
     private fun count(sql: String): Int = jdbcTemplate.queryForObject(sql, Int::class.java)!!
 
     @Test
+    @Suppress("LongMethod") // Un solo escenario: montar el grafo completo, borrar y verificar cada tabla.
     fun `eliminar una empresa arrastra oportunidad, tarea, evento y log, pero no el contacto vinculado`() {
         val admin =
             id(

@@ -70,6 +70,7 @@ class OportunidadServiceImpl(
      * `estado_anterior = NULL` y `actualizarEstadoCartera` — todo atomico.
      */
     @Transactional
+    @Suppress("LongMethod") // Los 8 pasos de reglas §4.2 son una sola unidad transaccional; partirla ocultaria la atomicidad.
     override fun crear(
         request: CrearOportunidadRequest,
         usuario: UsuarioActual,
@@ -167,6 +168,7 @@ class OportunidadServiceImpl(
 
     /** Edicion de campos negociables (B3.4). `monto_total` en body → 400. */
     @Transactional
+    @Suppress("CyclomaticComplexMethod") // Un `?.let` por campo negociable del PUT; la complejidad es la del DTO, no logica ramificada.
     override fun actualizar(
         id: Long,
         request: ActualizarOportunidadRequest,
