@@ -24,7 +24,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 |---|---|---|---|---|---|
 | **Empresas** | Todas | Todas (incluida Cartera Maestra) | Todas (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) |
 | **Oportunidades** | Todas | Todas | Todas | Solo donde `oportunidades.id_vendedor = yo` | Solo donde `oportunidades.id_vendedor = yo` |
-| **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` | Solo donde `tareas.id_asignado = yo` |
+| **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` |
 | **Eventos** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de sus oportunidades |
 | **Contactos** | Todos | Todos | Todos | Todos (búsqueda global para vincular) | Todos |
 | **Empleados** | Todos | Todos | Todos | Solo `GET /empleados/me` | Solo `GET /empleados/me` |
@@ -122,12 +122,13 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 | Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
-| Ver tareas | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
+| Ver tareas | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
 | Crear tarea | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Asignar tarea a otro empleado | ✓ | ✓ | ✓ | — | — |
-| Marcar tarea como completada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
-| Marcar tarea como cancelada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
-| Editar tarea pendiente | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
+| Asignar tarea (dueño) a otro empleado | ✓ | ✓ | ✓ | — | — |
+| Agregar colaborador a otro empleado | ✓ | ✓ | ✓ | — | — |
+| Marcar tarea como completada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
+| Marcar tarea como cancelada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
+| Editar tarea pendiente | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
 
 ---
 

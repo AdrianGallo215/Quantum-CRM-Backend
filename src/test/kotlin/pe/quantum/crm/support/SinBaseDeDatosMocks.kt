@@ -20,6 +20,7 @@ import pe.quantum.crm.domain.oportunidades.OportunidadEstadoLogRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadRepository
 import pe.quantum.crm.domain.solicitudes.SolicitudRepository
 import pe.quantum.crm.domain.tareas.TareaRepository
+import pe.quantum.crm.domain.tareas.TareaResponsableRepository
 
 /**
  * Mocks de la capa de datos para los tests de contexto que corren SIN base de
@@ -63,6 +64,9 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun tareaRepository(): TareaRepository = mockk(relaxed = true)
+
+    @Bean
+    fun tareaResponsableRepository(): TareaResponsableRepository = mockk(relaxed = true)
 
     @Bean
     fun notificacionRepository(): NotificacionRepository = mockk(relaxed = true)

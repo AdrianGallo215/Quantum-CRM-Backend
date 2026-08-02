@@ -51,6 +51,12 @@ class Oportunidad(
     var garantia: Boolean? = null,
     @Column(name = "ficha_venta")
     var fichaVenta: String? = null,
+    /**
+     * Subcarpeta de la oportunidad en Drive, hija de la carpeta de su empresa (V35).
+     * La administra el backend; nunca se acepta como input.
+     */
+    @Column(name = "drive_folder_id")
+    var driveFolderId: String? = null,
     var notas: String? = null,
     @Column(name = "motivo_cierre")
     var motivoCierre: String? = null,

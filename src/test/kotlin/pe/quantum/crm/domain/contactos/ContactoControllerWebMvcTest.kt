@@ -54,10 +54,10 @@ class ContactoControllerWebMvcTest {
                 id = 5,
                 nombres = "Hugo",
                 apellidos = "Rodríguez",
-                email1 = null,
-                email2 = null,
-                tlf1 = "964415122",
-                tlf2 = null,
+                email_1 = null,
+                email_2 = null,
+                tlf_1 = "964415122",
+                tlf_2 = null,
                 notas = null,
                 empresas = emptyList(),
             )
@@ -97,7 +97,7 @@ class ContactoControllerWebMvcTest {
         val detalle =
             pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto(
                 id = 5, nombres = "Hugo", apellidos = "Rodríguez",
-                email1 = null, email2 = null, tlf1 = "964415122", tlf2 = null, notas = null,
+                email_1 = null, email_2 = null, tlf_1 = "964415122", tlf_2 = null, notas = null,
                 empresas = emptyList(),
             )
         every { contactoService.detalle(5) } returns detalle

@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 import pe.quantum.crm.domain.empleados.EmpleadoService
+import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
  * Tests de las cabeceras de seguridad HTTP (SECURITY-backend.md §6) y del CORS
@@ -30,7 +31,7 @@ import pe.quantum.crm.domain.empleados.EmpleadoService
     ],
 )
 @AutoConfigureMockMvc
-@Import(SecurityHeadersAndCorsTest.ProbeController::class)
+@Import(SecurityHeadersAndCorsTest.ProbeController::class, SinBaseDeDatosMocks::class)
 class SecurityHeadersAndCorsTest {
     @RestController
     class ProbeController {

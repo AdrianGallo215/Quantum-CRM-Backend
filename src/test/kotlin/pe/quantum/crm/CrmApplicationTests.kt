@@ -3,7 +3,9 @@ package pe.quantum.crm
 import com.ninjasquad.springmockk.MockkBean
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import pe.quantum.crm.domain.empleados.EmpleadoService
+import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
  * Test de arranque del contexto de Spring (B0.1).
@@ -25,6 +27,7 @@ import pe.quantum.crm.domain.empleados.EmpleadoService
             "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration",
     ],
 )
+@Import(SinBaseDeDatosMocks::class)
 class CrmApplicationTests {
     // Sin DataSource no hay repositorios JPA; se mockea el servicio que los usa
     // para que el contexto (web + security) ensamble sin base de datos.

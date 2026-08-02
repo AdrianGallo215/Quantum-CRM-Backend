@@ -44,7 +44,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
     }
 
     @Test
-    fun `el schema crea las 17 tablas de dominio`() {
+    fun `el schema crea las 18 tablas de dominio`() {
         val tablas = strList("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'")
         assertThat(tablas).containsExactlyInAnyOrder(
             "empleados",
@@ -61,6 +61,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
             "catalogo_eventos",
             "eventos",
             "tareas",
+            "tarea_responsables",
             "buses_entregados",
             "notificaciones",
             "recordatorios_enviados",

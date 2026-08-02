@@ -4,9 +4,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import pe.quantum.crm.shared.exception.ApiException
 import pe.quantum.crm.shared.exception.DemasiadosIntentosException
 import java.util.UUID
@@ -30,6 +32,12 @@ class GlobalExceptionHandler {
         return response.body(body)
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException::class)
+    fun handleAccessDenied(ex: org.springframework.security.access.AccessDeniedException): ResponseEntity<ApiResponse<Nothing>> {
+        val error = ApiError(code = "PERMISO_INSUFICIENTE", message = "El rol no tiene acceso a esta operación")
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.fail(error))
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(ex: MethodArgumentNotValidException): ResponseEntity<ApiResponse<Nothing>> {
         val fieldError = ex.bindingResult.fieldErrors.firstOrNull()
@@ -40,6 +48,22 @@ class GlobalExceptionHandler {
                 field = fieldError?.field,
             )
         return ResponseEntity.badRequest().body(ApiResponse.fail(error))
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleMalformedBody(ex: HttpMessageNotReadableException): ResponseEntity<ApiResponse<Nothing>> {
+        val error = ApiError(code = "VALIDACION", message = "El cuerpo de la petición es inválido o le faltan campos obligatorios")
+        return ResponseEntity.badRequest().body(ApiResponse.fail(error))
+    }
+
+    /**
+     * Recurso estatico inexistente (p. ej. `/favicon.ico`, que todo navegador pide
+     * solo). No es un error de la aplicacion: 404 silencioso, sin loguear.
+     */
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResourceFound(ex: NoResourceFoundException): ResponseEntity<ApiResponse<Nothing>> {
+        val error = ApiError(code = "NO_ENCONTRADO", message = "El recurso no existe")
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.fail(error))
     }
 
     @ExceptionHandler(Exception::class)

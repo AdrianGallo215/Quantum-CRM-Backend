@@ -66,10 +66,10 @@ class ContactoServiceImpl(
                 Contacto(
                     nombres = request.nombres,
                     apellidos = request.apellidos,
-                    email1 = request.email1,
-                    email2 = request.email2,
-                    tlf1 = request.tlf1,
-                    tlf2 = request.tlf2,
+                    email_1 = request.email_1,
+                    email_2 = request.email_2,
+                    tlf_1 = request.tlf_1,
+                    tlf_2 = request.tlf_2,
                     notas = request.notas,
                     createdAt = ahora,
                     createdBy = usuario.id,
@@ -97,10 +97,10 @@ class ContactoServiceImpl(
         val contacto = entidad(id)
         request.nombres?.let { contacto.nombres = it }
         request.apellidos?.let { contacto.apellidos = it }
-        request.email1?.let { contacto.email1 = it }
-        request.email2?.let { contacto.email2 = it }
-        request.tlf1?.let { contacto.tlf1 = it }
-        request.tlf2?.let { contacto.tlf2 = it }
+        request.email_1?.let { contacto.email_1 = it }
+        request.email_2?.let { contacto.email_2 = it }
+        request.tlf_1?.let { contacto.tlf_1 = it }
+        request.tlf_2?.let { contacto.tlf_2 = it }
         request.notas?.let { contacto.notas = it }
         contacto.updatedAt = LocalDateTime.now()
         contacto.updatedBy = usuario.id
@@ -126,10 +126,10 @@ class ContactoServiceImpl(
             id = requireNotNull(contacto.id),
             nombres = contacto.nombres,
             apellidos = contacto.apellidos,
-            email1 = contacto.email1,
-            email2 = contacto.email2,
-            tlf1 = contacto.tlf1,
-            tlf2 = contacto.tlf2,
+            email_1 = contacto.email_1,
+            email_2 = contacto.email_2,
+            tlf_1 = contacto.tlf_1,
+            tlf_2 = contacto.tlf_2,
             notas = contacto.notas,
             empresas =
                 vinculos.mapNotNull { vinculo ->
@@ -213,8 +213,8 @@ class ContactoServiceImpl(
                     cargo = vinculo.cargo,
                     tomaDecision = vinculo.tomaDecision,
                     esPrincipal = vinculo.esPrincipal,
-                    email1 = contacto.email1,
-                    tlf1 = contacto.tlf1,
+                    email_1 = contacto.email_1,
+                    tlf_1 = contacto.tlf_1,
                 )
             }
         }.sortedByDescending { it.esPrincipal }
@@ -266,10 +266,10 @@ class ContactoServiceImpl(
             id = requireNotNull(id),
             nombres = nombres,
             apellidos = apellidos,
-            email1 = email1,
-            email2 = email2,
-            tlf1 = tlf1,
-            tlf2 = tlf2,
+            email_1 = email_1,
+            email_2 = email_2,
+            tlf_1 = tlf_1,
+            tlf_2 = tlf_2,
             notas = notas,
             empresas =
                 vinculos.mapNotNull { vinculo ->
@@ -304,10 +304,10 @@ class ContactoServiceImpl(
             id = requireNotNull(id),
             nombres = nombres,
             apellidos = apellidos,
-            email1 = email1,
-            email2 = email2,
-            tlf1 = tlf1,
-            tlf2 = tlf2,
+            email_1 = email_1,
+            email_2 = email_2,
+            tlf_1 = tlf_1,
+            tlf_2 = tlf_2,
             notas = notas,
             empresas =
                 vinculos.mapNotNull { vinculo ->

@@ -7,6 +7,7 @@ enum class TipoNotificacion {
     empresa_convertida,
     evento_creado,
     tarea_creada,
+    tarea_colaborador_agregado,
     empresa_asignada,
     oportunidad_traspasada,
     tarea_recordatorio,

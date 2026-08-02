@@ -6,10 +6,12 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import pe.quantum.crm.config.security.JwtService
+import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
  * Tests de `GET /empleados/me` (B0.8): requiere autenticacion y devuelve el perfil
@@ -24,6 +26,7 @@ import pe.quantum.crm.config.security.JwtService
     ],
 )
 @AutoConfigureMockMvc
+@Import(SinBaseDeDatosMocks::class)
 class EmpleadoMeControllerTest {
     @Autowired
     lateinit var mockMvc: MockMvc

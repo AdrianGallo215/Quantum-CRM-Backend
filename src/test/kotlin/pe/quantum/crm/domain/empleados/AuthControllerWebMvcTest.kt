@@ -8,12 +8,14 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
 import pe.quantum.crm.config.security.AuthCookieFactory
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
+import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
  * Tests de los endpoints de auth (B0.8) via MockMvc, sin base de datos: se mockea
@@ -29,6 +31,7 @@ import pe.quantum.crm.shared.exception.CredencialesInvalidasException
     ],
 )
 @AutoConfigureMockMvc
+@Import(SinBaseDeDatosMocks::class)
 class AuthControllerWebMvcTest {
     @Autowired
     lateinit var mockMvc: MockMvc
@@ -105,6 +108,17 @@ class AuthControllerWebMvcTest {
     }
 
     @Test
+    fun `login con json incompleto devuelve 400 de validacion en vez de 500`() {
+        mockMvc.post("/api/v1/auth/login") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"email":"sin-password@quantum.pe"}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("VALIDACION") }
+        }
+    }
+
+    @Test
     fun `tras 5 intentos fallidos el login responde 429 con Retry-After`() {
         val email = "bloqueo@quantum.pe"
         every { empleadoService.autenticar(email, "mala") } throws CredencialesInvalidasException()
@@ -144,7 +158,7 @@ class AuthControllerWebMvcTest {
                 cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))
             }.andExpect {
                 status { isOk() }
-                jsonPath("$.data.expiresIn") { isNumber() }
+                jsonPath("$.data.expires_in") { isNumber() }
             }.andReturn()
 
         assertThat(result.response.getHeaders("Set-Cookie"))

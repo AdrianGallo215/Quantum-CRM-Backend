@@ -1263,7 +1263,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 | `id_empresa` | long | Tareas de una empresa |
 | `id_oportunidad` | long | Tareas de una oportunidad |
 | `estado_accion` | enum | `pendiente`, `completada`, `cancelada` |
-| `id_asignado` | long | Por asignado (solo admin/gerente/jdv) |
+| `id_asignado` | long | Por asignado (solo admin/gerencia/jdv) |
 | `solo_prospeccion` | bool | Solo tareas sin oportunidad (`id_oportunidad IS NULL`) |
 | `vencidas` | bool | Tareas pendientes con `fecha_ejecucion < NOW()` |
 
@@ -1280,6 +1280,11 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
       "contacto": { "id": 5, "nombres": "Hugo", "apellidos": "Rodríguez" },
       "id_asignado": 1,
       "asignado": { "id": 1, "nombres": "Aldo", "apellidos": "Martínez" },
+      "ids_colaboradores": [2, 4],
+      "colaboradores": [
+        { "id": 2, "nombres": "Diego", "apellidos": "Reyes" },
+        { "id": 4, "nombres": "Lucía", "apellidos": "Vargas" }
+      ],
       "tipo_accion": "reunion",
       "estado_accion": "pendiente",
       "descripcion": "Revisar minuta del contrato tripartito",
@@ -1289,6 +1294,10 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
   ]
 }
 ```
+
+**Notas:**
+- `id_asignado` es el dueño de la tarea (único). `ids_colaboradores`/`colaboradores` son empleados adicionales que trabajan la tarea en conjunto con el dueño — no reemplazan a `id_asignado`, se suman.
+- vendedor/analista ven una tarea si son el dueño **o** aparecen en `ids_colaboradores` (visibilidad de tareas, `matriz_permisos.md §2.6`).
 
 ---
 
@@ -1304,6 +1313,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
   "id_oportunidad": 101,
   "id_contacto": 5,
   "id_asignado": 1,
+  "ids_colaboradores": [2, 4],
   "tipo_accion": "reunion",
   "descripcion": "Revisar minuta del contrato tripartito",
   "fecha_ejecucion": "2026-06-19T10:00:00Z"
@@ -1316,13 +1326,15 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 - `id_oportunidad` es opcional. Si es `null`, es una tarea de prospección.
 - Si `id_oportunidad` es `null` y la empresa tiene oportunidades activas → `400 VALIDACION` con mensaje: `"Las tareas de empresas con oportunidades activas deben vincularse a una oportunidad"`.
 - `id_asignado` es opcional. Si no viene, se asigna al usuario autenticado.
+- `ids_colaboradores` es opcional (default `[]`). Cada colaborador recibe una notificación `tarea_colaborador_agregado` y ve la tarea en sus actividades, igual que el dueño.
+- Asignar el dueño o un colaborador a un empleado **distinto del usuario autenticado** requiere rol admin/gerencia/jdv (`matriz_permisos.md §2.6`). Un vendedor/analista solo puede dejarse a sí mismo como dueño o colaborador → si no, `403 PERMISO_INSUFICIENTE`.
 
 ---
 
 ### PATCH /tareas/:id/completada
 > Marca una tarea como completada.
 
-**Roles:** todos (solo tareas asignadas a sí mismo si es vendedor/analista)
+**Roles:** todos (solo tareas donde es dueño o colaborador si es vendedor/analista)
 
 **Body:** `{ "descripcion": null }` (descripción adicional opcional)
 
@@ -1333,7 +1345,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /tareas/:id/cancelada
 > Marca una tarea como cancelada.
 
-**Roles:** todos (solo tareas asignadas a sí mismo si es vendedor/analista)
+**Roles:** todos (solo tareas donde es dueño o colaborador si es vendedor/analista)
 
 **Respuesta 200:** `{ "data": { "estado_accion": "cancelada" } }`
 
@@ -1342,11 +1354,15 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PUT /tareas/:id
 > Actualiza una tarea pendiente.
 
-**Roles:** todos (solo tareas asignadas a sí mismo si es vendedor/analista)
+**Roles:** todos (solo tareas donde es dueño o colaborador si es vendedor/analista)
 
-**Body:** `tipo_accion`, `descripcion`, `fecha_ejecucion`, `id_contacto`, `id_asignado` — todos opcionales.
+**Body:** `tipo_accion`, `descripcion`, `fecha_ejecucion`, `id_contacto`, `id_asignado`, `ids_colaboradores` — todos opcionales.
 
-**Notas:** Solo se pueden editar tareas con `estado_accion = 'pendiente'`.
+**Notas:**
+- Solo se pueden editar tareas con `estado_accion = 'pendiente'`.
+- `ids_colaboradores`, si viene en el body (aunque sea `[]`), **reemplaza el set completo** de colaboradores de la tarea. Si se omite, los colaboradores existentes no se tocan. Solo los colaboradores agregados en esta llamada reciben notificación `tarea_colaborador_agregado`; los que ya estaban no se re-notifican y los removidos no reciben notificación de remoción.
+- Si `id_asignado` cambia respecto al valor actual, el nuevo dueño recibe una notificación `tarea_creada`.
+- Mismo requisito de permisos que en la creación: asignar a un empleado distinto del usuario autenticado requiere admin/gerencia/jdv.
 
 **Respuesta 200:** la tarea actualizada.
 
@@ -1627,10 +1643,11 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
     "resumen_pipeline": {
       "valor_total": "3050752.00",
       "oportunidades_activas": 6,
+      "cantidad_unidades": 25,
       "por_etapa": {
-        "evaluacion_calidda": { "count": 3, "valor": "1980800.00" },
-        "documentos_legales": { "count": 2, "valor": "1184702.00" },
-        "facturado":          { "count": 1, "valor": "884800.00"  }
+        "evaluacion_calidda": { "count": 3, "valor": "1980800.00", "cantidad_unidades": 15 },
+        "documentos_legales": { "count": 2, "valor": "1184702.00", "cantidad_unidades": 10 },
+        "facturado":          { "count": 1, "valor": "884800.00",  "cantidad_unidades": 10 }
       }
     },
     "resumen_prospeccion": {
@@ -1830,7 +1847,7 @@ Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). S
 
 Notifica a un usuario cuando ocurre una acción relacionada con él pero no accionada por él mismo. También cubre recordatorios de tareas y eventos (job programado, sin actor humano).
 
-**Tipo (`tipo`):** `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`.
+**Tipo (`tipo`):** `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`.
 
 **Entidad referenciada (`entidad_tipo`):** `oportunidad` | `empresa` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
 

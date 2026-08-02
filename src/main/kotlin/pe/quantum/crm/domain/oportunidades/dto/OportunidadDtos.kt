@@ -42,6 +42,8 @@ data class OportunidadDto(
     val garantia: Boolean?,
     val fincParalelo: Boolean?,
     val fichaVenta: String?,
+    /** Carpeta de Drive de la oportunidad. SOLO LECTURA: la administra el backend. */
+    val driveFolderId: String?,
     val notas: String?,
     val motivoCierre: String?,
     val fechaCierreEstimado: LocalDate?,

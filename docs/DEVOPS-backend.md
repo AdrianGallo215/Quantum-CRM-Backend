@@ -224,11 +224,31 @@ Dos entornos bastan para el MVP. `staging` se puede agregar después si se neces
 - Render/Railway capturan stdout/stderr.
 - Cada error de servidor genera un ID de correlación devuelto al cliente (sin detalle) y logueado con el detalle completo.
 
-### 8.2 Health checks
+### 8.2 Logging técnico — Better Stack
+
+Agregador de logs técnicos vía Logback (Better Stack / Logtail).
+
+**Archivos modificados/creados:**
+- `build.gradle.kts` — dependencia `com.logtail:logback-logtail`.
+- `src/main/resources/logback-spring.xml` — appender `Console` (siempre activo) y appender `Logtail` (solo perfil `production`), con `mdcFields` `traceId,usuario,modulo`.
+- `src/main/kotlin/pe/quantum/crm/config/security/MdcLoggingFilter.kt` — puebla el MDC (`traceId` por request, `usuario` desde el `SecurityContext` o `anonimo`, `modulo` desde el segundo segmento de la URI tras `/api/`). Registrado en `SecurityConfig` con `addFilterAfter(MdcLoggingFilter(), JwtAuthenticationFilter::class.java)`, para que el `SecurityContext` ya esté poblado cuando corre.
+
+**Variables de entorno (solo producción):**
+
+| Variable | De dónde sale |
+|---|---|
+| `LOGTAIL_SOURCE_TOKEN` | Dashboard de Better Stack, al crear la fuente (Source) de logs del proyecto |
+| `LOGTAIL_INGEST_HOST` | Mismo dashboard, host de ingesta de esa fuente |
+
+Se configuran manualmente en el panel de Render/Railway al desplegar — igual que el resto de variables de §6.4. **Nunca** en código ni en `.env` local.
+
+**En local:** el perfil activo es `local` (`SPRING_PROFILES_ACTIVE=local` en `.env`), que no es `production`, así que `logback-spring.xml` nunca instancia el appender `Logtail` — los logs solo van a consola. No hace falta ninguna configuración adicional para desarrollar ni para correr los tests.
+
+### 8.3 Health checks
 - `GET /actuator/health` (Spring Boot Actuator) reporta el estado de la app y la conexión a la DB.
 - La plataforma de deploy usa este endpoint para decidir si un deploy es saludable.
 
-### 8.3 Métricas (post-MVP)
+### 8.4 Métricas (post-MVP)
 - Para el MVP, logs y health checks bastan. Después se puede agregar Actuator + Prometheus + Grafana, o Sentry para tracking de errores.
 
 ---

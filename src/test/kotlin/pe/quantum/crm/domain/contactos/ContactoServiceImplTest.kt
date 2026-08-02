@@ -9,6 +9,7 @@ import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
+import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 import java.util.Optional
@@ -24,7 +25,7 @@ class ContactoServiceImplTest {
             id = id,
             nombres = "Hugo",
             apellidos = "Rodríguez",
-            tlf1 = "964415122",
+            tlf_1 = "964415122",
             createdAt = LocalDateTime.now(),
             createdBy = 1,
             updatedAt = LocalDateTime.now(),
@@ -54,7 +55,7 @@ class ContactoServiceImplTest {
     @Test
     fun `buscar con id_empresa valida visibilidad y filtra por contactos vinculados`() {
         every { empresaService.vinculoVisible(10, usuario) } returns
-            pe.quantum.crm.domain.empresas.dto.EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = null, estadoCartera = "prospeccion")
+            EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = null, estadoCartera = "prospeccion")
         every { empresaContactoRepository.findByIdIdEmpresa(10) } returns
             listOf(EmpresaContacto(id = EmpresaContactoId(idEmpresa = 10, idContacto = 1)))
         every { contactoRepository.findAll(any(), any<PageRequest>()) } returns

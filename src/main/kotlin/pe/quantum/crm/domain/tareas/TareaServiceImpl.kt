@@ -23,14 +23,17 @@ import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoAccion
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
+import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
 @Service
+@Suppress("LongParameterList", "TooManyFunctions") // Cada dependencia es una interfaz de servicio publica de otro modulo.
 class TareaServiceImpl(
     private val tareaRepository: TareaRepository,
+    private val tareaResponsableRepository: TareaResponsableRepository,
     private val empresaService: EmpresaService,
     private val oportunidadService: OportunidadService,
     private val contactoService: ContactoService,
@@ -53,6 +56,7 @@ class TareaServiceImpl(
     }
 
     @Transactional
+    @Suppress("LongMethod", "CyclomaticComplexMethod") // Crea la tarea, resuelve colaboradores y notifica en una sola transaccion.
     override fun crear(
         request: CrearTareaRequest,
         usuario: UsuarioActual,
@@ -78,8 +82,15 @@ class TareaServiceImpl(
             }
         }
         val idAsignado = request.idAsignado ?: usuario.id
+        val idsColaboradores = request.idsColaboradores.toSet() - idAsignado
+        validarPermisoAsignacion(setOf(idAsignado) + idsColaboradores, usuario)
         if (!empleadoService.existeActivo(idAsignado)) {
             throw NoEncontradoException("El empleado asignado no existe o está inactivo")
+        }
+        idsColaboradores.forEach {
+            if (!empleadoService.existeActivo(it)) {
+                throw NoEncontradoException("Un colaborador indicado no existe o está inactivo")
+            }
         }
         val ahora = LocalDateTime.now()
         val tarea =
@@ -99,6 +110,14 @@ class TareaServiceImpl(
                     updatedBy = usuario.id,
                 ),
             )
+        val idTarea = requireNotNull(tarea.id)
+        if (idsColaboradores.isNotEmpty()) {
+            tareaResponsableRepository.saveAll(
+                idsColaboradores.map {
+                    TareaResponsable(id = TareaResponsableId(idTarea = idTarea, idEmpleado = it), createdAt = ahora, createdBy = usuario.id)
+                },
+            )
+        }
         val entidadTipo = if (idOportunidad != null) EntidadNotificacion.oportunidad else EntidadNotificacion.empresa
         val entidadId = idOportunidad ?: empresa.id
         val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
@@ -110,6 +129,16 @@ class TareaServiceImpl(
             entidadTipo = entidadTipo,
             entidadId = entidadId,
         )
+        if (idsColaboradores.isNotEmpty()) {
+            notificacionService.notificar(
+                destinatarios = idsColaboradores,
+                idActor = usuario.id,
+                tipo = TipoNotificacion.tarea_colaborador_agregado,
+                mensaje = "${actor?.nombreCompleto()} te agregó como colaborador en una tarea en ${empresa.razonSocial}",
+                entidadTipo = entidadTipo,
+                entidadId = entidadId,
+            )
+        }
         return toDtos(listOf(tarea)).first()
     }
 
@@ -164,15 +193,86 @@ class TareaServiceImpl(
             }
             tarea.idContacto = it
         }
-        request.idAsignado?.let {
-            if (!empleadoService.existeActivo(it)) {
+        var nuevoDueno = false
+        if (request.idAsignado != null && request.idAsignado != tarea.idAsignado) {
+            validarPermisoAsignacion(setOf(request.idAsignado), usuario)
+            if (!empleadoService.existeActivo(request.idAsignado)) {
                 throw NoEncontradoException("El empleado asignado no existe o está inactivo")
             }
-            tarea.idAsignado = it
+            tarea.idAsignado = request.idAsignado
+            nuevoDueno = true
+        }
+        val colaboradoresAgregados = mutableSetOf<Long>()
+        if (request.idsColaboradores != null) {
+            val nuevoSet = request.idsColaboradores.toSet() - setOfNotNull(tarea.idAsignado)
+            validarPermisoAsignacion(nuevoSet, usuario)
+            nuevoSet.forEach {
+                if (!empleadoService.existeActivo(it)) {
+                    throw NoEncontradoException("Un colaborador indicado no existe o está inactivo")
+                }
+            }
+            val setActual = tareaResponsableRepository.findByIdIdTarea(id).map { it.id.idEmpleado }.toSet()
+            colaboradoresAgregados += nuevoSet - setActual
+            tareaResponsableRepository.deleteByIdIdTarea(id)
+            if (nuevoSet.isNotEmpty()) {
+                val ahora = LocalDateTime.now()
+                tareaResponsableRepository.saveAll(
+                    nuevoSet.map {
+                        TareaResponsable(id = TareaResponsableId(idTarea = id, idEmpleado = it), createdAt = ahora, createdBy = usuario.id)
+                    },
+                )
+            }
         }
         tarea.updatedAt = LocalDateTime.now()
         tarea.updatedBy = usuario.id
-        return toDtos(listOf(tareaRepository.save(tarea))).first()
+        val actualizada = tareaRepository.save(tarea)
+        notificarCambiosAsignacion(actualizada, nuevoDueno, colaboradoresAgregados, usuario)
+        return toDtos(listOf(actualizada)).first()
+    }
+
+    private fun notificarCambiosAsignacion(
+        tarea: Tarea,
+        nuevoDueno: Boolean,
+        colaboradoresAgregados: Set<Long>,
+        usuario: UsuarioActual,
+    ) {
+        if (!nuevoDueno && colaboradoresAgregados.isEmpty()) {
+            return
+        }
+        val entidadTipo = if (tarea.idOportunidad != null) EntidadNotificacion.oportunidad else EntidadNotificacion.empresa
+        val entidadId = tarea.idOportunidad ?: tarea.idEmpresa
+        val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
+        val empresa = empresaService.resumenPorIds(listOf(tarea.idEmpresa))[tarea.idEmpresa]
+        if (nuevoDueno) {
+            notificacionService.notificar(
+                destinatarios = setOf(requireNotNull(tarea.idAsignado)),
+                idActor = usuario.id,
+                tipo = TipoNotificacion.tarea_creada,
+                mensaje = "${actor?.nombreCompleto()} te asignó una tarea en ${empresa?.razonSocial}",
+                entidadTipo = entidadTipo,
+                entidadId = entidadId,
+            )
+        }
+        if (colaboradoresAgregados.isNotEmpty()) {
+            notificacionService.notificar(
+                destinatarios = colaboradoresAgregados,
+                idActor = usuario.id,
+                tipo = TipoNotificacion.tarea_colaborador_agregado,
+                mensaje = "${actor?.nombreCompleto()} te agregó como colaborador en una tarea en ${empresa?.razonSocial}",
+                entidadTipo = entidadTipo,
+                entidadId = entidadId,
+            )
+        }
+    }
+
+    /** matriz_permisos.md §2.6: solo admin/gerencia/jdv pueden asignar la tarea a otro empleado. */
+    private fun validarPermisoAsignacion(
+        idsEmpleados: Set<Long>,
+        usuario: UsuarioActual,
+    ) {
+        if (!usuario.esSupervisor && idsEmpleados.any { it != usuario.id }) {
+            throw PermisoInsuficienteException("Solo admin, gerencia o jdv pueden asignar la tarea a otro empleado")
+        }
     }
 
     @Transactional(readOnly = true)
@@ -181,7 +281,18 @@ class TareaServiceImpl(
         usuario: UsuarioActual,
     ): List<ActividadContactoDto> {
         val tareas = tareaRepository.findByIdContactoOrdenado(idContacto)
-        val visibles = if (usuario.visibilidadRestringida) tareas.filter { it.idAsignado == usuario.id } else tareas
+        val visibles =
+            if (usuario.visibilidadRestringida) {
+                val idsColaborador =
+                    tareaResponsableRepository
+                        .findByIdIdTareaIn(tareas.mapNotNull { it.id })
+                        .filter { it.id.idEmpleado == usuario.id }
+                        .map { it.id.idTarea }
+                        .toSet()
+                tareas.filter { it.idAsignado == usuario.id || it.id in idsColaborador }
+            } else {
+                tareas
+            }
         return visibles.map {
             ActividadContactoDto(
                 id = requireNotNull(it.id),
@@ -207,13 +318,16 @@ class TareaServiceImpl(
 
     // ── privados ───────────────────────────────────────────────
 
-    /** vendedor/analista solo operan tareas asignadas a si mismos (404 si no). */
+    /** vendedor/analista solo operan tareas donde son dueño o colaborador (404 si no). */
     private fun visible(
         id: Long,
         usuario: UsuarioActual,
     ): Tarea {
         val tarea = tareaRepository.findById(id).orElseThrow { NoEncontradoException("La tarea no existe") }
-        if (usuario.visibilidadRestringida && tarea.idAsignado != usuario.id) {
+        if (usuario.visibilidadRestringida &&
+            tarea.idAsignado != usuario.id &&
+            !tareaResponsableRepository.existsByIdIdTareaAndIdIdEmpleado(id, usuario.id)
+        ) {
             throw NoEncontradoException("La tarea no existe")
         }
         return tarea
@@ -223,10 +337,19 @@ class TareaServiceImpl(
         filtros: TareaFiltros,
         usuario: UsuarioActual,
     ): Specification<Tarea> =
-        Specification { root, _, cb ->
+        Specification { root, query, cb ->
             val predicados = mutableListOf<Predicate>()
             if (usuario.visibilidadRestringida) {
-                predicados += cb.equal(root.get<Long>("idAsignado"), usuario.id)
+                val colaboradorSubquery = requireNotNull(query).subquery(Long::class.java)
+                val responsableRoot = colaboradorSubquery.from(TareaResponsable::class.java)
+                colaboradorSubquery
+                    .select(responsableRoot.get<TareaResponsableId>("id").get<Long>("idTarea"))
+                    .where(cb.equal(responsableRoot.get<TareaResponsableId>("id").get<Long>("idEmpleado"), usuario.id))
+                predicados +=
+                    cb.or(
+                        cb.equal(root.get<Long>("idAsignado"), usuario.id),
+                        root.get<Long>("id").`in`(colaboradorSubquery),
+                    )
             } else if (filtros.idAsignado != null) {
                 predicados += cb.equal(root.get<Long>("idAsignado"), filtros.idAsignado)
             }
@@ -253,8 +376,14 @@ class TareaServiceImpl(
         }
         val empresas = empresaService.resumenPorIds(tareas.map { it.idEmpresa })
         val contactos = contactoService.resumenPorIds(tareas.mapNotNull { it.idContacto })
-        val asignados = empleadoService.resumenPorIds(tareas.mapNotNull { it.idAsignado })
+        val colaboradoresPorTarea =
+            tareaResponsableRepository
+                .findByIdIdTareaIn(tareas.mapNotNull { it.id })
+                .groupBy({ it.id.idTarea }, { it.id.idEmpleado })
+        val idsEmpleados = (tareas.mapNotNull { it.idAsignado } + colaboradoresPorTarea.values.flatten()).distinct()
+        val empleados = empleadoService.resumenPorIds(idsEmpleados)
         return tareas.map { tarea ->
+            val idsColaboradores = colaboradoresPorTarea[tarea.id].orEmpty()
             TareaDto(
                 id = requireNotNull(tarea.id),
                 idEmpresa = tarea.idEmpresa,
@@ -263,7 +392,9 @@ class TareaServiceImpl(
                 idContacto = tarea.idContacto,
                 contacto = tarea.idContacto?.let { contactos[it] },
                 idAsignado = tarea.idAsignado,
-                asignado = tarea.idAsignado?.let { asignados[it] },
+                asignado = tarea.idAsignado?.let { empleados[it] },
+                idsColaboradores = idsColaboradores,
+                colaboradores = idsColaboradores.mapNotNull { empleados[it] },
                 tipoAccion = tarea.tipoAccion.name,
                 estadoAccion = tarea.estadoAccion.name,
                 descripcion = tarea.descripcion,

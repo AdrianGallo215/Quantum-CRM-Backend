@@ -23,13 +23,13 @@ class Contacto(
     @Column(nullable = false)
     var apellidos: String,
     @Column(name = "email_1")
-    var email1: String? = null,
+    var email_1: String? = null,
     @Column(name = "email_2")
-    var email2: String? = null,
+    var email_2: String? = null,
     @Column(name = "tlf_1")
-    var tlf1: String? = null,
+    var tlf_1: String? = null,
     @Column(name = "tlf_2")
-    var tlf2: String? = null,
+    var tlf_2: String? = null,
     var notas: String? = null,
     @Column(name = "created_at", nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),

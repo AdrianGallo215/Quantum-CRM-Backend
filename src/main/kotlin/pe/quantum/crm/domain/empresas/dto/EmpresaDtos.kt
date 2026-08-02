@@ -56,6 +56,8 @@ data class EmpresaDetalleDto(
     val origenLead: String?,
     val estadoCartera: String?,
     val fileDrive: String?,
+    /** Carpeta de Drive de la empresa. SOLO LECTURA: la administra el backend. */
+    val driveFolderId: String?,
     val sitioWeb: String?,
     val notas: String?,
     val idVendedor: Long?,
@@ -155,6 +157,8 @@ data class EmpresaVinculo(
     val razonSocial: String,
     val idVendedor: Long?,
     val estadoCartera: String?,
+    /** Carpeta de Drive de la empresa; null si nacio antes de V35 o aun no se creo. */
+    val driveFolderId: String? = null,
 )
 
 /** Resumen para DTOs compuestos de otros modulos. */
@@ -178,4 +182,5 @@ fun Empresa.toVinculo(): EmpresaVinculo =
         razonSocial = razonSocial,
         idVendedor = idVendedor,
         estadoCartera = estadoCartera.name,
+        driveFolderId = driveFolderId,
     )

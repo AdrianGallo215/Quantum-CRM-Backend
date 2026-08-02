@@ -19,3 +19,17 @@ interface TareaRepository :
     )
     fun findByIdContactoOrdenado(idContacto: Long): List<Tarea>
 }
+
+/** Colaboradores de tareas (tabla `tarea_responsables`, migracion V31). */
+interface TareaResponsableRepository : JpaRepository<TareaResponsable, TareaResponsableId> {
+    fun findByIdIdTarea(idTarea: Long): List<TareaResponsable>
+
+    fun findByIdIdTareaIn(idsTarea: Collection<Long>): List<TareaResponsable>
+
+    fun existsByIdIdTareaAndIdIdEmpleado(
+        idTarea: Long,
+        idEmpleado: Long,
+    ): Boolean
+
+    fun deleteByIdIdTarea(idTarea: Long)
+}

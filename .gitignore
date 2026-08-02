@@ -1,6 +1,12 @@
 # ── Secretos ───────────────────────────────────────────────
 .env
 
+# Claves de Service Account de Google (Drive). El JSON NUNCA se commitea:
+# su contenido viaja en GOOGLE_DRIVE_CREDENTIALS_BASE64 dentro del .env.
+*-service-account.json
+crm-drive-access-*.json
+google-credentials*.json
+
 # ── Build / Gradle ─────────────────────────────────────────
 build/
 bin/
@@ -19,3 +25,7 @@ Thumbs.db
 
 # ── Logs ───────────────────────────────────────────────────
 *.log
+
+# ── Herramientas de agente ─────────────────────────────────
+# Archivo de bloqueo local de Claude Code: es estado de maquina, no de proyecto.
+.claude/scheduled_tasks.lock

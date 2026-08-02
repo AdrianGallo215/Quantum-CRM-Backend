@@ -17,6 +17,8 @@ data class TareaDto(
     val contacto: ContactoResumen?,
     val idAsignado: Long?,
     val asignado: EmpleadoResumen?,
+    val idsColaboradores: List<Long>,
+    val colaboradores: List<EmpleadoResumen>,
     val tipoAccion: String,
     val estadoAccion: String,
     val descripcion: String?,
@@ -30,18 +32,24 @@ data class CrearTareaRequest(
     val idOportunidad: Long? = null,
     val idContacto: Long? = null,
     val idAsignado: Long? = null,
+    val idsColaboradores: List<Long> = emptyList(),
     val tipoAccion: TipoAccion,
     val descripcion: String? = null,
     val fechaEjecucion: Instant? = null,
 )
 
-/** Body de `PUT /tareas/:id` (solo tareas pendientes). */
+/**
+ * Body de `PUT /tareas/:id` (solo tareas pendientes). `idsColaboradores`, si
+ * viene (aunque sea `[]`), reemplaza el set completo de colaboradores; si se
+ * omite (`null`), los colaboradores existentes no se tocan.
+ */
 data class ActualizarTareaRequest(
     val tipoAccion: TipoAccion? = null,
     val descripcion: String? = null,
     val fechaEjecucion: Instant? = null,
     val idContacto: Long? = null,
     val idAsignado: Long? = null,
+    val idsColaboradores: List<Long>? = null,
 )
 
 /** Body opcional de `PATCH /tareas/:id/completada`. */
