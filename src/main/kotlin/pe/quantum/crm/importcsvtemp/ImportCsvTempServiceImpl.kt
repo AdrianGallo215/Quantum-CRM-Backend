@@ -72,7 +72,7 @@ class ImportCsvTempServiceImpl(
                 ruc = campos.getOrNull(0)?.trim(),
                 razonSocial = campos.getOrNull(1)?.trim(),
                 estado = ESTADO_ERROR,
-                motivo = "Fila incompleta: se esperaban 3 columnas (ruc, razon_social, segmento)",
+                motivo = "Fila incompleta: se esperaban 3 columnas separadas por ';' (ruc;razon_social;segmento)",
             )
         }
         val ruc = campos[0].trim()
@@ -98,7 +98,11 @@ class ImportCsvTempServiceImpl(
         }
     }
 
-    /** Parser CSV mínimo: soporta campos entre comillas dobles con comas internas. */
+    /**
+     * Parser CSV mínimo. El delimitador es `;` (lo que exporta Excel en las
+     * configuraciones regionales del equipo); soporta campos entre comillas dobles
+     * con delimitadores internos y comillas escapadas por duplicación (`""`).
+     */
     private fun parseCsvLine(linea: String): List<String> {
         val campos = mutableListOf<String>()
         val actual = StringBuilder()
@@ -112,7 +116,7 @@ class ImportCsvTempServiceImpl(
                     i++
                 }
                 c == '"' -> dentroComillas = !dentroComillas
-                c == ',' && !dentroComillas -> {
+                c == ';' && !dentroComillas -> {
                     campos.add(actual.toString())
                     actual.clear()
                 }

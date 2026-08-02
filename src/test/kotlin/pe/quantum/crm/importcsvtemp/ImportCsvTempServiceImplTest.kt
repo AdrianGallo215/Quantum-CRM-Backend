@@ -30,7 +30,7 @@ class ImportCsvTempServiceImplTest {
     private val usuario = UsuarioActual(id = 1, rol = "vendedor")
 
     private fun csv(vararg filasDeDatos: String): MockMultipartFile {
-        val contenido = (listOf("ruc,razon_social,segmento") + filasDeDatos.toList()).joinToString("\n")
+        val contenido = (listOf("ruc;razon_social;segmento") + filasDeDatos.toList()).joinToString("\n")
         return MockMultipartFile("file", "empresas.csv", "text/csv", contenido.toByteArray(Charsets.UTF_8))
     }
 
@@ -55,6 +55,7 @@ class ImportCsvTempServiceImplTest {
         origenLead = null,
         estadoCartera = "no_contactado",
         fileDrive = null,
+        driveFolderId = null,
         sitioWeb = null,
         notas = null,
         idVendedor = null,
@@ -72,7 +73,7 @@ class ImportCsvTempServiceImplTest {
             empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
         }
 
-        val resultado = service.importarEmpresas(csv("20999999999,Beta SRL,urbano"), usuario)
+        val resultado = service.importarEmpresas(csv("20999999999;Beta SRL;urbano"), usuario)
 
         assertThat(resultado.totalFilas).isEqualTo(1)
         assertThat(resultado.creadas).isEqualTo(1)
@@ -88,7 +89,7 @@ class ImportCsvTempServiceImplTest {
         every { empresaService.crear(match { it.ruc == "20999999999" }, usuario) } returns
             empresaDetalleDto(ruc = "20999999999", razonSocial = "Beta SRL")
 
-        val resultado = service.importarEmpresas(csv("123,Empresa Corta,urbano", "20999999999,Beta SRL,urbano"), usuario)
+        val resultado = service.importarEmpresas(csv("123;Empresa Corta;urbano", "20999999999;Beta SRL;urbano"), usuario)
 
         assertThat(resultado.totalFilas).isEqualTo(2)
         assertThat(resultado.creadas).isEqualTo(1)
@@ -100,7 +101,7 @@ class ImportCsvTempServiceImplTest {
 
     @Test
     fun `fila con menos de 3 columnas queda en error`() {
-        val resultado = service.importarEmpresas(csv("20999999999,Beta SRL"), usuario)
+        val resultado = service.importarEmpresas(csv("20999999999;Beta SRL"), usuario)
 
         assertThat(resultado.detalle.single().estado).isEqualTo("error")
         assertThat(resultado.detalle.single().motivo).contains("Fila incompleta")
@@ -108,7 +109,7 @@ class ImportCsvTempServiceImplTest {
 
     @Test
     fun `segmento desconocido queda en error y no llama a EmpresaService`() {
-        val resultado = service.importarEmpresas(csv("20999999999,Beta SRL,corporativo"), usuario)
+        val resultado = service.importarEmpresas(csv("20999999999;Beta SRL;corporativo"), usuario)
 
         assertThat(resultado.detalle.single().estado).isEqualTo("error")
         assertThat(resultado.detalle.single().motivo).isEqualTo("Segmento desconocido: corporativo")
@@ -119,7 +120,7 @@ class ImportCsvTempServiceImplTest {
     fun `ruc ya existente en BD queda en error con el motivo de RucDuplicadoException`() {
         every { empresaService.crear(any(), usuario) } throws RucDuplicadoException()
 
-        val resultado = service.importarEmpresas(csv("20999999999,Beta SRL,urbano"), usuario)
+        val resultado = service.importarEmpresas(csv("20999999999;Beta SRL;urbano"), usuario)
 
         assertThat(resultado.detalle.single().estado).isEqualTo("error")
         assertThat(resultado.detalle.single().motivo).isEqualTo("Esta empresa ya está registrada en el sistema")
@@ -139,7 +140,7 @@ class ImportCsvTempServiceImplTest {
 
         val resultado =
             service.importarEmpresas(
-                csv("20999999999,Beta SRL,urbano", "20999999999,Beta SRL Duplicada,turismo"),
+                csv("20999999999;Beta SRL;urbano", "20999999999;Beta SRL Duplicada;turismo"),
                 usuario,
             )
 
@@ -168,13 +169,26 @@ class ImportCsvTempServiceImplTest {
     }
 
     @Test
-    fun `razon social con coma entre comillas se parsea completa`() {
+    fun `razon social con punto y coma entre comillas se parsea completa`() {
         val slot = slot<CrearEmpresaRequest>()
         every { empresaService.crear(capture(slot), usuario) } answers {
             empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
         }
 
-        service.importarEmpresas(csv("""20999999999,"Empresa S.A., Sucursal Lima",urbano"""), usuario)
+        service.importarEmpresas(csv("""20999999999;"Empresa S.A.; Sucursal Lima";urbano"""), usuario)
+
+        assertThat(slot.captured.razonSocial).isEqualTo("Empresa S.A.; Sucursal Lima")
+    }
+
+    /** Con `;` como delimitador, la coma es un caracter comun y no necesita comillas. */
+    @Test
+    fun `razon social con coma sin comillas se parsea completa`() {
+        val slot = slot<CrearEmpresaRequest>()
+        every { empresaService.crear(capture(slot), usuario) } answers {
+            empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
+        }
+
+        service.importarEmpresas(csv("20999999999;Empresa S.A., Sucursal Lima;urbano"), usuario)
 
         assertThat(slot.captured.razonSocial).isEqualTo("Empresa S.A., Sucursal Lima")
     }
