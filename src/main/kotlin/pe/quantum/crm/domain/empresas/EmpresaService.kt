@@ -31,7 +31,7 @@ interface EmpresaService {
         dir: String?,
     ): Paginado<EmpresaListaDto>
 
-    /** Detalle (sin contactos: el controller los compone via ContactoService). */
+    /** Detalle completo, con `contactos` ya poblado via ContactoService (§8). */
     fun detalle(
         id: Long,
         usuario: UsuarioActual,

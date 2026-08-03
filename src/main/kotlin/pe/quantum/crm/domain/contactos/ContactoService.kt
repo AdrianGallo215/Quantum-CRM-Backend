@@ -72,6 +72,14 @@ interface ContactoService {
 
     fun countPorEmpresa(idEmpresa: Long): Int
 
+    /**
+     * Conteo de contactos de varias empresas a la vez. Lo consume el listado
+     * paginado de empresas (`contactos_count`, contrato_api.md §8): una sola
+     * consulta por pagina en vez de una por fila. Las empresas sin contactos no
+     * aparecen en el mapa; quien llama resuelve el ausente como 0.
+     */
+    fun countPorEmpresas(idsEmpresa: Collection<Long>): Map<Long, Int>
+
     /** Verifica existencia (para oportunidades y tareas). */
     fun existe(id: Long): Boolean
 

@@ -10,9 +10,16 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.jpa.domain.Specification
+import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
+import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
+import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
+import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
@@ -31,12 +38,23 @@ class EmpresaServiceImplTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>()
+    private val contactoService = mockk<ContactoService>()
     private val service =
-        EmpresaServiceImpl(empresaRepository, empleadoService, notificacionService, eventPublisher, driveStorageService)
+        EmpresaServiceImpl(
+            empresaRepository,
+            empleadoService,
+            notificacionService,
+            eventPublisher,
+            driveStorageService,
+            contactoService,
+        )
 
-    private fun empresa(estadoCartera: EstadoCartera = EstadoCartera.prospeccion) =
+    private fun empresa(
+        estadoCartera: EstadoCartera = EstadoCartera.prospeccion,
+        id: Long = 1,
+    ): Empresa =
         Empresa(
-            id = 1,
+            id = id,
             ruc = "20123456789",
             razonSocial = "Transportes ABC",
             estadoCartera = estadoCartera,
@@ -137,7 +155,214 @@ class EmpresaServiceImplTest {
         val gerencia = UsuarioActual(id = 1, rol = "gerencia")
         every { empresaRepository.findById(10) } returns Optional.of(empresa().apply { enCarteraMaestra = true })
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        every { contactoService.contactosDeEmpresa(any()) } returns emptyList()
         assertThat(service.detalle(10, gerencia).enCarteraMaestra).isTrue()
+    }
+
+    // ── contactos_count y contactos (contrato_api.md §8) ──────
+
+    @Test
+    fun `listar puebla contactos_count con un unico lote, sin una consulta por empresa`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaRepository.findAll(any<Specification<Empresa>>(), any<PageRequest>()) } returns
+            PageImpl(listOf(empresa(id = 1), empresa(id = 2)), PageRequest.of(0, 20), 2)
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        every { contactoService.countPorEmpresas(listOf(1L, 2L)) } returns mapOf(1L to 3)
+
+        val resultado = service.listar(EmpresaFiltros(), gerencia, null, null, null, null)
+
+        assertThat(resultado.items.map { it.contactosCount }).containsExactly(3, 0)
+        verify(exactly = 1) { contactoService.countPorEmpresas(any()) }
+        verify(exactly = 0) { contactoService.countPorEmpresa(any()) }
+    }
+
+    @Test
+    fun `listar sin resultados no consulta conteos de contactos`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaRepository.findAll(any<Specification<Empresa>>(), any<PageRequest>()) } returns
+            PageImpl(emptyList(), PageRequest.of(0, 20), 0)
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        assertThat(service.listar(EmpresaFiltros(), gerencia, null, null, null, null).items).isEmpty()
+
+        verify(exactly = 0) { contactoService.countPorEmpresas(any()) }
+    }
+
+    @Test
+    fun `detalle incluye los contactos vinculados con cargo y toma_decision`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empresaRepository.findById(1) } returns Optional.of(empresa())
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        every { contactoService.contactosDeEmpresa(1) } returns
+            listOf(
+                ContactoDeEmpresaDto(
+                    id = 5,
+                    nombres = "Hugo",
+                    apellidos = "Rodríguez",
+                    cargo = "Gerente",
+                    tomaDecision = true,
+                    esPrincipal = true,
+                    email_1 = null,
+                    tlf_1 = "964415122",
+                ),
+            )
+
+        val detalle = service.detalle(1, gerencia)
+
+        assertThat(detalle.contactos).hasSize(1)
+        assertThat(detalle.contactos?.first()?.cargo).isEqualTo("Gerente")
+        assertThat(detalle.contactos?.first()?.tomaDecision).isTrue()
+        assertThat(detalle.contactos?.first()?.esPrincipal).isTrue()
+    }
+
+    @Test
+    fun `actualizar devuelve el detalle con los contactos vinculados`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val entidad = empresa()
+        every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empresaRepository.save(entidad) } returns entidad
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        every { contactoService.contactosDeEmpresa(1) } returns
+            listOf(
+                ContactoDeEmpresaDto(
+                    id = 5,
+                    nombres = "Hugo",
+                    apellidos = "Rodríguez",
+                    cargo = null,
+                    tomaDecision = null,
+                    esPrincipal = false,
+                    email_1 = null,
+                    tlf_1 = null,
+                ),
+            )
+
+        val detalle = service.actualizar(1, ActualizarEmpresaRequest(ruc = "20123456789"), gerencia)
+
+        assertThat(detalle.contactos).hasSize(1)
+    }
+
+    // ── id_vendedor al crear (matriz_permisos.md §2.2) ────────
+
+    @Test
+    fun `crear con id_vendedor de otro empleado por un vendedor es PERMISO_INSUFICIENTE`() {
+        val vendedor = UsuarioActual(id = 4, rol = "vendedor")
+
+        assertThatThrownBy {
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC", idVendedor = 8),
+                vendedor,
+            )
+        }.isInstanceOf(PermisoInsuficienteException::class.java)
+
+        verify(exactly = 0) { empresaRepository.save(any<Empresa>()) }
+        verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+    }
+
+    @Test
+    fun `crear con id_vendedor de otro empleado por el jdv es PERMISO_INSUFICIENTE`() {
+        val jdv = UsuarioActual(id = 3, rol = "jdv")
+
+        assertThatThrownBy {
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC", idVendedor = 8),
+                jdv,
+            )
+        }.isInstanceOf(PermisoInsuficienteException::class.java)
+    }
+
+    @Test
+    fun `crear con id_vendedor de un rol no comercial es VALIDACION`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empleadoService.esAsignableComoVendedor(8) } returns false
+
+        assertThatThrownBy {
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC", idVendedor = 8),
+                gerencia,
+            )
+        }.isInstanceOf(ValidacionException::class.java)
+
+        verify(exactly = 0) { empresaRepository.save(any<Empresa>()) }
+    }
+
+    @Test
+    fun `crear con id_vendedor inexistente es VALIDACION, no un fallo de clave foranea`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        every { empleadoService.esAsignableComoVendedor(999) } returns false
+
+        assertThatThrownBy {
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC", idVendedor = 999),
+                gerencia,
+            )
+        }.isInstanceOf(ValidacionException::class.java)
+    }
+
+    @Test
+    fun `crear por gerencia con un vendedor asignable guarda el id_vendedor`() {
+        val guardada = slot<Empresa>()
+        every { empleadoService.esAsignableComoVendedor(8) } returns true
+        every { empresaRepository.existsByRuc(any()) } returns false
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
+        every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        service.crear(
+            CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC", idVendedor = 8),
+            UsuarioActual(id = 1, rol = "gerencia"),
+        )
+
+        assertThat(guardada.captured.idVendedor).isEqualTo(8)
+    }
+
+    @Test
+    fun `crear sin id_vendedor por un vendedor se asigna a si mismo sin validar el destino`() {
+        val guardada = slot<Empresa>()
+        every { empresaRepository.existsByRuc(any()) } returns false
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
+        every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        service.crear(
+            CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+            UsuarioActual(id = 4, rol = "vendedor"),
+        )
+
+        assertThat(guardada.captured.idVendedor).isEqualTo(4)
+        verify(exactly = 0) { empleadoService.esAsignableComoVendedor(any()) }
+    }
+
+    @Test
+    fun `crear con el propio id_vendedor por un vendedor equivale a no enviarlo`() {
+        val guardada = slot<Empresa>()
+        every { empresaRepository.existsByRuc(any()) } returns false
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
+        every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        service.crear(
+            CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC", idVendedor = 4),
+            UsuarioActual(id = 4, rol = "vendedor"),
+        )
+
+        assertThat(guardada.captured.idVendedor).isEqualTo(4)
+        verify(exactly = 0) { empleadoService.esAsignableComoVendedor(any()) }
+    }
+
+    @Test
+    fun `crear sin id_vendedor por gerencia deja la empresa sin asignar`() {
+        val guardada = slot<Empresa>()
+        every { empresaRepository.existsByRuc(any()) } returns false
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
+        every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        service.crear(
+            CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+            UsuarioActual(id = 1, rol = "gerencia"),
+        )
+
+        assertThat(guardada.captured.idVendedor).isNull()
     }
 
     @Test
