@@ -10,6 +10,9 @@ interface ContactoRepository :
 interface EmpresaContactoRepository : JpaRepository<EmpresaContacto, EmpresaContactoId> {
     fun findByIdIdEmpresa(idEmpresa: Long): List<EmpresaContacto>
 
+    /** Ensamblado por lotes: los vinculos de todas las empresas de una pagina en una consulta. */
+    fun findByIdIdEmpresaIn(idsEmpresa: Collection<Long>): List<EmpresaContacto>
+
     fun findByIdIdContacto(idContacto: Long): List<EmpresaContacto>
 
     fun findByIdIdContactoIn(idsContacto: Collection<Long>): List<EmpresaContacto>

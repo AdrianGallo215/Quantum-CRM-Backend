@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.contactos
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -115,6 +116,49 @@ class ContactoServiceImplTest {
             service.buscar(q = null, idEmpresa = null, usuario = usuario, page = null, perPage = null, sort = "created_at", dir = "asc")
 
         assertThat(resultado.items).hasSize(1)
+    }
+
+    @Test
+    fun `countPorEmpresas resuelve todas las empresas de la pagina en una sola consulta`() {
+        every { empresaContactoRepository.findByIdIdEmpresaIn(setOf(3L, 7L)) } returns
+            listOf(
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 3, idContacto = 1)),
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 3, idContacto = 2)),
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 7, idContacto = 1)),
+            )
+
+        val resultado = service.countPorEmpresas(listOf(3L, 7L))
+
+        assertThat(resultado).containsExactlyInAnyOrderEntriesOf(mapOf(3L to 2, 7L to 1))
+        verify(exactly = 1) { empresaContactoRepository.findByIdIdEmpresaIn(any()) }
+    }
+
+    @Test
+    fun `countPorEmpresas con lista vacia no toca el repositorio`() {
+        assertThat(service.countPorEmpresas(emptyList())).isEmpty()
+
+        verify(exactly = 0) { empresaContactoRepository.findByIdIdEmpresaIn(any()) }
+    }
+
+    @Test
+    fun `contactosDeEmpresa devuelve cargo y toma_decision del vinculo, no del contacto`() {
+        every { empresaContactoRepository.findByIdIdEmpresa(3) } returns
+            listOf(
+                EmpresaContacto(
+                    id = EmpresaContactoId(idEmpresa = 3, idContacto = 1),
+                    cargo = "Gerente",
+                    tomaDecision = true,
+                    esPrincipal = true,
+                ),
+            )
+        every { contactoRepository.findAllById(listOf(1L)) } returns listOf(contacto())
+
+        val resultado = service.contactosDeEmpresa(3)
+
+        assertThat(resultado).hasSize(1)
+        assertThat(resultado.first().cargo).isEqualTo("Gerente")
+        assertThat(resultado.first().tomaDecision).isTrue()
+        assertThat(resultado.first().esPrincipal).isTrue()
     }
 
     @Test

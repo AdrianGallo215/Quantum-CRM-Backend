@@ -226,6 +226,18 @@ class ContactoServiceImpl(
     override fun countPorEmpresa(idEmpresa: Long): Int = empresaContactoRepository.countByIdIdEmpresa(idEmpresa).toInt()
 
     @Transactional(readOnly = true)
+    override fun countPorEmpresas(idsEmpresa: Collection<Long>): Map<Long, Int> {
+        val ids = idsEmpresa.toSet()
+        if (ids.isEmpty()) {
+            return emptyMap()
+        }
+        return empresaContactoRepository
+            .findByIdIdEmpresaIn(ids)
+            .groupingBy { it.id.idEmpresa }
+            .eachCount()
+    }
+
+    @Transactional(readOnly = true)
     override fun existe(id: Long): Boolean = contactoRepository.existsById(id)
 
     @Transactional(readOnly = true)

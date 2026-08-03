@@ -2,14 +2,17 @@ package pe.quantum.crm.domain.empresas
 
 import jakarta.persistence.criteria.Predicate
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.context.annotation.Lazy
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.empresas.dto.CarteraMaestraDto
+import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
@@ -46,6 +49,11 @@ class EmpresaServiceImpl(
     private val notificacionService: NotificacionService,
     private val eventPublisher: ApplicationEventPublisher,
     private val driveStorageService: DriveStorageService,
+    // Solo la interfaz publica de contactos (regla 12): empresas nunca toca
+    // `empresa_contactos` ni la entidad Contacto. `@Lazy` porque contactos ya
+    // depende de EmpresaService (vinculoVisible/resumenPorIds) y Spring Boot 3
+    // rechaza los ciclos de constructor; el proxy corta el ciclo al arrancar.
+    @Lazy private val contactoService: ContactoService,
 ) : EmpresaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -60,6 +68,10 @@ class EmpresaServiceImpl(
         val resultado = empresaRepository.findAll(especificacion(filtros, usuario), pageRequest)
         val vendedores =
             empleadoService.resumenPorIds(resultado.content.mapNotNull { it.idVendedor })
+        // Ensamblado por lotes (igual que OportunidadServiceImpl.toDtos): un solo
+        // viaje a contactos para toda la pagina, no uno por fila.
+        val ids = resultado.content.mapNotNull { it.id }
+        val contactosCount = ids.takeIf { it.isNotEmpty() }?.let { contactoService.countPorEmpresas(it) }.orEmpty()
         val items =
             resultado.content.map { empresa ->
                 EmpresaListaDto(
@@ -73,7 +85,7 @@ class EmpresaServiceImpl(
                     idVendedor = empresa.idVendedor,
                     vendedor = empresa.idVendedor?.let { vendedores[it] },
                     segmentos = empresa.segmentos.map { it.name }.sorted(),
-                    contactosCount = 0,
+                    contactosCount = contactosCount[empresa.id] ?: 0,
                     enCarteraMaestra = empresa.enCarteraMaestra,
                 )
             }
@@ -85,7 +97,7 @@ class EmpresaServiceImpl(
     override fun detalle(
         id: Long,
         usuario: UsuarioActual,
-    ): EmpresaDetalleDto = visible(id, usuario).toDetalle()
+    ): EmpresaDetalleDto = visible(id, usuario).conContactos()
 
     /** Siempre 200; no expone el vendedor dueño (contrato_api.md §8, B2.2). */
     @Transactional(readOnly = true)
@@ -102,6 +114,7 @@ class EmpresaServiceImpl(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
     ): EmpresaDetalleDto {
+        val idVendedor = vendedorAlCrear(request.idVendedor, usuario)
         if (empresaRepository.existsByRuc(request.ruc)) {
             throw RucDuplicadoException()
         }
@@ -113,7 +126,7 @@ class EmpresaServiceImpl(
                 actividadEcon = request.actividadEcon,
                 ciiu = request.ciiu,
                 sectorIndustrial = request.sectorIndustrial,
-                idVendedor = request.idVendedor ?: usuario.id.takeIf { usuario.visibilidadRestringida },
+                idVendedor = idVendedor,
                 fileDrive = request.fileDrive,
                 sitioWeb = request.sitioWeb,
                 notas = request.notas,
@@ -136,7 +149,37 @@ class EmpresaServiceImpl(
         // Carpeta de Drive dentro de la transaccion: si Drive falla, la empresa no
         // se crea. Decision explicita — nunca queda una empresa sin carpeta.
         empresa.driveFolderId = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
-        return empresaRepository.save(empresa).toDetalle()
+        // Recien creada: aun no puede tener contactos, asi que no se consulta.
+        return empresaRepository.save(empresa).toDetalle(emptyList())
+    }
+
+    /**
+     * `id_vendedor` en el alta. Asignar la empresa a otro empleado es la misma
+     * decision que reasignarla, y matriz_permisos.md §2.2 ("Reasignar vendedor
+     * directo") la reserva a admin y gerencia: el jdv necesita solicitud aprobada
+     * y vendedor/analista no pueden. Quedarse la empresa uno mismo (o no enviar
+     * el campo) sigue permitido para todos, que es como vendedor y analista
+     * conservan visibilidad sobre lo que registran.
+     */
+    private fun vendedorAlCrear(
+        solicitado: Long?,
+        usuario: UsuarioActual,
+    ): Long? {
+        if (solicitado == null) {
+            return usuario.id.takeIf { usuario.visibilidadRestringida }
+        }
+        if (solicitado == usuario.id) {
+            return solicitado
+        }
+        if (!usuario.puedeReasignarDirecto) {
+            throw PermisoInsuficienteException("Solo gerencia puede asignar la empresa a otro empleado")
+        }
+        // Misma validacion que reasignarVendedor: descarta roles no comerciales,
+        // empleados inactivos e ids inexistentes (que si no serian un 500 por FK).
+        if (!empleadoService.esAsignableComoVendedor(solicitado)) {
+            throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
+        }
+        return solicitado
     }
 
     @Transactional
@@ -212,7 +255,7 @@ class EmpresaServiceImpl(
         }
         empresa.updatedAt = LocalDateTime.now()
         empresa.updatedBy = usuario.id
-        return empresaRepository.save(empresa).toDetalle()
+        return empresaRepository.save(empresa).conContactos()
     }
 
     /**
@@ -439,7 +482,14 @@ class EmpresaServiceImpl(
         razonSocial: String,
     ): String = "$ruc - $razonSocial"
 
-    private fun Empresa.toDetalle(): EmpresaDetalleDto {
+    /**
+     * Detalle con `contactos` poblado (contrato_api.md §8). Los datos del vinculo
+     * (cargo, toma_decision, es_principal) viven en `empresa_contactos`, tabla del
+     * modulo contactos: se piden por su interfaz publica, nunca por SQL propio.
+     */
+    private fun Empresa.conContactos(): EmpresaDetalleDto = toDetalle(contactoService.contactosDeEmpresa(requireNotNull(id)))
+
+    private fun Empresa.toDetalle(contactos: List<ContactoDeEmpresaDto>): EmpresaDetalleDto {
         val vendedor = idVendedor?.let { empleadoService.resumenPorIds(listOf(it))[it] }
         return EmpresaDetalleDto(
             id = requireNotNull(id),
@@ -465,7 +515,7 @@ class EmpresaServiceImpl(
             idVendedor = idVendedor,
             vendedor = vendedor,
             segmentos = segmentos.map { it.name }.sorted(),
-            contactos = emptyList(),
+            contactos = contactos,
             enCarteraMaestra = enCarteraMaestra,
             createdAt = createdAt,
             createdBy = createdBy,

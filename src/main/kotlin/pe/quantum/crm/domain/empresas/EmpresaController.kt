@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.CambiarCarteraMaestraRequest
 import pe.quantum.crm.domain.empresas.dto.CambiarEstadoCarteraRequest
@@ -35,7 +34,6 @@ import pe.quantum.crm.shared.security.UsuarioActualProvider
 @RequestMapping("/api/v1/empresas")
 class EmpresaController(
     private val empresaService: EmpresaService,
-    private val contactoService: ContactoService,
     private val usuarioProvider: UsuarioActualProvider,
 ) {
     @GetMapping
@@ -63,9 +61,7 @@ class EmpresaController(
                 carteraMaestra = carteraMaestra,
             )
         val resultado = empresaService.listar(filtros, usuario, page, perPage, sort, dir)
-        val conContactos =
-            resultado.items.map { it.copy(contactosCount = contactoService.countPorEmpresa(it.id)) }
-        return ApiResponse.ok(conContactos, resultado.meta)
+        return ApiResponse.ok(resultado.items, resultado.meta)
     }
 
     /** Ruta literal antes que `{id}` para que Spring no las confunda. */
@@ -77,11 +73,7 @@ class EmpresaController(
     @GetMapping("/{id}")
     fun detalle(
         @PathVariable id: Long,
-    ): ApiResponse<EmpresaDetalleDto> {
-        val usuario = usuarioProvider.actual()
-        val detalle = empresaService.detalle(id, usuario)
-        return ApiResponse.ok(detalle.copy(contactos = contactoService.contactosDeEmpresa(id)))
-    }
+    ): ApiResponse<EmpresaDetalleDto> = ApiResponse.ok(empresaService.detalle(id, usuarioProvider.actual()))
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -93,11 +85,7 @@ class EmpresaController(
     fun actualizar(
         @PathVariable id: Long,
         @RequestBody request: ActualizarEmpresaRequest,
-    ): ApiResponse<EmpresaDetalleDto> {
-        val usuario = usuarioProvider.actual()
-        val detalle = empresaService.actualizar(id, request, usuario)
-        return ApiResponse.ok(detalle.copy(contactos = contactoService.contactosDeEmpresa(id)))
-    }
+    ): ApiResponse<EmpresaDetalleDto> = ApiResponse.ok(empresaService.actualizar(id, request, usuarioProvider.actual()))
 
     @PatchMapping("/{id}/estado-cartera")
     fun cambiarEstadoCartera(
