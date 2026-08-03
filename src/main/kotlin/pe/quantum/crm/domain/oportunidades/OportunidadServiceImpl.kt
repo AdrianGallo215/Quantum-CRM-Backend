@@ -31,6 +31,7 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
+import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.PoliticaDescuento
@@ -343,7 +344,7 @@ class OportunidadServiceImpl(
         sort: String?,
         dir: String?,
     ): Paginado<OportunidadDto> {
-        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "id")
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
         val resultado = oportunidadRepository.findAll(especificacion(filtros, usuario), pageRequest)
         val items = toDtos(resultado.content)
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
@@ -740,5 +741,20 @@ class OportunidadServiceImpl(
                 createdAt = op.createdAt,
             )
         }
+    }
+
+    private companion object {
+        /** Allowlist de `sort` de GET /oportunidades; el primero es el orden por defecto. */
+        val CAMPOS_ORDENABLES =
+            CamposOrdenables(
+                "id",
+                "estado",
+                "cantidad",
+                "precioUnitario",
+                "montoTotal",
+                "fechaCierreEstimado",
+                "createdAt",
+                "updatedAt",
+            )
     }
 }

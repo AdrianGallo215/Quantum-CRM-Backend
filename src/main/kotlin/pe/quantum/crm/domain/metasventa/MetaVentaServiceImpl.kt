@@ -16,6 +16,7 @@ import pe.quantum.crm.domain.metasventa.dto.MetaVentaResumen
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
+import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoMeta
@@ -148,7 +149,7 @@ class MetaVentaServiceImpl(
         sort: String?,
         dir: String?,
     ): Paginado<MetaVentaDto> {
-        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "anio")
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
         val resultado = metaVentaRepository.findAll(especificacion(filtros, usuario), pageRequest)
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(toDtos(resultado.content), meta)
@@ -317,5 +318,9 @@ class MetaVentaServiceImpl(
 
     private companion object {
         val ROLES_PROPONENTES = setOf("jdv", "gerencia", "admin")
+
+        /** Allowlist de `sort` de GET /metas-venta; el primero es el orden por defecto. */
+        val CAMPOS_ORDENABLES =
+            CamposOrdenables("anio", "id", "estado", "metaAnual", "createdAt", "updatedAt")
     }
 }
