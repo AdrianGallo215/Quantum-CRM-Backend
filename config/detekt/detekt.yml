@@ -8,13 +8,22 @@ style:
     maxLineLength: 140
   MagicNumber:
     active: true
-    ignoreNumbers: ['-1', '0', '1', '2', '100']
+    # El 3 cierra la serie de ordinales cortos que ya cubren 0/1/2: el `rango` de
+    # las 4 etapas del pipeline y los 3 hitos de prospeccion.
+    ignoreNumbers: ['-1', '0', '1', '2', '3', '100']
     excludes: ['**/test/**', '**/*Test.kt', '**/*Tests.kt']
 
 naming:
   FunctionNaming:
     # Los nombres de test van con backticks y espacios ("`hace algo`").
     excludes: ['**/test/**', '**/*Test.kt', '**/*Tests.kt']
+  ConstructorParameterNaming:
+    # Se admite un sufijo `_<digito>` sobre un nombre camelCase: `email_1`,
+    # `tlf_2`. No es estilo libre, son los nombres de columna de V8 y a la vez
+    # los campos publicos del contrato (contrato_api.md §9); renombrarlos a
+    # `email1` cambiaria el JSON que consume el frontend. El resto de snake_case
+    # (`razon_social`) sigue rechazado.
+    parameterPattern: '[a-z][A-Za-z0-9]*(_[0-9]+)?'
 
 performance:
   SpreadOperator:

@@ -20,7 +20,8 @@
 -- ENUMS GLOBALES
 -- ---------------------------------------------------------------------------
 
-CREATE TYPE rol_empleado        AS ENUM ('admin', 'gerente', 'jdv', 'vendedor', 'analista', 'otro');
+CREATE TYPE rol_empleado        AS ENUM ('admin', 'gerencia', 'jdv', 'vendedor', 'analista', 'otro');
+-- 'gerente' se renombro a 'gerencia' en V25 (docs/gerencia_solicitudes_modelo_datos.md).
 CREATE TYPE aplicacion_enum     AS ENUM ('urbano', 'interprovincial', 'turismo', 'personal');
 CREATE TYPE segmento_enum       AS ENUM ('urbano', 'personal', 'turismo', 'interprovincial');
 CREATE TYPE origen_lead_enum    AS ENUM ('cartera', 'visita_fria', 'referido_calidda', 'red_contactos');
@@ -135,10 +136,13 @@ CREATE TABLE empresas (
     aval_fiador         TEXT,
     origen_lead         origen_lead_enum,
     estado_cartera      estado_cartera_enum     NOT NULL DEFAULT 'no_contactado',
+    -- V27: reserva de gerencia; una empresa en cartera maestra no tiene vendedor.
+    en_cartera_maestra  BOOLEAN                 NOT NULL DEFAULT false,
     created_at          TIMESTAMP               NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by          BIGINT                  NOT NULL REFERENCES empleados(id),
     updated_at          TIMESTAMP               NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by          BIGINT                  NOT NULL REFERENCES empleados(id)
+    updated_by          BIGINT                  NOT NULL REFERENCES empleados(id),
+    CONSTRAINT chk_cartera_maestra_sin_vendedor CHECK (NOT en_cartera_maestra OR id_vendedor IS NULL)
 );
 
 CREATE TABLE empresa_segmentos (
@@ -507,4 +511,19 @@ CREATE TABLE buses_entregados (
 --   Si aplicaciones viene vacío → rollback. No existe endpoint que cree
 --   solo el modelo.
 --
+-- =============================================================================
+--
+-- NOTA — V25-V28 (rol Gerencia y sistema de Solicitudes, 2026-07-16)
+-- Este snapshot no incluye las tablas de notificaciones (V22) ni las
+-- posteriores; ver las migraciones Flyway como fuente de verdad completa.
+-- Resumen de lo agregado por esta feature — detalle completo en
+-- docs/gerencia_solicitudes_modelo_datos.md:
+--   V25: ALTER TYPE rol_empleado RENAME VALUE 'gerente' TO 'gerencia'.
+--   V26: tabla `solicitudes` (capa de aprobacion + trazabilidad) con los
+--        enums tipo_solicitud_enum, estado_solicitud_enum,
+--        aprobador_solicitud_enum, entidad_solicitud_enum.
+--   V27: columna `empresas.en_cartera_maestra` (ya reflejada arriba).
+--   V28: nuevos valores en tipo_notificacion_enum (solicitud_creada,
+--        solicitud_aprobada, solicitud_denegada) y en
+--        entidad_notificacion_enum (solicitud).
 -- =============================================================================

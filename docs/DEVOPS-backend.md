@@ -131,24 +131,19 @@ El backend corre en local con `./gradlew bootRun` contra este PostgreSQL.
 
 ### 5.2 Dockerfile (multi-stage)
 
-```dockerfile
-# Build
-FROM gradle:8-jdk21 AS build
-WORKDIR /app
-COPY . .
-RUN ./gradlew bootJar --no-daemon
+El `Dockerfile` vive en la raíz del repositorio. Multi-stage, para que la imagen final solo tenga el JAR y un JRE, no Gradle ni el código fuente. Usuario no-root por seguridad (ver `SECURITY-backend.md`).
 
-# Runtime — imagen mínima, usuario no-root
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=build /app/build/libs/*.jar app.jar
-RUN addgroup -S app && adduser -S app -G app
-USER app
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
+Cuatro decisiones que no son cosméticas:
 
-Multi-stage para que la imagen final solo tenga el JAR, no Gradle ni el código fuente. Usuario no-root por seguridad (ver `SECURITY-backend.md`).
+**El contexto se acota con `.dockerignore`.** Un `COPY . .` sin filtro mete el `.env` —con `JWT_SECRET`, `DB_PASSWORD` y las credenciales de Drive en base64— dentro de la capa del stage de build. Que la imagen final sea multi-stage no basta: la capa intermedia conserva lo copiado y puede acabar en una caché remota o en un registry.
+
+**Las dependencias se copian antes que el código.** El wrapper y los scripts de build van en su propia capa y se resuelven las dependencias ahí. Mientras `build.gradle.kts` no cambie, Docker reutiliza esa capa y un cambio de código no vuelve a descargar el árbol entero.
+
+**La imagen no corre tests.** Los de integración levantan Testcontainers y dentro del build no hay un daemon de Docker. La suite es responsabilidad de CI, que gatea el merge a `main` antes de que esta imagen llegue a construirse.
+
+**`TZ=UTC` explícito.** Las fechas de tareas y eventos se normalizan a UTC al guardarlas pero se comparan contra `LocalDateTime.now()`, que usa la zona por defecto de la JVM. Fijarla en la imagen hace que ambas coincidan siempre, en vez de depender de cómo venga configurado el host.
+
+Se acompaña de `.gitattributes`, que fuerza LF en `gradlew`: con CRLF el kernel no encuentra el intérprete y el build muere con `bad interpreter: /bin/sh^M`.
 
 ---
 
@@ -224,11 +219,31 @@ Dos entornos bastan para el MVP. `staging` se puede agregar después si se neces
 - Render/Railway capturan stdout/stderr.
 - Cada error de servidor genera un ID de correlación devuelto al cliente (sin detalle) y logueado con el detalle completo.
 
-### 8.2 Health checks
+### 8.2 Logging técnico — Better Stack
+
+Agregador de logs técnicos vía Logback (Better Stack / Logtail).
+
+**Archivos modificados/creados:**
+- `build.gradle.kts` — dependencia `com.logtail:logback-logtail`.
+- `src/main/resources/logback-spring.xml` — appender `Console` (siempre activo) y appender `Logtail` (solo perfil `production`), con `mdcFields` `traceId,usuario,modulo`.
+- `src/main/kotlin/pe/quantum/crm/config/security/MdcLoggingFilter.kt` — puebla el MDC (`traceId` por request, `usuario` desde el `SecurityContext` o `anonimo`, `modulo` desde el segundo segmento de la URI tras `/api/`). Registrado en `SecurityConfig` con `addFilterAfter(MdcLoggingFilter(), JwtAuthenticationFilter::class.java)`, para que el `SecurityContext` ya esté poblado cuando corre.
+
+**Variables de entorno (solo producción):**
+
+| Variable | De dónde sale |
+|---|---|
+| `LOGTAIL_SOURCE_TOKEN` | Dashboard de Better Stack, al crear la fuente (Source) de logs del proyecto |
+| `LOGTAIL_INGEST_HOST` | Mismo dashboard, host de ingesta de esa fuente |
+
+Se configuran manualmente en el panel de Render/Railway al desplegar — igual que el resto de variables de §6.4. **Nunca** en código ni en `.env` local.
+
+**En local:** el perfil activo es `local` (`SPRING_PROFILES_ACTIVE=local` en `.env`), que no es `production`, así que `logback-spring.xml` nunca instancia el appender `Logtail` — los logs solo van a consola. No hace falta ninguna configuración adicional para desarrollar ni para correr los tests.
+
+### 8.3 Health checks
 - `GET /actuator/health` (Spring Boot Actuator) reporta el estado de la app y la conexión a la DB.
 - La plataforma de deploy usa este endpoint para decidir si un deploy es saludable.
 
-### 8.3 Métricas (post-MVP)
+### 8.4 Métricas (post-MVP)
 - Para el MVP, logs y health checks bastan. Después se puede agregar Actuator + Prometheus + Grafana, o Sentry para tracking de errores.
 
 ---

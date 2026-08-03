@@ -1,0 +1,45 @@
+# Contexto de build de la imagen. Todo lo que no aparezca aqui viaja al daemon
+# de Docker y queda dentro de la capa del stage de build.
+#
+# CRITICO: el `.env` lleva JWT_SECRET, DB_PASSWORD y las credenciales de Drive
+# en base64. Aunque la imagen final es multi-stage y solo copia el JAR, la capa
+# intermedia si conserva lo que se copio, y esa capa puede acabar en una cache
+# remota o en un registry. El secreto nunca debe entrar al contexto.
+
+# ── Secretos ───────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*-service-account.json
+crm-drive-access-*.json
+google-credentials*.json
+
+# ── Artefactos de build (se regeneran dentro de la imagen) ─
+build/
+bin/
+.gradle/
+.kotlin/
+
+# ── Control de versiones y herramientas ────────────────────
+.git/
+.github/
+.gitignore
+.gitattributes
+.claude/
+.superpowers/
+.mcp.json
+
+# ── IDE y sistema operativo ────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ── Nada de esto afecta al artefacto compilado ─────────────
+docs/
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+*.log

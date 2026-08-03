@@ -11,7 +11,7 @@ package pe.quantum.crm.domain.empleados
 @Suppress("ktlint:standard:enum-entry-name-case", "EnumNaming")
 enum class RolEmpleado {
     admin,
-    gerente,
+    gerencia,
     jdv,
     vendedor,
     analista,

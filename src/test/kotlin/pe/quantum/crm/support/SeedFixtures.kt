@@ -23,6 +23,7 @@ object SeedFixtures {
     const val ADMIN_EMAIL = "admin@quantum.pe"
     const val ADMIN_ROL = "admin"
 
-    /** Total de migraciones aplicadas (V1..V20). Actualizar al agregar migraciones. */
-    const val MIGRACIONES_TOTAL = 20
+    /** Total de migraciones commiteadas (cuenta real de archivos; hay huecos en la numeración
+     *  por trabajo en curso de otras features aun sin commitear). Actualizar al agregar migraciones. */
+    const val MIGRACIONES_TOTAL = 36
 }

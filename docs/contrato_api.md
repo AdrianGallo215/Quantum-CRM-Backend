@@ -24,6 +24,10 @@
 16. [Prospección](#16-prospección)
 17. [Inicio](#17-inicio)
 18. [Reportes](#18-reportes)
+19. [Notificaciones](#19-notificaciones)
+20. [Solicitudes](#20-solicitudes)
+21. [Metas de venta](#21-metas-de-venta)
+22. [Mantenimiento](#22-mantenimiento)
 
 ---
 
@@ -97,6 +101,14 @@ En caso de error, `data` es `null` y `error` contiene:
 | `CONTACTO_VINCULADO` | 409 | No se puede eliminar un contacto vinculado a una empresa |
 | `MONTO_NO_EDITABLE` | 400 | Se intentó enviar `monto_total` en el body |
 | `VALIDACION` | 400 | Error genérico de validación de campos |
+| `APROBACION_REQUERIDA` | 422 | El descuento supera el límite del rol; requiere una solicitud aprobada |
+| `SOLICITUD_DUPLICADA` | 409 | Ya existe una solicitud pendiente del mismo tipo sobre esa entidad |
+| `SOLICITUD_YA_RESUELTA` | 409 | Otro aprobador ya resolvió la solicitud |
+| `SOLICITUD_NO_APLICABLE` | 409 | La entidad cambió y el efecto de la solicitud ya no aplica |
+| `CARTERA_MAESTRA_CON_OPORTUNIDADES` | 409 | No se puede reservar una empresa con oportunidades activas |
+| `ARCHIVO_DEMASIADO_GRANDE` | 413 | El archivo supera `DRIVE_MAX_FILE_SIZE_BYTES` |
+| `DRIVE_NO_DISPONIBLE` | 502 | Google Drive no respondió |
+| `DRIVE_SIN_CUOTA` | 502 | `ROOT_DRIVE_FOLDER_ID` no apunta a una unidad compartida |
 
 ---
 
@@ -117,20 +129,23 @@ Todos los endpoints de listado aceptan:
 
 La visibilidad de datos varía según el rol del usuario autenticado. El backend aplica estos filtros automáticamente — el frontend no puede sobreescribirlos.
 
-| Recurso | admin | gerente | jdv | vendedor | analista |
+| Recurso | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo asignadas |
 | Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo propias |
 | Ver todas las tareas | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Reasignar empresa | ✓ | ✓ | ✓ | — | — |
-| Traspasar oportunidad | ✓ | ✓ | ✓ | — | — |
+| Reasignar empresa directo (cascada automática a sus oportunidades activas) | ✓ | ✓ | — (vía solicitud) | — | — |
+| Ver / gestionar Cartera Maestra | ✓ | ✓ | — | — | — |
 | Validar paso a Facturado | ✓ | ✓ | — | — | ✓ |
 | Crear empleado | ✓ | — | — | — | — |
 | Modificar catálogo de eventos | ✓ | — | — | — | — |
 | Modificar financiadoras | ✓ | ✓ | — | — | — |
 | Modificar modelos | ✓ | ✓ | — | — | — |
+| Eliminar empresa / oportunidad (definitivo, cascada) | ✓ | — | — | — | — |
 
-`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP.
+`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
+
+**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §19): `vendedor`/`analista` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite.
 
 ---
 
@@ -280,9 +295,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 |---|---|---|
 | `q` | string | Búsqueda por razón social o RUC |
 | `estado_cartera` | enum | Filtrar por estado de cartera |
-| `id_vendedor` | long | Filtrar por vendedor (solo admin/gerente/jdv) |
+| `id_vendedor` | long | Filtrar por vendedor (solo admin/gerencia/jdv) |
 | `segmento` | string | Filtrar por segmento |
 | `distrito` | string | Filtrar por distrito |
+| `cartera_maestra` | bool | Solo admin/gerencia: filtra por pertenencia a la Cartera Maestra. Ignorado para el resto de roles (siempre excluidas) |
 
 **Respuesta 200:**
 ```json
@@ -299,7 +315,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "id_vendedor": 1,
       "vendedor": { "id": 1, "nombres": "Aldo", "apellidos": "Martínez" },
       "segmentos": ["urbano"],
-      "contactos_count": 1
+      "contactos_count": 1,
+      "en_cartera_maestra": false
     }
   ],
   "meta": { "page": 1, "per_page": 20, "total": 10, "total_pages": 1 }
@@ -334,6 +351,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
     "origen_lead": "visita_fria",
     "estado_cartera": "oportunidad_activa",
     "file_drive": "https://drive.google.com/...",
+    "drive_folder_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
     "sitio_web": null,
     "notas": null,
     "id_vendedor": 1,
@@ -351,6 +369,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
         "tlf_1": "964415122"
       }
     ],
+    "en_cartera_maestra": false,
     "created_at": "2026-05-01T10:00:00Z",
     "created_by": 1
   }
@@ -414,6 +433,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 **Respuesta 201:** el objeto empresa completo.
 
 **Notas:**
+- Se crea la carpeta de Google Drive de la empresa bajo la unidad compartida raíz, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la empresa **no se crea** (`502 DRIVE_NO_DISPONIBLE`).
+- `drive_folder_id` es de **solo lectura**: lo administra el backend y nunca se acepta en el body. No confundir con `file_drive`, que es una URL suelta editable por el usuario.
+
+**Notas:**
 - `segmentos` se inserta en `empresa_segmentos` de forma atómica.
 - El backend valida el RUC antes de insertar. Si ya existe → `409 RUC_DUPLICADO`.
 - `estado_cartera` siempre nace como `no_contactado`. No es aceptado como campo de entrada.
@@ -428,6 +451,58 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 **Body:** mismos campos que POST, todos opcionales. Si `segmentos` viene en el body, reemplaza completamente los segmentos actuales.
 
 **Respuesta 200:** el objeto empresa completo actualizado.
+
+---
+
+### GET /empresas/:id/eventos
+> Lista los eventos de la empresa que no están vinculados a ninguna oportunidad (`id_oportunidad IS NULL`). Son los hitos de prospección (reglas_negocio.md §10.3): registrarlos antes de que exista una oportunidad es lo que hace avanzar el checkpoint de `GET /prospeccion`.
+
+**Roles:** todos (mismo filtro automático por rol que el resto de `/empresas`)
+
+**Respuesta 200** — mismo shape que `GET /oportunidades/:id/eventos` (§11), incluyendo `es_hito_prospeccion`:
+```json
+{
+  "data": {
+    "pendientes": [
+      {
+        "id": 12,
+        "id_oportunidad": null,
+        "id_empresa": 3,
+        "id_catalogo_evento": 9,
+        "nombre": "Reporte Tributario recibido",
+        "es_personalizado": false,
+        "descripcion": null,
+        "estado": "pendiente",
+        "fecha_estimada": "2026-07-15",
+        "fecha_seguimiento": "2026-07-10",
+        "fecha_ocurrencia": null,
+        "dispara_cambio_estado": false,
+        "estado_destino": null,
+        "es_recomendado": true,
+        "etapa_asociada": null,
+        "es_hito_prospeccion": true
+      }
+    ],
+    "ocurridos": [],
+    "descartados": []
+  }
+}
+```
+
+---
+
+### POST /empresas/:id/eventos
+> Registra un nuevo evento en la empresa, sin oportunidad asociada.
+
+**Roles:** todos (solo su empresa si es vendedor/analista — mismo filtro que `PATCH /empresas/:id/estado-cartera`)
+
+**Body** — idéntico al de `POST /oportunidades/:id/eventos` (catálogo o personalizado, §11).
+
+**Respuesta 201:** el evento creado, con `id_empresa` seteado e `id_oportunidad = null`.
+
+**Notas:**
+- Si `id_catalogo_evento` referencia un evento con `etapa_asociada` no nula → `400 VALIDACION` (ese evento pertenece a una etapa del pipeline y debe registrarse en una oportunidad, no en una empresa suelta).
+- `PATCH /eventos/:id/ocurrido`, `PATCH /eventos/:id/descartado` y `PUT /eventos/:id` (§11) operan igual sobre estos eventos, sin cambios. `sugerencia` en `PATCH /eventos/:id/ocurrido` siempre viene `null` para eventos de empresa (no disparan cambio de estado).
 
 ---
 
@@ -453,22 +528,117 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ### PATCH /empresas/:id/vendedor
 > Reasigna el vendedor de una empresa.
 
-**Roles:** `admin` `gerente` `jdv`
+**Roles:** `admin` `gerencia`
 
 **Body:** `{ "id_vendedor": 2 }`
 
 **Respuesta 200:** `{ "data": { "id_vendedor": 2 } }`
+
+**Notas:**
+- Cascada automáticamente: todas las oportunidades activas de esta empresa cambian a `id_vendedor` en la misma operación (reglas_negocio.md §8.3). Las oportunidades cerradas (`facturado`, `cerrado`) no se ven afectadas.
+- `id_vendedor` debe ser un empleado activo con rol `vendedor` o `jdv`; si no, `400 VALIDACION`.
+- El `jdv` ya no reasigna directo: recibe `403 PERMISO_INSUFICIENTE` y debe enviar una solicitud (§19) que resuelve `gerencia`.
+
+---
+
+### PATCH /empresas/:id/cartera-maestra
+> Mueve una empresa a la Cartera Maestra o la libera asignando vendedor.
+
+**Roles:** `admin` `gerencia`
+
+**Body (reservar):** `{ "en_cartera_maestra": true }`
+- Requiere que la empresa no tenga oportunidades activas → si no, `409 CARTERA_MAESTRA_CON_OPORTUNIDADES`.
+- Desasigna el vendedor (`id_vendedor` queda `null`).
+
+**Body (liberar):** `{ "en_cartera_maestra": false, "id_vendedor": 8 }`
+- `id_vendedor` obligatorio → si falta, `400 VALIDACION`.
+- Notifica `empresa_asignada` al vendedor destino. A partir de este momento la empresa es visible para el `jdv` y el vendedor asignado.
+
+**Respuesta 200:** `{ "data": { "en_cartera_maestra": false, "id_vendedor": 8 } }`
+
+---
+
+### POST /empresas/:id/carpeta-drive
+> Crea la carpeta de Google Drive de la empresa. Idempotente.
+
+**Roles:** los mismos que ven la empresa (un vendedor solo las suyas).
+
+**Body:** vacío.
+
+**Respuesta 200:** `{ "data": { "drive_folder_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz" } }`
+
+**Notas:**
+- Si la empresa ya tiene carpeta, la devuelve sin tocar Drive. El frontend puede llamarlo sin verificar antes.
+- El botón "Crear File del Cliente" debe **ocultarse** cuando `drive_folder_id` ya viene distinto de `null` en `GET /empresas/:id`.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE` / `DRIVE_SIN_CUOTA`.
+
+---
+
+### GET /empresas/:id/archivos
+> Lista los documentos de la carpeta de Google Drive de la empresa.
+
+**Roles:** los mismos que ven la empresa (un vendedor solo ve las suyas).
+
+**Respuesta 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+      "nombre": "ficha-ruc.pdf",
+      "url": "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+      "tamano_bytes": 284512,
+      "mime_type": "application/pdf"
+    }
+  ]
+}
+```
+
+**Notas:**
+- Orden alfabético por nombre. No incluye subcarpetas de oportunidades ni elementos en la papelera de Drive.
+- Si la empresa aún no tiene carpeta, devuelve `"data": []`. Esta llamada **nunca crea la carpeta**.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE`.
+
+---
+
+### POST /empresas/:id/archivos
+> Sube un documento a la carpeta de Google Drive de la empresa.
+
+**Roles:** los mismos que ven la empresa (un vendedor solo sube a las suyas).
+
+**Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
+
+El backend no almacena el archivo: lo transmite en streaming hacia Drive.
+
+**Respuesta 201:** igual forma que el listado, un solo objeto en `data` (ver `POST /oportunidades/:id/archivos`).
+
+**Errores:** los mismos que `POST /oportunidades/:id/archivos` — `400 VALIDACION` · `404 NO_ENCONTRADO` · `413 ARCHIVO_DEMASIADO_GRANDE` · `502 DRIVE_NO_DISPONIBLE` / `DRIVE_SIN_CUOTA`.
+
+---
+
+### DELETE /empresas/:id
+> Elimina definitivamente una empresa y todo lo que cuelga de ella en el pipeline comercial.
+
+**Roles:** `admin`
+
+**Respuesta 204:** sin body.
+
+**Notas:**
+- Elimina en cascada sus oportunidades, las tareas y eventos de esas oportunidades, el log de estados, y las tareas/eventos propios de la empresa (sin oportunidad asociada).
+- Los contactos vinculados **no** se eliminan: solo se borra el vínculo (`empresa_contactos`). El contacto sigue existiendo y puede estar vinculado a otras empresas.
+- Sin restricción por estado: incluye empresas con oportunidades en `facturado`. Operación irreversible.
 
 ---
 
 ## 9. Contactos
 
 ### GET /contactos
-> Busca contactos. Usado para vincular un contacto existente a una empresa.
+> Busca contactos. Usado para vincular un contacto existente a una empresa, y para la vista de listado de Contactos.
 
 **Roles:** todos
 
-**Query params:** `q` (nombre o teléfono), `id_empresa` (contactos de una empresa específica)
+**Query params:** `q` (nombre o teléfono), `id_empresa` (contactos de una empresa específica), `page`, `per_page`
 
 **Respuesta 200:**
 ```json
@@ -480,13 +650,53 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "apellidos": "Rodríguez",
       "email_1": null,
       "tlf_1": "964415122",
+      "oportunidades_count": 3,
       "empresas": [
         { "id": 3, "razon_social": "Transp. Negociaciones Sta. Anita S.A.", "cargo": "Gerente" }
       ]
     }
-  ]
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 42, "total_pages": 3 }
 }
 ```
+
+---
+
+### GET /contactos/:id
+> Detalle completo del contacto: empresas vinculadas, oportunidades vinculadas y su línea de tiempo de actividades.
+
+**Roles:** todos
+
+**Respuesta 200:**
+```json
+{
+  "data": {
+    "id": 5, "nombres": "Hugo", "apellidos": "Rodríguez",
+    "email_1": "h@x.com", "email_2": null, "tlf_1": "964415122", "tlf_2": null, "notas": null,
+    "empresas": [
+      { "id": 3, "razon_social": "Transp. Sta. Anita S.A.", "cargo": "Gerente",
+        "toma_decision": true, "es_principal": true, "segmentos": ["interprovincial"] }
+    ],
+    "oportunidades": [
+      { "id": 12, "empresa": { "id": 3, "razon_social": "Transp. Sta. Anita S.A." },
+        "modelo": { "id": 2, "codigo": "KinWin K9" },
+        "estado": "evaluacion_calidda", "monto_total": "450000.00",
+        "fecha_cierre_estimado": "2024-12-15", "rol_en_oportunidad": "Contacto Principal" }
+    ],
+    "actividades": [
+      { "id": 88, "tipo": "tarea", "titulo": "llamada",
+        "descripcion": "Acordar términos...", "fecha": "2024-10-24T10:30:00", "estado": "pendiente" }
+    ]
+  }
+}
+```
+
+**Notas:**
+- `actividades[]` incluye solo tareas por ahora. `eventos` no tiene columna `id_contacto` en el schema actual y no existe una entidad de notas — se agregarán cuando el schema lo soporte.
+- `oportunidades[].modelo.codigo` usa el mismo campo que el resto del contrato (§10), no `nombre`.
+- `actividades[].titulo` es el valor de `tipo_accion` (`llamada`, `correo`, `reunion`, `whatsapp`, `otro`) — `Tarea` no tiene un campo de título libre.
+- `actividades[]` respeta la visibilidad de tareas: vendedor/analista solo ven las tareas asignadas a sí mismos.
+- Errores: `404 NO_ENCONTRADO` si el contacto no existe.
 
 ---
 
@@ -620,6 +830,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "garantia": true,
       "finc_paralelo": false,
       "ficha_venta": null,
+      "drive_folder_id": "1XyZaBcDeFgHiJkLmNoPqRsTuV",
       "notas": null,
       "motivo_cierre": null,
       "fecha_cierre_estimado": "2026-07-10",
@@ -678,7 +889,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
   "fecha_cierre_estimado": "2026-07-10",
   "contactos": [
     { "id_contacto": 5, "rol_en_oportunidad": "Contacto Principal" }
-  ]
+  ],
+  "id_vendedor": null
 }
 ```
 
@@ -687,10 +899,96 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 **Notas:**
 - `monto_total` NO se acepta en el body. Si viene, se ignora y se calcula.
 - `precio_unitario` se inicializa con `modelos.precio_base` del modelo seleccionado.
-- `id_vendedor` se toma de `empresas.id_vendedor` en el momento de la creación.
+- `id_vendedor` se toma de `empresas.id_vendedor` en el momento de la creación. **Excepción:** si la empresa no tiene vendedor asignado (solo la ven roles supervisores), quien crea con `gerencia`/`admin` DEBE enviar `id_vendedor` en el body — la empresa queda asignada a ese vendedor en la misma operación. Si falta → `400 VALIDACION` (`field: "id_vendedor"`).
 - `id_financiadora` es opcional — si no viene, se usa la que tenga `es_default = true`.
+- Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: no se crea la oportunidad. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre la oportunidad ya creada.
 - Se inserta el primer registro en `oportunidad_estados_log`.
 - Se llama a `actualizarEstadoCartera` en la misma transacción.
+- Se crea la subcarpeta de Google Drive de la oportunidad dentro de la carpeta de su empresa, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la oportunidad **no se crea** (`502 DRIVE_NO_DISPONIBLE`).
+
+---
+
+### POST /oportunidades/:id/carpeta-drive
+> Crea la carpeta de Google Drive de la oportunidad, dentro de la de su empresa. Idempotente.
+
+**Roles:** los mismos que ven la oportunidad (un vendedor solo las suyas).
+
+**Body:** vacío.
+
+**Respuesta 200:** `{ "data": { "drive_folder_id": "1XyZaBcDeFgHiJkLmNoPqRsTuV" } }`
+
+**Notas:**
+- Si la empresa de esa oportunidad tampoco tiene carpeta, se crean **ambas**: primero la de la empresa, y la de la oportunidad dentro.
+- Si la oportunidad ya tiene carpeta, la devuelve sin tocar Drive.
+- El botón "Crear File de la Oportunidad" debe **ocultarse** cuando `drive_folder_id` ya viene distinto de `null` en `GET /oportunidades/:id`.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE` / `DRIVE_SIN_CUOTA`.
+
+---
+
+### GET /oportunidades/:id/archivos
+> Lista los documentos de la carpeta de Google Drive de la oportunidad.
+
+**Roles:** los mismos que ven la oportunidad (un vendedor solo ve las suyas).
+
+**Respuesta 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+      "nombre": "contrato-firmado.pdf",
+      "url": "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+      "tamano_bytes": 284512,
+      "mime_type": "application/pdf"
+    }
+  ]
+}
+```
+
+**Notas:**
+- Orden alfabético por nombre. No incluye subcarpetas ni elementos en la papelera de Drive.
+- Si la oportunidad aún no tiene carpeta (nunca se subió nada), devuelve `"data": []`. Esta llamada **nunca crea la carpeta** — a diferencia de `POST`, una lectura no tiene efectos secundarios.
+- Errores: `404 NO_ENCONTRADO` (ajena o inexistente) · `502 DRIVE_NO_DISPONIBLE`.
+
+---
+
+### POST /oportunidades/:id/archivos
+> Sube un documento a la carpeta de Google Drive de la oportunidad.
+
+**Roles:** los mismos que ven la oportunidad (un vendedor solo sube a las suyas).
+
+**Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
+
+El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay límite práctico de tamaño por memoria del servidor, solo el tope configurado (`DRIVE_MAX_FILE_SIZE_BYTES`, 100 MB por defecto).
+
+**Respuesta 201:**
+
+```json
+{
+  "data": {
+    "id": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+    "nombre": "contrato-firmado.pdf",
+    "url": "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+    "tamano_bytes": 284512,
+    "mime_type": "application/pdf"
+  }
+}
+```
+
+**Errores:**
+
+| Código HTTP | `code` | Cuándo |
+|---|---|---|
+| 400 | `VALIDACION` | No es `multipart/form-data`, falta el campo `file`, o el archivo no tiene nombre |
+| 404 | `NO_ENCONTRADO` | La oportunidad no existe o es ajena (IDOR → 404, nunca 403) |
+| 413 | `ARCHIVO_DEMASIADO_GRANDE` | Supera `DRIVE_MAX_FILE_SIZE_BYTES` |
+| 502 | `DRIVE_NO_DISPONIBLE` | Google Drive no responde |
+| 502 | `DRIVE_SIN_CUOTA` | `ROOT_DRIVE_FOLDER_ID` no apunta a una unidad compartida |
+
+**Notas:**
+- Si la oportunidad aún no tiene carpeta (creada antes de la migración V35), se crea en esta llamada.
+- La visibilidad se verifica **antes** de leer un solo byte del cuerpo.
 
 ---
 
@@ -704,11 +1002,26 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 **Notas:**
 - `monto_total` NO se acepta. Si viene → `400 MONTO_NO_EDITABLE`.
 - `estado`, `id_empresa`, `id_vendedor` NO se aceptan en este endpoint.
+- Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el resto de campos puede reintentarse sin `dcto` o dentro del límite; el descuento mayor requiere una solicitud (§19).
 - Si cambia `id_modelo` y `precio_unitario` no fue editado previamente (igual al `precio_base` del modelo anterior), se actualiza automáticamente con el nuevo `precio_base`.
 - Si `precio_unitario` fue editado manualmente, el backend devuelve en la respuesta: `"advertencias": ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]`.
 - Recalcula y persiste `monto_total`.
 
 **Respuesta 200:** la oportunidad actualizada.
+
+---
+
+### DELETE /oportunidades/:id
+> Elimina definitivamente una oportunidad.
+
+**Roles:** `admin`
+
+**Respuesta 204:** sin body.
+
+**Notas:**
+- Elimina en cascada su log de estados, sus vínculos de contacto (`oportunidad_contactos`), sus eventos y sus tareas. Los contactos en sí **no** se eliminan, solo el vínculo.
+- Recalcula `estado_cartera` de la empresa tras eliminar (reglas_negocio.md §3.3): si la empresa se queda sin oportunidades activas/facturadas, vuelve a su estado manual (o `null`).
+- Sin restricción por estado: incluye oportunidades en `facturado`. Operación irreversible.
 
 ---
 
@@ -743,21 +1056,6 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - Se inserta en `oportunidad_estados_log`.
 - Se llama a `actualizarEstadoCartera` en la misma transacción.
 - Si retrocede desde `cerrado`, `motivo_cierre` se pone en `NULL` automáticamente.
-
----
-
-### PATCH /oportunidades/:id/vendedor
-> Traspasa la oportunidad a otro vendedor (traspaso activo).
-
-**Roles:** `admin` `gerente` `jdv`
-
-**Body:** `{ "id_vendedor": 2 }`
-
-**Respuesta 200:** `{ "data": { "id_vendedor": 2 } }`
-
-**Notas:**
-- Modifica `oportunidades.id_vendedor` directamente. No duplica la oportunidad.
-- El vendedor anterior deja de ver la oportunidad en su pipeline.
 
 ---
 
@@ -840,7 +1138,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
         "dispara_cambio_estado": false,
         "estado_destino": null,
         "es_recomendado": true,
-        "etapa_asociada": "documentos_legales"
+        "etapa_asociada": "documentos_legales",
+        "es_hito_prospeccion": false
       }
     ],
     "ocurridos": [
@@ -964,7 +1263,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 | `id_empresa` | long | Tareas de una empresa |
 | `id_oportunidad` | long | Tareas de una oportunidad |
 | `estado_accion` | enum | `pendiente`, `completada`, `cancelada` |
-| `id_asignado` | long | Por asignado (solo admin/gerente/jdv) |
+| `id_asignado` | long | Por asignado (solo admin/gerencia/jdv) |
 | `solo_prospeccion` | bool | Solo tareas sin oportunidad (`id_oportunidad IS NULL`) |
 | `vencidas` | bool | Tareas pendientes con `fecha_ejecucion < NOW()` |
 
@@ -981,6 +1280,11 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "contacto": { "id": 5, "nombres": "Hugo", "apellidos": "Rodríguez" },
       "id_asignado": 1,
       "asignado": { "id": 1, "nombres": "Aldo", "apellidos": "Martínez" },
+      "ids_colaboradores": [2, 4],
+      "colaboradores": [
+        { "id": 2, "nombres": "Diego", "apellidos": "Reyes" },
+        { "id": 4, "nombres": "Lucía", "apellidos": "Vargas" }
+      ],
       "tipo_accion": "reunion",
       "estado_accion": "pendiente",
       "descripcion": "Revisar minuta del contrato tripartito",
@@ -990,6 +1294,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
   ]
 }
 ```
+
+**Notas:**
+- `id_asignado` es el dueño de la tarea (único). `ids_colaboradores`/`colaboradores` son empleados adicionales que trabajan la tarea en conjunto con el dueño — no reemplazan a `id_asignado`, se suman.
+- vendedor/analista ven una tarea si son el dueño **o** aparecen en `ids_colaboradores` (visibilidad de tareas, `matriz_permisos.md §2.6`).
 
 ---
 
@@ -1005,6 +1313,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
   "id_oportunidad": 101,
   "id_contacto": 5,
   "id_asignado": 1,
+  "ids_colaboradores": [2, 4],
   "tipo_accion": "reunion",
   "descripcion": "Revisar minuta del contrato tripartito",
   "fecha_ejecucion": "2026-06-19T10:00:00Z"
@@ -1017,13 +1326,15 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - `id_oportunidad` es opcional. Si es `null`, es una tarea de prospección.
 - Si `id_oportunidad` es `null` y la empresa tiene oportunidades activas → `400 VALIDACION` con mensaje: `"Las tareas de empresas con oportunidades activas deben vincularse a una oportunidad"`.
 - `id_asignado` es opcional. Si no viene, se asigna al usuario autenticado.
+- `ids_colaboradores` es opcional (default `[]`). Cada colaborador recibe una notificación `tarea_colaborador_agregado` y ve la tarea en sus actividades, igual que el dueño.
+- Asignar el dueño o un colaborador a un empleado **distinto del usuario autenticado** requiere rol admin/gerencia/jdv (`matriz_permisos.md §2.6`). Un vendedor/analista solo puede dejarse a sí mismo como dueño o colaborador → si no, `403 PERMISO_INSUFICIENTE`.
 
 ---
 
 ### PATCH /tareas/:id/completada
 > Marca una tarea como completada.
 
-**Roles:** todos (solo tareas asignadas a sí mismo si es vendedor/analista)
+**Roles:** todos (solo tareas donde es dueño o colaborador si es vendedor/analista)
 
 **Body:** `{ "descripcion": null }` (descripción adicional opcional)
 
@@ -1034,7 +1345,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ### PATCH /tareas/:id/cancelada
 > Marca una tarea como cancelada.
 
-**Roles:** todos (solo tareas asignadas a sí mismo si es vendedor/analista)
+**Roles:** todos (solo tareas donde es dueño o colaborador si es vendedor/analista)
 
 **Respuesta 200:** `{ "data": { "estado_accion": "cancelada" } }`
 
@@ -1043,11 +1354,15 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ### PUT /tareas/:id
 > Actualiza una tarea pendiente.
 
-**Roles:** todos (solo tareas asignadas a sí mismo si es vendedor/analista)
+**Roles:** todos (solo tareas donde es dueño o colaborador si es vendedor/analista)
 
-**Body:** `tipo_accion`, `descripcion`, `fecha_ejecucion`, `id_contacto`, `id_asignado` — todos opcionales.
+**Body:** `tipo_accion`, `descripcion`, `fecha_ejecucion`, `id_contacto`, `id_asignado`, `ids_colaboradores` — todos opcionales.
 
-**Notas:** Solo se pueden editar tareas con `estado_accion = 'pendiente'`.
+**Notas:**
+- Solo se pueden editar tareas con `estado_accion = 'pendiente'`.
+- `ids_colaboradores`, si viene en el body (aunque sea `[]`), **reemplaza el set completo** de colaboradores de la tarea. Si se omite, los colaboradores existentes no se tocan. Solo los colaboradores agregados en esta llamada reciben notificación `tarea_colaborador_agregado`; los que ya estaban no se re-notifican y los removidos no reciben notificación de remoción.
+- Si `id_asignado` cambia respecto al valor actual, el nuevo dueño recibe una notificación `tarea_creada`.
+- Mismo requisito de permisos que en la creación: asignar a un empleado distinto del usuario autenticado requiere admin/gerencia/jdv.
 
 **Respuesta 200:** la tarea actualizada.
 
@@ -1328,16 +1643,22 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
     "resumen_pipeline": {
       "valor_total": "3050752.00",
       "oportunidades_activas": 6,
+      "cantidad_unidades": 25,
       "por_etapa": {
-        "evaluacion_calidda": { "count": 3, "valor": "1980800.00" },
-        "documentos_legales": { "count": 2, "valor": "1184702.00" },
-        "facturado":          { "count": 1, "valor": "884800.00"  }
+        "evaluacion_calidda": { "count": 3, "valor": "1980800.00", "cantidad_unidades": 15 },
+        "documentos_legales": { "count": 2, "valor": "1184702.00", "cantidad_unidades": 10 },
+        "facturado":          { "count": 1, "valor": "884800.00",  "cantidad_unidades": 10 }
       }
     },
     "resumen_prospeccion": {
       "total": 4,
       "listas_para_convertir": 1,
       "requieren_atencion": 2
+    },
+    "meta_ventas": {
+      "mensual": { "tiene_meta": true, "unidades_meta": 10, "unidades_logradas": 6, "porcentaje": 60 },
+      "anual": { "tiene_meta": true, "unidades_meta": 120, "unidades_logradas": 60, "porcentaje": 50 },
+      "equipo": null
     }
   }
 }
@@ -1347,6 +1668,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 - `tareas_pendientes` ordenadas por `fecha_ejecucion ASC` (vencidas primero, luego hoy, luego próximas).
 - `eventos_por_seguir` ordenados por `fecha_seguimiento ASC`.
 - `resumen_prospeccion.requieren_atencion` = empresas con `checkpoints = 0` y `dias_sin_actividad >= 15`.
+- `meta_ventas` es `null` para roles distintos de `vendedor`/`jdv` (no venden). Cuando no hay meta `aprobada` para el periodo, `tiene_meta` es `false` y `unidades_meta`/`porcentaje` vienen `null` (`unidades_logradas` siempre se calcula). `equipo` solo viene con datos para `jdv` (agregado de vendedores activos); para `vendedor` es `null`.
 
 ---
 
@@ -1518,6 +1840,251 @@ Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). S
   }
 }
 ```
+
+---
+
+## 19. Notificaciones
+
+Notifica a un usuario cuando ocurre una acción relacionada con él pero no accionada por él mismo. También cubre recordatorios de tareas y eventos (job programado, sin actor humano).
+
+**Tipo (`tipo`):** `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`.
+
+**Entidad referenciada (`entidad_tipo`):** `oportunidad` | `empresa` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
+
+**DTO `Notificacion`:**
+```json
+{
+  "id": 1,
+  "tipo": "oportunidad_cambio_estado",
+  "mensaje": "Carlos Pérez cambió el estado de Transportes ABC a Documentos legales",
+  "entidad_tipo": "oportunidad",
+  "entidad_id": 101,
+  "leida": false,
+  "created_at": "2026-07-09T14:30:00Z",
+  "actor": { "id": 5, "nombres": "Carlos", "apellidos": "Pérez" }
+}
+```
+`actor` es `null` para recordatorios generados por el sistema (job programado, sin actor humano).
+
+---
+
+### GET /notificaciones/no-leidas/count
+> Cuenta las notificaciones no leídas del usuario autenticado.
+
+**Roles:** todos
+
+**Respuesta 200:**
+```json
+{ "data": { "count": 5 } }
+```
+
+---
+
+### GET /notificaciones
+> Últimas 20 notificaciones (leídas + no leídas) del usuario autenticado, más recientes primero. Sin paginación.
+
+**Roles:** todos
+
+**Respuesta 200:** `{ "data": [ /* NotificacionDto[] */ ] }`
+
+---
+
+### PATCH /notificaciones/:id/leida
+> Marca una notificación propia como leída.
+
+**Roles:** todos (solo notificaciones propias)
+
+**Respuesta 200:** `{ "data": { "leida": true } }`
+
+**Notas:**
+- Si la notificación no existe o no pertenece al usuario autenticado → `404 NO_ENCONTRADO`.
+
+---
+
+### PATCH /notificaciones/leidas
+> Marca todas las notificaciones no leídas del usuario autenticado como leídas.
+
+**Roles:** todos
+
+**Respuesta 200:** `{ "data": { "leida": true } }`
+
+---
+
+## 20. Solicitudes
+
+Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una acción por encima de su permiso (hoy: descuentos sobre su límite y reasignación de clientes por el `jdv`), envían una Solicitud en vez de aplicar el cambio directo. El aprobador (`jdv` o `gerencia`, según el caso) la aprueba o deniega; `admin` puede resolver ambas bandejas. Ver `gerencia_solicitudes_modelo_datos.md` y `gerencia_contrato_frontend.md` para el detalle completo.
+
+### POST /solicitudes
+> Crea una solicitud de aprobación.
+
+**Roles:** `vendedor` `analista` `jdv` (según tipo; `gerencia`/`admin` no solicitan, ejecutan directo)
+
+**Body (descuento):**
+```json
+{
+  "tipo": "descuento",
+  "entidad_tipo": "oportunidad",
+  "entidad_id": 45,
+  "dcto_solicitado": "5.00",
+  "motivo": "Cliente frecuente, tercera compra del año"
+}
+```
+
+**Body (reasignación de cliente — solo `jdv`):**
+```json
+{
+  "tipo": "reasignacion_cliente",
+  "entidad_tipo": "empresa",
+  "entidad_id": 12,
+  "id_vendedor_nuevo": 8,
+  "motivo": "El vendedor actual sale de vacaciones largas"
+}
+```
+
+**Respuesta 201:** el objeto solicitud (`id`, `tipo`, `estado: "pendiente"`, `rol_aprobador`, `entidad_tipo`, `entidad_id`, `entidad_descripcion`, `dcto_solicitado`, `id_vendedor_nuevo`, `motivo`, `solicitante`, `created_at`). `rol_aprobador` lo deriva el backend (nunca se acepta en el body).
+
+**Errores:** `400 VALIDACION` (falta motivo, payload no corresponde al tipo, o el descuento está dentro del límite propio) · `403 PERMISO_INSUFICIENTE` (rol no puede solicitar ese tipo) · `404 NO_ENCONTRADO` (entidad no existe o no es visible) · `409 SOLICITUD_DUPLICADA` (ya hay una pendiente del mismo tipo sobre esa entidad).
+
+---
+
+### GET /solicitudes
+> Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista` solo las propias.
+
+**Query params:** `estado` (`pendiente|aprobada|denegada`), `tipo`, `mias=true` (fuerza "solo las que yo creé").
+
+---
+
+### GET /solicitudes/:id
+> Detalle. `404` si no es visible para el usuario (IDOR).
+
+---
+
+### PATCH /solicitudes/:id/aprobar
+> Aprueba y aplica el cambio de inmediato (misma transacción). Notifica al solicitante.
+
+**Roles:** el rol `rol_aprobador` de la solicitud, o `admin`.
+
+**Body:** vacío.
+
+**Errores:** `403 PERMISO_INSUFICIENTE` (no es el aprobador) · `409 SOLICITUD_YA_RESUELTA` · `409 SOLICITUD_NO_APLICABLE` (la entidad cambió y el efecto ya no aplica; el aprobador debe denegarla manualmente).
+
+---
+
+### PATCH /solicitudes/:id/denegar
+> Deniega. El motivo es obligatorio. Notifica al solicitante.
+
+**Roles:** el rol `rol_aprobador` de la solicitud, o `admin`.
+
+**Body:** `{ "motivo": "El margen de este modelo no soporta ese descuento" }`
+
+**Errores:** `400 VALIDACION` (falta motivo) · `409 SOLICITUD_YA_RESUELTA`.
+
+---
+
+## 21. Metas de venta
+
+Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anual (calculada = suma de los meses). Una fila por `(id_empleado, año)`. El JDV propone el año completo de un vendedor (o el suyo propio); Gerencia aprueba, rechaza (con motivo) o modifica directamente (auto-aprobado). Las unidades de una oportunidad solo cuentan para el cumplimiento cuando está `facturado`; si se cancela o se elimina estando facturada, dejan de contar automáticamente (sin acción manual).
+
+### POST /metas-venta
+> Propone (jdv) o crea/sobreescribe directo y aprobado (gerencia/admin) la meta de un empleado para un año.
+
+**Roles:** `jdv` `gerencia` `admin`
+
+**Body:**
+```json
+{
+  "id_empleado": 5,
+  "anio": 2027,
+  "meta_enero": 8, "meta_febrero": 8, "meta_marzo": 10, "meta_abril": 10,
+  "meta_mayo": 10, "meta_junio": 12, "meta_julio": 12, "meta_agosto": 10,
+  "meta_septiembre": 10, "meta_octubre": 10, "meta_noviembre": 12, "meta_diciembre": 12
+}
+```
+
+**Respuesta 201:** el objeto meta (`id`, `id_empleado`, `empleado`, `anio`, `meta_enero`..`meta_diciembre`, `meta_anual`, `estado`, `propuesto_por`, `resolutor`, `motivo_rechazo`, `resolved_at`, `created_at`). `meta_anual` lo calcula el backend (suma de los 12 meses); nunca se acepta como input.
+
+**Errores:** `400 VALIDACION` (falta algún mes o `id_empleado`/`anio`) · `403 PERMISO_INSUFICIENTE` (rol no puede proponer) · `404` no aplica (id_empleado inválido es `400 VALIDACION`, campo `id_empleado`) · `409 META_YA_EXISTE` (jdv sobre una fila `propuesta`/`aprobada` existente; usar `PATCH`).
+
+---
+
+### PATCH /metas-venta/:id
+> Edita cualquier subconjunto de los 12 meses de una meta existente. Recalcula `meta_anual` y deja la meta `aprobada`.
+
+**Roles:** `gerencia` `admin`
+
+**Body:** cualquier subconjunto de `meta_enero`..`meta_diciembre`, por ejemplo `{ "meta_marzo": 15 }`.
+
+**Errores:** `400 VALIDACION` · `403 PERMISO_INSUFICIENTE` · `404 NO_ENCONTRADO` · `409 META_RECHAZADA` (no se edita una rechazada; debe volver a proponerse).
+
+---
+
+### PATCH /metas-venta/:id/aprobar
+> Aprueba una meta `propuesta` tal cual fue propuesta. Notifica al JDV proponente.
+
+**Roles:** `gerencia` `admin`
+
+**Body:** vacío.
+
+**Errores:** `403 PERMISO_INSUFICIENTE` · `409 META_YA_RESUELTA`.
+
+---
+
+### PATCH /metas-venta/:id/rechazar
+> Rechaza una meta `propuesta`. El motivo es obligatorio (ahí se especifica qué corregir). Notifica al JDV.
+
+**Roles:** `gerencia` `admin`
+
+**Body:** `{ "motivo": "Marzo está muy alto respecto al histórico del vendedor" }`
+
+**Errores:** `400 VALIDACION` (falta motivo) · `403 PERMISO_INSUFICIENTE` · `409 META_YA_RESUELTA`.
+
+---
+
+### GET /metas-venta
+> Lista metas, paginado estándar (§4). `admin`/`gerencia`/`jdv` ven todas (el jdv ve todo el equipo, incluida la suya); `vendedor`/`analista` solo las propias.
+
+**Query params:** `id_empleado`, `anio`, `estado` (`propuesta|aprobada|rechazada`).
+
+---
+
+### GET /metas-venta/:id
+> Detalle. `404` si no es visible para el usuario (IDOR).
+
+---
+
+**Nota — panel de Inicio:** `GET /inicio` (§17) incluye `meta_ventas` (null para roles distintos de `vendedor`/`jdv`) con el cumplimiento mensual/anual y, para `jdv`, el agregado del equipo. Ver §17.
+
+---
+
+## 22. Mantenimiento
+
+### POST /mantenimiento/carpetas-drive
+> Crea las carpetas de Google Drive que faltan en empresas y oportunidades anteriores a la integración.
+
+**Roles:** `admin`
+
+**Query params:** `tamano_lote` (opcional). Sin él procesa **todos** los pendientes en un solo llamado.
+
+**Respuesta 200:**
+
+```json
+{
+  "data": {
+    "empresas_procesadas": 12,
+    "oportunidades_procesadas": 30,
+    "errores": [
+      { "entidad": "empresa", "id": 7, "motivo": "Google Drive no pudo crear la carpeta" }
+    ],
+    "pendientes_restantes": 1
+  }
+}
+```
+
+**Notas:**
+- Idempotente y re-ejecutable. Si no hay pendientes responde todo en cero sin tocar Drive.
+- Cada carpeta se persiste en su propia transacción: si la llamada se corta a la mitad, lo ya procesado queda guardado y repetir el endpoint retoma donde quedó.
+- Un registro que falle no aborta el resto: se lista en `errores` y sigue pendiente. Repetir el endpoint lo reintenta.
+- `pendientes_restantes > 0` significa que hace falta volver a llamarlo (por `tamano_lote` o por errores).
 
 ---
 
