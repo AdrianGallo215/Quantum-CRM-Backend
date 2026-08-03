@@ -72,4 +72,38 @@ class LoginRateLimiterTest {
 
         assertThat(limiter.isBlocked("otro@quantum.pe")).isFalse()
     }
+
+    @Test
+    fun `una entrada caducada se purga al consultarla`() {
+        limiter.recordFailure("ana@quantum.pe")
+        assertThat(limiter.clavesEnSeguimiento()).isEqualTo(1)
+
+        clock.current = clock.current.plus(Duration.ofMinutes(16))
+        limiter.isBlocked("ana@quantum.pe")
+
+        assertThat(limiter.clavesEnSeguimiento()).isZero()
+    }
+
+    @Test
+    fun `el mapa no crece de forma ilimitada ante emails aleatorios`() {
+        val acotado = LoginRateLimiter(maxAttempts = 5, window = Duration.ofMinutes(15), clock = clock, maxEntries = 100)
+
+        repeat(10_000) { i -> acotado.recordFailure("atacante-$i@example.com") }
+
+        assertThat(acotado.clavesEnSeguimiento()).isLessThanOrEqualTo(100)
+    }
+
+    @Test
+    fun `una clave bajo ataque sostenido conserva su bloqueo pese al flood`() {
+        val acotado = LoginRateLimiter(maxAttempts = 5, window = Duration.ofMinutes(15), clock = clock, maxEntries = 100)
+        repeat(5) { acotado.recordFailure("victima@quantum.pe") }
+
+        repeat(1_000) { i ->
+            acotado.recordFailure("ruido-$i@example.com")
+            // La victima sigue siendo consultada en cada intento real contra ella.
+            acotado.isBlocked("victima@quantum.pe")
+        }
+
+        assertThat(acotado.isBlocked("victima@quantum.pe")).isTrue()
+    }
 }

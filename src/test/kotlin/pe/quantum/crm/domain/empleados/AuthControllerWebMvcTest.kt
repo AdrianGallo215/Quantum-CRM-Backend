@@ -166,6 +166,18 @@ class AuthControllerWebMvcTest {
     }
 
     @Test
+    fun `refresh con un access token en la cookie devuelve 401`() {
+        val accessToken = jwtService.generateAccessToken(empleadoId = 1, rol = "jdv")
+
+        mockMvc.post("/api/v1/auth/refresh") {
+            cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, accessToken))
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.error.code") { value("CREDENCIALES_INVALIDAS") }
+        }
+    }
+
+    @Test
     fun `refresh de un empleado inactivo devuelve 401`() {
         every { empleadoService.porId(1) } returns empleado("ana@quantum.pe").apply { activo = false }
         val refreshToken = jwtService.generateRefreshToken(empleadoId = 1)
