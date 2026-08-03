@@ -41,7 +41,13 @@ data class CrearTareaRequest(
     val idContacto: Long? = null,
     @field:Positive(message = "id_asignado debe ser un identificador valido")
     val idAsignado: Long? = null,
-    val idsColaboradores: List<@Positive(message = "ids_colaboradores contiene un identificador invalido") Long> = emptyList(),
+    // Sin constraint sobre los elementos: `List<@Positive Long>` compila pero NO
+    // valida nada. Kotlin no emite la anotacion como type annotation del argumento
+    // generico donde Hibernate Validator la busca, asi que el request pasaba entero
+    // sin que saltase la validacion. Un constraint que no se aplica es peor que su
+    // ausencia: da falsa confianza. Los ids se validan en TareaServiceImpl contra
+    // `empleadoService.existeActivo`, que responde 404 si no existe o esta inactivo.
+    val idsColaboradores: List<Long> = emptyList(),
     val tipoAccion: TipoAccion,
     @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
@@ -62,7 +68,8 @@ data class ActualizarTareaRequest(
     val idContacto: Long? = null,
     @field:Positive(message = "id_asignado debe ser un identificador valido")
     val idAsignado: Long? = null,
-    val idsColaboradores: List<@Positive(message = "ids_colaboradores contiene un identificador invalido") Long>? = null,
+    // Ver la nota de CrearTareaRequest: los elementos se validan en el servicio.
+    val idsColaboradores: List<Long>? = null,
 )
 
 /** Body opcional de `PATCH /tareas/:id/completada`. */

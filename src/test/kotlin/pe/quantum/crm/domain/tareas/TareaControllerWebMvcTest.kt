@@ -80,13 +80,20 @@ class TareaControllerWebMvcTest {
         verify(exactly = 0) { tareaService.crear(any(), any()) }
     }
 
+    /**
+     * Los ids de colaborador NO se validan en el DTO: `List<@Positive Long>` no
+     * llega a aplicarse en Kotlin (ver la nota en `CrearTareaRequest`). El body
+     * pasa la validacion y es el servicio quien decide sobre cada id.
+     */
     @Test
-    fun `POST tareas con un colaborador de id no positivo devuelve 400 VALIDACION`() {
+    fun `POST tareas deja pasar los ids de colaborador al servicio`() {
+        every { tareaService.crear(any(), any()) } returns tareaDto()
+
         postTarea("""{"id_empresa":3,"tipo_accion":"llamada","ids_colaboradores":[4,0]}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.error.code") { value("VALIDACION") }
+            status { isCreated() }
         }
-        verify(exactly = 0) { tareaService.crear(any(), any()) }
+
+        verify(exactly = 1) { tareaService.crear(match { it.idsColaboradores == listOf(4L, 0L) }, any()) }
     }
 
     @Test
