@@ -10,7 +10,9 @@ import java.time.Duration
  * CSRF), `Path=/`. El token viaja en cookie, nunca accesible desde el frontend.
  */
 @Component
-class AuthCookieFactory {
+class AuthCookieFactory(
+    private val cookieProperties: CookieProperties = CookieProperties(),
+) {
     companion object {
         const val ACCESS_TOKEN_COOKIE = "access_token"
         const val REFRESH_TOKEN_COOKIE = "refresh_token"
@@ -38,7 +40,7 @@ class AuthCookieFactory {
     ): ResponseCookie =
         ResponseCookie.from(name, value)
             .httpOnly(true)
-            .secure(true)
+            .secure(cookieProperties.secure)
             .sameSite("Strict")
             .path("/")
             .maxAge(maxAge)

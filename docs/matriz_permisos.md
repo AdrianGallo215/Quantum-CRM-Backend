@@ -9,8 +9,8 @@
 | Rol | Quién | Descripción |
 |---|---|---|
 | `admin` | TI / sistema | Acceso total. Gestiona empleados y configuración. |
-| `gerente` | Gustavo | Visibilidad total. No gestiona empleados ni configuración de sistema. |
-| `jdv` | Aldo | Jefe de ventas. Visibilidad total del equipo. Puede reasignar y traspasar. |
+| `gerencia` | Gustavo | Visibilidad total. No gestiona empleados ni configuración de sistema. |
+| `jdv` | Aldo | Jefe de ventas. Visibilidad total del equipo (excepto Cartera Maestra). Reasigna el vendedor de una empresa solo vía solicitud aprobada por `gerencia`; aplica descuentos hasta 7% directo. |
 | `vendedor` | Asesores comerciales | Solo ve y opera sobre sus propios registros. |
 | `analista` | Analista financiero | Misma visibilidad que vendedor en MVP. Puede validar paso a Facturado. |
 
@@ -20,11 +20,11 @@
 
 La visibilidad define qué registros devuelven los endpoints de listado y detalle. El backend aplica estos filtros sin excepción.
 
-| Recurso | admin | gerente | jdv | vendedor | analista |
+| Recurso | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
-| **Empresas** | Todas | Todas | Todas | Solo donde `empresas.id_vendedor = yo` | Solo donde `empresas.id_vendedor = yo` |
+| **Empresas** | Todas | Todas (incluida Cartera Maestra) | Todas (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) |
 | **Oportunidades** | Todas | Todas | Todas | Solo donde `oportunidades.id_vendedor = yo` | Solo donde `oportunidades.id_vendedor = yo` |
-| **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` | Solo donde `tareas.id_asignado = yo` |
+| **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` |
 | **Eventos** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de sus oportunidades |
 | **Contactos** | Todos | Todos | Todos | Todos (búsqueda global para vincular) | Todos |
 | **Empleados** | Todos | Todos | Todos | Solo `GET /empleados/me` | Solo `GET /empleados/me` |
@@ -40,7 +40,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.1 Empleados
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver lista de empleados | ✓ | ✓ | ✓ | — | — |
 | Ver perfil propio (`/me`) | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -52,13 +52,17 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.2 Empresas
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Crear empresa | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Editar empresa (datos) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Reasignar vendedor | ✓ | ✓ | ✓ | — | — |
+| Reasignar vendedor directo | ✓ | ✓ | — (vía solicitud a gerencia) | — | — |
 | Cambiar `estado_cartera` manual | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Ver/subir archivos en Drive (`GET`/`POST /empresas/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Crear carpeta de Drive (`POST /empresas/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
 | Ver check de RUC duplicado | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mover/liberar Cartera Maestra | ✓ | ✓ | — | — | — |
+| Eliminar empresa (definitivo, cascada a oportunidades/tareas/eventos) | ✓ | — | — | — | — |
 
 **Nota sobre `estado_cartera` manual:** solo se permiten los estados `no_contactado`, `no_aplica`, `no_interesado`, `prospeccion`. Los estados `oportunidad_activa` y `cliente` son derivados y nunca editables manualmente por ningún rol.
 
@@ -66,7 +70,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.3 Contactos
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Buscar contactos | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Crear contacto | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -83,22 +87,26 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.4 Oportunidades
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
-| Crear oportunidad | ✓ | ✓ | ✓ | ✓ Solo en sus empresas | ✓ Solo en sus empresas |
+| Crear oportunidad | ✓ | ✓ (asigna vendedor si la empresa no tiene) | ✓ | ✓ Solo en sus empresas | ✓ Solo en sus empresas |
 | Editar campos negociables | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Ver/subir archivos en Drive (`GET`/`POST /oportunidades/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Crear carpeta de Drive (`POST /oportunidades/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
+| Aplicar descuento directo | Sin límite | Sin límite | Hasta 7% | Hasta 3% | Hasta 3% |
+| Solicitar descuento sobre su límite | — | — | ✓ (>7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) |
 | Cambiar estado (cualquier estado excepto `facturado`) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
 | **Confirmar paso a `facturado`** | ✓ | ✓ | — | — | ✓ |
-| Traspasar oportunidad (cambiar `id_vendedor`) | ✓ | ✓ | ✓ | — | — |
 | Ver log de estados | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
+| Eliminar oportunidad (definitivo, cascada a tareas/eventos/log) | ✓ | — | — | — | — |
 
-**Nota sobre el paso a `facturado`:** el vendedor y el JdV no pueden confirmar este paso porque dispara el cálculo de comisiones. Solo lo pueden confirmar `admin`, `gerente` y `analista`. Esta restricción se aplica en el endpoint `PATCH /oportunidades/:id/estado`.
+**Nota sobre el paso a `facturado`:** el vendedor y el JdV no pueden confirmar este paso porque dispara el cálculo de comisiones. Solo lo pueden confirmar `admin`, `gerencia` y `analista`. Esta restricción se aplica en el endpoint `PATCH /oportunidades/:id/estado`.
 
 ---
 
 ### 2.5 Eventos
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver eventos de una oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
 | Crear evento (del catálogo o personalizado) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
@@ -112,20 +120,21 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.6 Tareas
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
-| Ver tareas | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
+| Ver tareas | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
 | Crear tarea | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Asignar tarea a otro empleado | ✓ | ✓ | ✓ | — | — |
-| Marcar tarea como completada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
-| Marcar tarea como cancelada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
-| Editar tarea pendiente | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las asignadas a sí mismo | ✓ Solo las asignadas a sí mismo |
+| Asignar tarea (dueño) a otro empleado | ✓ | ✓ | ✓ | — | — |
+| Agregar colaborador a otro empleado | ✓ | ✓ | ✓ | — | — |
+| Marcar tarea como completada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
+| Marcar tarea como cancelada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
+| Editar tarea pendiente | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
 
 ---
 
 ### 2.7 Financiadoras
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver lista | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Crear financiadora | ✓ | ✓ | — | — | — |
@@ -135,7 +144,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.8 Modelos de bus
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver catálogo | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Crear modelo (con aplicaciones) | ✓ | ✓ | — | — | — |
@@ -145,7 +154,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.9 Catálogo de eventos
 
-| Operación | admin | gerente | jdv | vendedor | analista |
+| Operación | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ver catálogo | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Crear evento en catálogo | ✓ | — | — | — | — |
@@ -155,7 +164,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.10 Reportes
 
-| Reporte | admin | gerente | jdv | vendedor | analista |
+| Reporte | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Ventas acumuladas | ✓ | ✓ | ✓ | — | — |
 | Estado del pipeline | ✓ | ✓ | ✓ | — | — |
@@ -170,12 +179,57 @@ Ningún rol `vendedor` ni `analista` tiene acceso a reportes en el MVP.
 
 ### 2.11 Vistas de navegación
 
-| Vista | admin | gerente | jdv | vendedor | analista |
+| Vista | admin | gerencia | jdv | vendedor | analista |
 |---|---|---|---|---|---|
 | Inicio (`GET /inicio`) | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos |
 | Prospección (`GET /prospeccion`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo las suyas |
 | Pipeline | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo las suyas |
 | Cartera (listado de empresas) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo las suyas |
+| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — |
+| Cartera Maestra | ✓ | ✓ | — | — | — |
+
+---
+
+### 2.12 Solicitudes de aprobación
+
+| Operación | admin | gerencia | jdv | vendedor | analista |
+|---|---|---|---|---|---|
+| Crear solicitud de descuento (sobre su límite) | — (aplica directo) | — (aplica directo) | ✓ (>7%) | ✓ (>3%) | ✓ (>3%) |
+| Crear solicitud de reasignación de cliente | — (reasigna directo) | — (reasigna directo) | ✓ | — | — |
+| Ver bandeja de aprobación | ✓ Todas | ✓ Las dirigidas a gerencia | ✓ Las dirigidas a jdv | — | — |
+| Ver solicitudes propias | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Aprobar / denegar | ✓ Cualquiera | ✓ Su bandeja | ✓ Su bandeja | — | — |
+| Ver / gestionar cartera maestra | ✓ | ✓ | — | — | — |
+
+**Notas:**
+- El aprobador lo deriva el backend al crear la solicitud; nunca lo elige el solicitante (`gerencia_solicitudes_modelo_datos.md §3.4`).
+- Al aprobar, el cambio se aplica en la misma transacción que resuelve la solicitud (descuento: recalcula `monto_total`; reasignación: reutiliza `reasignarVendedor` con su cascada existente).
+- `gerencia` y `admin` nunca son destino de asignación de vendedor (no tienen cartera propia).
+
+---
+
+### 2.13 Metas de venta
+
+| Operación | admin | gerencia | jdv | vendedor | analista |
+|---|---|---|---|---|---|
+| Proponer meta de un vendedor o de sí mismo | — (crea directo) | — (crea directo) | ✓ | — | — |
+| Crear/modificar meta directo (queda aprobada) | ✓ | ✓ | — | — | — |
+| Aprobar / rechazar propuesta | ✓ | ✓ | — | — | — |
+| Ver metas propias | ✓ | ✓ | ✓ | ✓ | — (no aplica, no tiene meta) |
+| Ver metas del equipo (todos los vendedores) | ✓ | ✓ | ✓ | — | — |
+| Ver medidor de cumplimiento en Inicio | — (no vende) | — (no vende) | ✓ (propio + equipo) | ✓ (propio) | — |
+
+**Notas:**
+- La meta es en unidades vendidas, no en monto. Un vendedor solo aparece en la tabla como `id_empleado`, nunca `gerencia`/`admin` (no tienen cartera propia, igual que en reasignación de vendedor).
+- Las unidades de una oportunidad cuentan para el cumplimiento del vendedor únicamente mientras esté en estado `facturado` (`oportunidades.facturado_en`); al cancelarse (retroceder de estado) o eliminarse estando facturada, dejan de contar sin acción manual.
+
+---
+
+### 2.14 Mantenimiento
+
+| Operación | admin | gerencia | jdv | vendedor | analista |
+|---|---|---|---|---|---|
+| Backfill de carpetas de Drive (`POST /mantenimiento/carpetas-drive`) | ✓ | — | — | — | — |
 
 ---
 
@@ -248,7 +302,7 @@ public class OportunidadService {
         if (request.getEstado() == EstadoOp.FACTURADO) {
             if (!auth.tieneRol(ADMIN, GERENTE, ANALISTA)) {
                 throw new PermisoInsuficienteException(
-                    "Solo admin, gerente o analista pueden confirmar el paso a Facturado");
+                    "Solo admin, gerencia o analista pueden confirmar el paso a Facturado");
             }
         }
         // ... resto de la lógica
@@ -262,11 +316,11 @@ public class OportunidadService {
 
 ### 4.1 Empresa sin vendedor asignado
 
-Si `empresas.id_vendedor = NULL`, la empresa solo es visible para `admin`, `gerente` y `jdv`. Ningún `vendedor` ni `analista` puede verla.
+Si `empresas.id_vendedor = NULL`, la empresa solo es visible para `admin`, `gerencia` y `jdv`. Ningún `vendedor` ni `analista` puede verla.
 
 ### 4.2 Tareas sin asignar
 
-Si `tareas.id_asignado = NULL`, la tarea la puede ver y completar cualquier `vendedor` o `analista` que sea el vendedor de la oportunidad o empresa vinculada. Si ninguno aplica, solo la ven admin/gerente/jdv.
+Si `tareas.id_asignado = NULL`, la tarea la puede ver y completar cualquier `vendedor` o `analista` que sea el vendedor de la oportunidad o empresa vinculada. Si ninguno aplica, solo la ven admin/gerencia/jdv.
 
 ### 4.3 Analista financiero en fases futuras
 

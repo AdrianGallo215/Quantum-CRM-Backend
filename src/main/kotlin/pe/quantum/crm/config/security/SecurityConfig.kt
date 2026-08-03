@@ -59,6 +59,10 @@ class SecurityConfig(
                 JwtAuthenticationFilter(jwtService),
                 UsernamePasswordAuthenticationFilter::class.java,
             )
+            .addFilterAfter(
+                MdcLoggingFilter(),
+                JwtAuthenticationFilter::class.java,
+            )
         return http.build()
     }
 

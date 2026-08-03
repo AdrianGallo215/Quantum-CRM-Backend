@@ -16,6 +16,11 @@ import org.springframework.web.filter.OncePerRequestFilter
  * es valido, coloca la autenticacion en el contexto con la autoridad `ROLE_<rol>`.
  * Si es invalido o falta, no autentica: el filtro es stateless y no lanza; la
  * decision de rechazar la toma la cadena de seguridad (401).
+ *
+ * Solo autentica tokens de tipo `access`: un refresh token (vida de 7 dias) no vale
+ * como credencial de acceso. Y solo si el token trae un `rol` utilizable: una
+ * autenticacion sin authorities satisface `anyRequest().authenticated()` y daria paso
+ * a todo endpoint sin `@PreAuthorize`, asi que nunca debe llegar a la cadena.
  */
 class JwtAuthenticationFilter(
     private val jwtService: JwtService,
@@ -27,12 +32,10 @@ class JwtAuthenticationFilter(
     ) {
         val token = extractToken(request)
         if (token != null && SecurityContextHolder.getContext().authentication == null) {
-            val principal = jwtService.validate(token)
-            if (principal != null) {
-                val authorities =
-                    principal.rol
-                        ?.let { listOf(SimpleGrantedAuthority("ROLE_$it")) }
-                        .orEmpty()
+            val principal = jwtService.validate(token, TipoToken.ACCESS)
+            val rol = principal?.rol?.takeIf { it.isNotBlank() }
+            if (principal != null && rol != null) {
+                val authorities = listOf(SimpleGrantedAuthority("ROLE_$rol"))
                 val authentication =
                     UsernamePasswordAuthenticationToken(principal.empleadoId, null, authorities)
                 SecurityContextHolder.getContext().authentication = authentication
