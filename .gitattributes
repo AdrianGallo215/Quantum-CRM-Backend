@@ -1,0 +1,11 @@
+# Scripts que se ejecutan en Linux (imagen Docker, runner de CI). Deben quedar
+# con LF pase lo que pase: con CRLF el kernel no encuentra el interprete y el
+# build muere con "bad interpreter: /bin/sh^M".
+#
+# Alcance deliberadamente estrecho: no se declara `* text=auto` para no forzar
+# una renormalizacion masiva de todo el repositorio.
+gradlew    text eol=lf
+*.sh       text eol=lf
+
+# El wrapper de Gradle es binario; que git no intente convertirlo.
+gradle/wrapper/gradle-wrapper.jar binary

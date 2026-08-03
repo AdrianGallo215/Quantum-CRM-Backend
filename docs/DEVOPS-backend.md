@@ -131,24 +131,19 @@ El backend corre en local con `./gradlew bootRun` contra este PostgreSQL.
 
 ### 5.2 Dockerfile (multi-stage)
 
-```dockerfile
-# Build
-FROM gradle:8-jdk21 AS build
-WORKDIR /app
-COPY . .
-RUN ./gradlew bootJar --no-daemon
+El `Dockerfile` vive en la raíz del repositorio. Multi-stage, para que la imagen final solo tenga el JAR y un JRE, no Gradle ni el código fuente. Usuario no-root por seguridad (ver `SECURITY-backend.md`).
 
-# Runtime — imagen mínima, usuario no-root
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=build /app/build/libs/*.jar app.jar
-RUN addgroup -S app && adduser -S app -G app
-USER app
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
+Cuatro decisiones que no son cosméticas:
 
-Multi-stage para que la imagen final solo tenga el JAR, no Gradle ni el código fuente. Usuario no-root por seguridad (ver `SECURITY-backend.md`).
+**El contexto se acota con `.dockerignore`.** Un `COPY . .` sin filtro mete el `.env` —con `JWT_SECRET`, `DB_PASSWORD` y las credenciales de Drive en base64— dentro de la capa del stage de build. Que la imagen final sea multi-stage no basta: la capa intermedia conserva lo copiado y puede acabar en una caché remota o en un registry.
+
+**Las dependencias se copian antes que el código.** El wrapper y los scripts de build van en su propia capa y se resuelven las dependencias ahí. Mientras `build.gradle.kts` no cambie, Docker reutiliza esa capa y un cambio de código no vuelve a descargar el árbol entero.
+
+**La imagen no corre tests.** Los de integración levantan Testcontainers y dentro del build no hay un daemon de Docker. La suite es responsabilidad de CI, que gatea el merge a `main` antes de que esta imagen llegue a construirse.
+
+**`TZ=UTC` explícito.** Las fechas de tareas y eventos se normalizan a UTC al guardarlas pero se comparan contra `LocalDateTime.now()`, que usa la zona por defecto de la JVM. Fijarla en la imagen hace que ambas coincidan siempre, en vez de depender de cómo venga configurado el host.
+
+Se acompaña de `.gitattributes`, que fuerza LF en `gradlew`: con CRLF el kernel no encuentra el intérprete y el build muere con `bad interpreter: /bin/sh^M`.
 
 ---
 
