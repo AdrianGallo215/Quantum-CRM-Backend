@@ -48,7 +48,7 @@ ENV TZ=UTC
 
 # MaxRAMPercentage en lugar de un -Xmx fijo: la JVM se ajusta al limite de
 # memoria del contenedor, que en Render/Railway depende del plan contratado.
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport"
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=60.0 -XX:+UseContainerSupport"
 
 EXPOSE 8080
 
