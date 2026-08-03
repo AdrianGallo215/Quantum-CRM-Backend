@@ -19,7 +19,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.ResponseBody
+import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MaxUploadSizeExceededException
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -144,12 +144,16 @@ class GlobalExceptionHandlerWebMvcTest {
 
     /**
      * Endpoints que provocan a proposito cada excepcion que el handler debe
-     * traducir. Se registran como `@Bean` y NO como `@RestController` para que el
-     * component scan del resto de los tests no los recoja: `@RequestMapping` a
-     * nivel de tipo basta para que Spring MVC los mapee.
+     * traducir.
+     *
+     * Necesita `@RestController`, no solo `@RequestMapping` + `@ResponseBody`:
+     * registrado unicamente como `@Bean`, Spring MVC no lo tomaba como handler y
+     * las cinco rutas respondian 404 en vez de la excepcion buscada. Lo sigue
+     * instanciando `ControladorDeErroresConfig`, que al ser `@TestConfiguration`
+     * solo se activa en los tests que la importan explicitamente.
      */
+    @RestController
     @RequestMapping(RUTA_ERRORES)
-    @ResponseBody
     class ControladorDeErrores {
         @GetMapping("/param-obligatorio")
         fun paramObligatorio(

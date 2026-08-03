@@ -30,6 +30,7 @@ class RecordatorioJobTest {
     private val empresaService = mockk<EmpresaService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val recordatorioEnviadoRepository = mockk<RecordatorioEnviadoRepository>(relaxed = true)
+
     // El colaborador va real, no mockeado: es donde vive el dedup y el armado del
     // mensaje, y los tests comprueban el comportamiento del job completo.
     private val envioRecordatorio = EnvioRecordatorio(empresaService, notificacionService, recordatorioEnviadoRepository)

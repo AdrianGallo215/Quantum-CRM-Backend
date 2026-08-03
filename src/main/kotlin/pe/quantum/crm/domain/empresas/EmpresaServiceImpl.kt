@@ -168,16 +168,16 @@ class EmpresaServiceImpl(
         if (solicitado == null) {
             return usuario.id.takeIf { usuario.visibilidadRestringida }
         }
-        if (solicitado == usuario.id) {
-            return solicitado
-        }
-        if (!usuario.puedeReasignarDirecto) {
-            throw PermisoInsuficienteException("Solo gerencia puede asignar la empresa a otro empleado")
-        }
-        // Misma validacion que reasignarVendedor: descarta roles no comerciales,
-        // empleados inactivos e ids inexistentes (que si no serian un 500 por FK).
-        if (!empleadoService.esAsignableComoVendedor(solicitado)) {
-            throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
+        // Asignarsela a otro es lo que exige permiso; quedarsela uno mismo no.
+        if (solicitado != usuario.id) {
+            if (!usuario.puedeReasignarDirecto) {
+                throw PermisoInsuficienteException("Solo gerencia puede asignar la empresa a otro empleado")
+            }
+            // Misma validacion que reasignarVendedor: descarta roles no comerciales,
+            // empleados inactivos e ids inexistentes (que si no serian un 500 por FK).
+            if (!empleadoService.esAsignableComoVendedor(solicitado)) {
+                throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
+            }
         }
         return solicitado
     }
