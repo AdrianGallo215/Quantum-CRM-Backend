@@ -1,5 +1,7 @@
 package pe.quantum.crm.domain.tareas.dto
 
+import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.Size
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
@@ -26,14 +28,22 @@ data class TareaDto(
     val createdAt: LocalDateTime,
 )
 
+/** Longitud maxima de los textos libres de una tarea (columna TEXT, sin tope en BD). */
+private const val MAX_DESCRIPCION = 5000
+
 /** Body de `POST /tareas`. */
 data class CrearTareaRequest(
+    @field:Positive(message = "id_empresa debe ser un identificador valido")
     val idEmpresa: Long,
+    @field:Positive(message = "id_oportunidad debe ser un identificador valido")
     val idOportunidad: Long? = null,
+    @field:Positive(message = "id_contacto debe ser un identificador valido")
     val idContacto: Long? = null,
+    @field:Positive(message = "id_asignado debe ser un identificador valido")
     val idAsignado: Long? = null,
-    val idsColaboradores: List<Long> = emptyList(),
+    val idsColaboradores: List<@Positive(message = "ids_colaboradores contiene un identificador invalido") Long> = emptyList(),
     val tipoAccion: TipoAccion,
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
     val fechaEjecucion: Instant? = null,
 )
@@ -45,15 +55,19 @@ data class CrearTareaRequest(
  */
 data class ActualizarTareaRequest(
     val tipoAccion: TipoAccion? = null,
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
     val fechaEjecucion: Instant? = null,
+    @field:Positive(message = "id_contacto debe ser un identificador valido")
     val idContacto: Long? = null,
+    @field:Positive(message = "id_asignado debe ser un identificador valido")
     val idAsignado: Long? = null,
-    val idsColaboradores: List<Long>? = null,
+    val idsColaboradores: List<@Positive(message = "ids_colaboradores contiene un identificador invalido") Long>? = null,
 )
 
 /** Body opcional de `PATCH /tareas/:id/completada`. */
 data class CompletarTareaRequest(
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
 )
 

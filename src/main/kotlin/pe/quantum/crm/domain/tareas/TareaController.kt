@@ -1,5 +1,6 @@
 package pe.quantum.crm.domain.tareas
 
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -56,13 +57,13 @@ class TareaController(
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun crear(
-        @RequestBody request: CrearTareaRequest,
+        @Valid @RequestBody request: CrearTareaRequest,
     ): ApiResponse<TareaDto> = ApiResponse.ok(tareaService.crear(request, usuarioProvider.actual()))
 
     @PatchMapping("/{id}/completada")
     fun completar(
         @PathVariable id: Long,
-        @RequestBody(required = false) request: CompletarTareaRequest?,
+        @Valid @RequestBody(required = false) request: CompletarTareaRequest?,
     ): ApiResponse<TareaDto> = ApiResponse.ok(tareaService.completar(id, request?.descripcion, usuarioProvider.actual()))
 
     @PatchMapping("/{id}/cancelada")
@@ -73,6 +74,6 @@ class TareaController(
     @PutMapping("/{id}")
     fun actualizar(
         @PathVariable id: Long,
-        @RequestBody request: ActualizarTareaRequest,
+        @Valid @RequestBody request: ActualizarTareaRequest,
     ): ApiResponse<TareaDto> = ApiResponse.ok(tareaService.actualizar(id, request, usuarioProvider.actual()))
 }

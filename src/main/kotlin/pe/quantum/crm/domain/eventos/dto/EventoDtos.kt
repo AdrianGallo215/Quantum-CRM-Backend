@@ -1,5 +1,7 @@
 package pe.quantum.crm.domain.eventos.dto
 
+import jakarta.validation.constraints.Positive
+import jakarta.validation.constraints.Size
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -31,24 +33,38 @@ data class EventosAgrupadosDto(
     val descartados: List<EventoDto>,
 )
 
-/** Body de `POST /oportunidades/:id/eventos` (catalogo o personalizado). */
+/** Longitudes maximas de los textos libres del evento (columnas TEXT, sin tope en BD). */
+private const val MAX_NOMBRE = 200
+private const val MAX_DESCRIPCION = 5000
+
+/**
+ * Body de `POST /oportunidades/:id/eventos` (catalogo o personalizado). La
+ * exclusion mutua entre `id_catalogo_evento` y `es_personalizado` +
+ * `nombre_personalizado` es una regla cruzada: la valida el servicio (y el
+ * CHECK `chk_evento_origen` de V14), aqui solo se acotan los valores sueltos.
+ */
 data class CrearEventoRequest(
+    @field:Positive(message = "id_catalogo_evento debe ser un identificador valido")
     val idCatalogoEvento: Long? = null,
     val esPersonalizado: Boolean = false,
+    @field:Size(max = MAX_NOMBRE, message = "nombre_personalizado supera la longitud maxima")
     val nombrePersonalizado: String? = null,
     val fechaEstimada: LocalDate? = null,
     val fechaSeguimiento: LocalDate? = null,
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
 )
 
 /** Body de `PATCH /eventos/:id/ocurrido`. */
 data class MarcarOcurridoRequest(
     val fechaOcurrencia: Instant? = null,
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
 )
 
 /** Body de `PATCH /eventos/:id/descartado`. */
 data class MarcarDescartadoRequest(
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
 )
 
@@ -56,6 +72,7 @@ data class MarcarDescartadoRequest(
 data class ActualizarEventoRequest(
     val fechaEstimada: LocalDate? = null,
     val fechaSeguimiento: LocalDate? = null,
+    @field:Size(max = MAX_DESCRIPCION, message = "descripcion supera la longitud maxima")
     val descripcion: String? = null,
 )
 
