@@ -18,6 +18,7 @@ import pe.quantum.crm.domain.contactos.dto.VinculoDto
 import pe.quantum.crm.domain.contactos.dto.toResumen
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
+import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.exception.ConflictoException
@@ -48,7 +49,7 @@ class ContactoServiceImpl(
                 empresaService.vinculoVisible(it, usuario)
                 empresaContactoRepository.findByIdIdEmpresa(it).map { vinculo -> vinculo.id.idContacto }
             }
-        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "id")
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
         val resultado = contactoRepository.findAll(especificacion(q, idsPermitidos), pageRequest)
         val items = resultado.content.map { it.toListaDto() }
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
@@ -317,5 +318,10 @@ class ContactoServiceImpl(
                     }
                 },
         )
+    }
+
+    private companion object {
+        /** Allowlist de `sort` de GET /contactos; el primero es el orden por defecto. */
+        val CAMPOS_ORDENABLES = CamposOrdenables("id", "nombres", "apellidos", "createdAt", "updatedAt")
     }
 }

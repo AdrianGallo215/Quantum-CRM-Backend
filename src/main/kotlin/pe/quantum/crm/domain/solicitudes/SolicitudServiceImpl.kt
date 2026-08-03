@@ -15,6 +15,7 @@ import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.solicitudes.dto.CrearSolicitudRequest
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudDto
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudFiltros
+import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.PoliticaDescuento
@@ -195,7 +196,7 @@ class SolicitudServiceImpl(
         sort: String?,
         dir: String?,
     ): Paginado<SolicitudDto> {
-        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "createdAt")
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
         val resultado = solicitudRepository.findAll(especificacion(filtros, usuario), pageRequest)
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(toDto(resultado.content), meta)
@@ -367,5 +368,11 @@ class SolicitudServiceImpl(
         resolver(solicitud, EstadoSolicitud.denegada, usuario, motivoResolucion = motivo)
         notificarResolucion(solicitud, usuario, TipoNotificacion.solicitud_denegada, "denegó")
         return toDto(listOf(solicitud)).first()
+    }
+
+    private companion object {
+        /** Allowlist de `sort` de GET /solicitudes; el primero es el orden por defecto. */
+        val CAMPOS_ORDENABLES =
+            CamposOrdenables("createdAt", "id", "tipo", "estado", "resolvedAt", "updatedAt")
     }
 }

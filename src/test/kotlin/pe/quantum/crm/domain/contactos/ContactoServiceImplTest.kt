@@ -96,6 +96,28 @@ class ContactoServiceImplTest {
     }
 
     @Test
+    fun `buscar con un sort fuera de la allowlist lanza ValidacionException, no revienta con 500`() {
+        assertThatThrownBy {
+            service.buscar(q = null, idEmpresa = null, usuario = usuario, page = null, perPage = null, sort = "drop", dir = null)
+        }.isInstanceOf(pe.quantum.crm.shared.exception.ValidacionException::class.java)
+            .hasMessageContaining("nombres")
+            .hasMessageContaining("apellidos")
+    }
+
+    @Test
+    fun `buscar acepta un sort de la allowlist en snake_case`() {
+        every { contactoRepository.findAll(any(), any<PageRequest>()) } returns
+            PageImpl(listOf(contacto()), PageRequest.of(0, 20), 1)
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns emptyList()
+        every { empresaService.resumenPorIds(emptyList()) } returns emptyMap()
+
+        val resultado =
+            service.buscar(q = null, idEmpresa = null, usuario = usuario, page = null, perPage = null, sort = "created_at", dir = "asc")
+
+        assertThat(resultado.items).hasSize(1)
+    }
+
+    @Test
     fun `detalle de un contacto inexistente lanza NoEncontradoException`() {
         every { contactoRepository.findById(99) } returns Optional.empty()
 

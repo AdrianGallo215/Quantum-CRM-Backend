@@ -18,6 +18,7 @@ import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
 import pe.quantum.crm.domain.tareas.dto.TareaDto
 import pe.quantum.crm.domain.tareas.dto.TareaFiltros
 import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
+import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoAccion
@@ -49,7 +50,7 @@ class TareaServiceImpl(
         sort: String?,
         dir: String?,
     ): Paginado<TareaDto> {
-        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "fechaEjecucion")
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
         val resultado = tareaRepository.findAll(especificacion(filtros, usuario), pageRequest)
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(toDtos(resultado.content), meta)
@@ -402,5 +403,11 @@ class TareaServiceImpl(
                 createdAt = tarea.createdAt,
             )
         }
+    }
+
+    private companion object {
+        /** Allowlist de `sort` de GET /tareas; el primero es el orden por defecto. */
+        val CAMPOS_ORDENABLES =
+            CamposOrdenables("fechaEjecucion", "id", "tipoAccion", "estadoAccion", "createdAt", "updatedAt")
     }
 }

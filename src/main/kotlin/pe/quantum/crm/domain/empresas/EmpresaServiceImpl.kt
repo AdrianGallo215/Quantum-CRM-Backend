@@ -24,6 +24,7 @@ import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
+import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -55,7 +56,7 @@ class EmpresaServiceImpl(
         sort: String?,
         dir: String?,
     ): Paginado<EmpresaListaDto> {
-        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, defaultSort = "id")
+        val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
         val resultado = empresaRepository.findAll(especificacion(filtros, usuario), pageRequest)
         val vendedores =
             empleadoService.resumenPorIds(resultado.content.mapNotNull { it.idVendedor })
@@ -469,5 +470,11 @@ class EmpresaServiceImpl(
             createdAt = createdAt,
             createdBy = createdBy,
         )
+    }
+
+    private companion object {
+        /** Allowlist de `sort` de GET /empresas; el primero es el orden por defecto. */
+        val CAMPOS_ORDENABLES =
+            CamposOrdenables("id", "ruc", "razonSocial", "estadoCartera", "distrito", "createdAt", "updatedAt")
     }
 }
