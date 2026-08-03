@@ -12,6 +12,7 @@ import pe.quantum.crm.config.security.AuthCookieFactory
 import pe.quantum.crm.config.security.JwtProperties
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.config.security.LoginRateLimiter
+import pe.quantum.crm.config.security.TipoToken
 import pe.quantum.crm.domain.empleados.dto.LoginRequest
 import pe.quantum.crm.domain.empleados.dto.LoginResponse
 import pe.quantum.crm.domain.empleados.dto.RefreshResponse
@@ -71,7 +72,11 @@ class AuthController(
         @CookieValue(name = AuthCookieFactory.REFRESH_TOKEN_COOKIE, required = false) refreshToken: String?,
         response: HttpServletResponse,
     ): ApiResponse<RefreshResponse> {
-        val principal = refreshToken?.let { jwtService.validate(it) } ?: throw CredencialesInvalidasException()
+        // Solo un token de tipo refresh renueva la sesion: un access token en esta
+        // cookie no debe alargarla.
+        val principal =
+            refreshToken?.let { jwtService.validate(it, TipoToken.REFRESH) }
+                ?: throw CredencialesInvalidasException()
         val empleado = empleadoService.porId(principal.empleadoId)
         if (!empleado.activo) {
             throw CredencialesInvalidasException()

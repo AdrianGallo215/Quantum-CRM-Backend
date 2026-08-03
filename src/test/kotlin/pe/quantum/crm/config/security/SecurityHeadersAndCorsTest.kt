@@ -76,6 +76,14 @@ class SecurityHeadersAndCorsTest {
     }
 
     @Test
+    fun `un refresh token como bearer no da acceso a una ruta protegida`() {
+        val refresh = "Bearer " + jwtService.generateRefreshToken(empleadoId = 1)
+
+        mockMvc.perform(get("/probe").header(HttpHeaders.AUTHORIZATION, refresh))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
     fun `CORS acepta el preflight desde un origen permitido`() {
         mockMvc.perform(
             options("/probe")
