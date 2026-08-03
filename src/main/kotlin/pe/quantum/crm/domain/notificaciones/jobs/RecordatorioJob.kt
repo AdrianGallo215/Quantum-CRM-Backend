@@ -1,17 +1,13 @@
 package pe.quantum.crm.domain.notificaciones.jobs
 
+import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.eventos.EventoService
 import pe.quantum.crm.domain.eventos.dto.EventoRecordatorioProyeccion
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
-import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.OrigenRecordatorio
-import pe.quantum.crm.domain.notificaciones.RecordatorioEnviado
-import pe.quantum.crm.domain.notificaciones.RecordatorioEnviadoRepository
-import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.notificaciones.UmbralRecordatorio
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.tareas.TareaService
@@ -22,19 +18,26 @@ import java.time.LocalDateTime
  * Recordatorios de tareas/eventos por vencer o vencidos (docs/superpowers/specs/2026-07-09-notificaciones-in-app-design.md).
  * Corre cada hora; cada (origen, id, umbral) notifica como maximo una vez,
  * registrado en `recordatorios_enviados`.
+ *
+ * `ejecutar()` NO lleva `@Transactional` a proposito. La transaccion es de grano
+ * fino: la abre [EnvioRecordatorio.enviar] por cada recordatorio. Envolver el
+ * bucle entero en una sola transaccion hacia que un unico dato malo (una carrera
+ * contra `uq_recordatorio`, una empresa inconsistente) abortara la transaccion en
+ * Postgres y ningun destinatario recibiera nada esa hora; peor aun, lo ya insertado
+ * se revertia, asi que el mismo fallo se repetia indefinidamente. Mismo criterio
+ * que `CarpetasDriveBackfillService`.
  */
 @Component
-@Suppress("LongParameterList") // Cruza 4 modulos de dominio + notificaciones.
 class RecordatorioJob(
     private val tareaService: TareaService,
     private val eventoService: EventoService,
     private val oportunidadService: OportunidadService,
     private val empresaService: EmpresaService,
-    private val notificacionService: NotificacionService,
-    private val recordatorioEnviadoRepository: RecordatorioEnviadoRepository,
+    private val envioRecordatorio: EnvioRecordatorio,
 ) {
+    private val log = LoggerFactory.getLogger(RecordatorioJob::class.java)
+
     @Scheduled(cron = "0 0 * * * *")
-    @Transactional
     fun ejecutar() {
         procesarTareas()
         procesarEventos()
@@ -44,17 +47,17 @@ class RecordatorioJob(
         val ahora = LocalDateTime.now()
         tareaService.pendientesParaRecordatorio().forEach { tarea ->
             val umbral = umbralTarea(tarea.fechaEjecucion, ahora) ?: return@forEach
-            procesarRecordatorio(
-                origen = OrigenRecordatorio.tarea,
-                idOrigen = tarea.id,
-                umbral = umbral,
-                idEmpresaNombre = tarea.idEmpresa,
-                destinatario = tarea.idAsignado,
-                entidadTipo = if (tarea.idOportunidad != null) EntidadNotificacion.oportunidad else EntidadNotificacion.empresa,
-                entidadId = tarea.idOportunidad ?: tarea.idEmpresa,
-                tipo = TipoNotificacion.tarea_recordatorio,
-                mensaje = { razonSocial -> mensajeTarea(umbral, razonSocial) },
-            )
+            enviarAislado(OrigenRecordatorio.tarea, tarea.id) {
+                SolicitudRecordatorio(
+                    origen = OrigenRecordatorio.tarea,
+                    idOrigen = tarea.id,
+                    umbral = umbral,
+                    idEmpresa = tarea.idEmpresa,
+                    destinatario = tarea.idAsignado,
+                    entidadTipo = if (tarea.idOportunidad != null) EntidadNotificacion.oportunidad else EntidadNotificacion.empresa,
+                    entidadId = tarea.idOportunidad ?: tarea.idEmpresa,
+                )
+            }
         }
     }
 
@@ -62,58 +65,44 @@ class RecordatorioJob(
         val hoy = LocalDate.now()
         eventoService.pendientesParaRecordatorio().forEach { evento ->
             val umbral = umbralEvento(evento.fechaEstimada, hoy) ?: return@forEach
-            val destino = destinoDe(evento) ?: return@forEach
-            procesarRecordatorio(
-                origen = OrigenRecordatorio.evento,
-                idOrigen = evento.id,
-                umbral = umbral,
-                idEmpresaNombre = destino.idEmpresa,
-                destinatario = destino.idVendedor,
-                entidadTipo = destino.entidadTipo,
-                entidadId = destino.entidadId,
-                tipo = TipoNotificacion.evento_recordatorio,
-                mensaje = { razonSocial -> mensajeEvento(umbral, razonSocial) },
+            enviarAislado(OrigenRecordatorio.evento, evento.id) {
+                destinoDe(evento)?.let { destino ->
+                    SolicitudRecordatorio(
+                        origen = OrigenRecordatorio.evento,
+                        idOrigen = evento.id,
+                        umbral = umbral,
+                        idEmpresa = destino.idEmpresa,
+                        destinatario = destino.idVendedor,
+                        entidadTipo = destino.entidadTipo,
+                        entidadId = destino.entidadId,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Aisla el fallo de un recordatorio: se loguea con su origen e id y el bucle
+     * sigue con el siguiente. [construir] entra en el try porque tambien consulta
+     * la BD (el destinatario del evento) y puede fallar igual que el envio.
+     */
+    @Suppress("TooGenericExceptionCaught") // Aislar el fallo de un recordatorio es justo el objetivo.
+    private fun enviarAislado(
+        origen: OrigenRecordatorio,
+        idOrigen: Long,
+        construir: () -> SolicitudRecordatorio?,
+    ) {
+        try {
+            val solicitud = construir() ?: return
+            envioRecordatorio.enviar(solicitud)
+        } catch (ex: RuntimeException) {
+            log.warn(
+                "Recordatorio de {} {} no se pudo enviar; el job continua con los demas",
+                origen,
+                idOrigen,
+                ex,
             )
         }
-    }
-
-    @Suppress("LongParameterList")
-    private fun procesarRecordatorio(
-        origen: OrigenRecordatorio,
-        idOrigen: Long,
-        umbral: UmbralRecordatorio,
-        idEmpresaNombre: Long,
-        destinatario: Long,
-        entidadTipo: EntidadNotificacion,
-        entidadId: Long,
-        tipo: TipoNotificacion,
-        mensaje: (String) -> String,
-    ) {
-        if (recordatorioEnviadoRepository.existsByOrigenAndIdOrigenAndUmbral(origen, idOrigen, umbral)) {
-            return
-        }
-        val empresa = empresaService.resumenPorIds(listOf(idEmpresaNombre))[idEmpresaNombre] ?: return
-        notificacionService.notificar(
-            destinatarios = setOf(destinatario),
-            idActor = null,
-            tipo = tipo,
-            mensaje = mensaje(empresa.razonSocial),
-            entidadTipo = entidadTipo,
-            entidadId = entidadId,
-        )
-        registrarEnviado(origen, idOrigen, umbral)
-    }
-
-    // Dedup se basa en el pre-check existsByOrigenAndIdOrigenAndUmbral de procesarRecordatorio.
-    // uq_recordatorio es solo el resguardo final de integridad: si llegara a saltar (deploy de
-    // una sola instancia, cron cada hora), esta corrida del job falla limpiamente en vez de
-    // "tragarse" el error, dado que Postgres aborta toda la transaccion ante cualquier fallo.
-    private fun registrarEnviado(
-        origen: OrigenRecordatorio,
-        idOrigen: Long,
-        umbral: UmbralRecordatorio,
-    ) {
-        recordatorioEnviadoRepository.save(RecordatorioEnviado(origen = origen, idOrigen = idOrigen, umbral = umbral))
     }
 
     private data class Destino(
@@ -153,24 +142,6 @@ class RecordatorioJob(
             fechaEstimada.isBefore(hoy) -> UmbralRecordatorio.vencido
             fechaEstimada == hoy.plusDays(1) -> UmbralRecordatorio.proximo
             else -> null
-        }
-
-    private fun mensajeTarea(
-        umbral: UmbralRecordatorio,
-        razonSocial: String,
-    ): String =
-        when (umbral) {
-            UmbralRecordatorio.proximo -> "Recordatorio: tienes una tarea próxima a vencer en $razonSocial"
-            UmbralRecordatorio.vencido -> "Recordatorio: tienes una tarea vencida en $razonSocial"
-        }
-
-    private fun mensajeEvento(
-        umbral: UmbralRecordatorio,
-        razonSocial: String,
-    ): String =
-        when (umbral) {
-            UmbralRecordatorio.proximo -> "Recordatorio: hay un evento próximo a vencer en $razonSocial"
-            UmbralRecordatorio.vencido -> "Recordatorio: hay un evento vencido sin registrar en $razonSocial"
         }
 
     private companion object {
