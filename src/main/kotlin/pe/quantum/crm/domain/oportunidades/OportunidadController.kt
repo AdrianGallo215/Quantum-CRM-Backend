@@ -71,13 +71,13 @@ class OportunidadController(
     @PutMapping("/{id}")
     fun actualizar(
         @PathVariable id: Long,
-        @RequestBody request: ActualizarOportunidadRequest,
+        @Valid @RequestBody request: ActualizarOportunidadRequest,
     ): ApiResponse<OportunidadDto> = ApiResponse.ok(oportunidadService.actualizar(id, request, usuarioProvider.actual()))
 
     @PatchMapping("/{id}/estado")
     fun cambiarEstado(
         @PathVariable id: Long,
-        @RequestBody request: CambiarEstadoRequest,
+        @Valid @RequestBody request: CambiarEstadoRequest,
     ): ApiResponse<CambioEstadoDto> = ApiResponse.ok(oportunidadService.cambiarEstado(id, request, usuarioProvider.actual()))
 
     @GetMapping("/{id}/log")
@@ -89,14 +89,14 @@ class OportunidadController(
     @ResponseStatus(HttpStatus.CREATED)
     fun vincularContacto(
         @PathVariable id: Long,
-        @RequestBody request: ContactoVinculoRequest,
+        @Valid @RequestBody request: ContactoVinculoRequest,
     ): ApiResponse<ContactoVinculoRequest> = ApiResponse.ok(oportunidadService.vincularContacto(id, request, usuarioProvider.actual()))
 
     @PutMapping("/{id}/contactos/{idContacto}")
     fun actualizarContacto(
         @PathVariable id: Long,
         @PathVariable idContacto: Long,
-        @RequestBody request: ContactoVinculoRequest,
+        @Valid @RequestBody request: ContactoVinculoRequest,
     ): ApiResponse<ContactoVinculoRequest> =
         ApiResponse.ok(
             oportunidadService.actualizarContacto(id, idContacto, request.rolEnOportunidad, usuarioProvider.actual()),

@@ -1,5 +1,6 @@
 package pe.quantum.crm.domain.eventos
 
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -36,7 +37,7 @@ class OportunidadEventoController(
     @ResponseStatus(HttpStatus.CREATED)
     fun crear(
         @PathVariable idOportunidad: Long,
-        @RequestBody request: CrearEventoRequest,
+        @Valid @RequestBody request: CrearEventoRequest,
     ): ApiResponse<EventoDto> = ApiResponse.ok(eventoService.crearEnOportunidad(idOportunidad, request, usuarioProvider.actual()))
 }
 
@@ -59,7 +60,7 @@ class EmpresaEventoController(
     @ResponseStatus(HttpStatus.CREATED)
     fun crear(
         @PathVariable idEmpresa: Long,
-        @RequestBody request: CrearEventoRequest,
+        @Valid @RequestBody request: CrearEventoRequest,
     ): ApiResponse<EventoDto> = ApiResponse.ok(eventoService.crearEnEmpresa(idEmpresa, request, usuarioProvider.actual()))
 }
 
@@ -73,7 +74,7 @@ class EventoController(
     @PatchMapping("/{id}/ocurrido")
     fun ocurrido(
         @PathVariable id: Long,
-        @RequestBody(required = false) request: MarcarOcurridoRequest?,
+        @Valid @RequestBody(required = false) request: MarcarOcurridoRequest?,
     ): ApiResponse<EventoOcurridoDto> =
         ApiResponse.ok(
             eventoService.marcarOcurrido(id, request ?: MarcarOcurridoRequest(), usuarioProvider.actual()),
@@ -82,7 +83,7 @@ class EventoController(
     @PatchMapping("/{id}/descartado")
     fun descartado(
         @PathVariable id: Long,
-        @RequestBody(required = false) request: MarcarDescartadoRequest?,
+        @Valid @RequestBody(required = false) request: MarcarDescartadoRequest?,
     ): ApiResponse<EventoDto> =
         ApiResponse.ok(
             eventoService.marcarDescartado(id, request ?: MarcarDescartadoRequest(), usuarioProvider.actual()),
@@ -91,6 +92,6 @@ class EventoController(
     @PutMapping("/{id}")
     fun actualizar(
         @PathVariable id: Long,
-        @RequestBody request: ActualizarEventoRequest,
+        @Valid @RequestBody request: ActualizarEventoRequest,
     ): ApiResponse<EventoDto> = ApiResponse.ok(eventoService.actualizar(id, request, usuarioProvider.actual()))
 }
