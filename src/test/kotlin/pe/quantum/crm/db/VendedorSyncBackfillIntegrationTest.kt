@@ -23,6 +23,7 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
     lateinit var jdbcTemplate: JdbcTemplate
 
     @Test
+    @Suppress("LongMethod") // Un solo escenario: sembrar el drift a mano, re-ejecutar V23 y verificar.
     fun `V23 sincroniza el vendedor de oportunidades activas y respeta las cerradas`() {
         val vendedorA =
             jdbcTemplate.queryForObject(
@@ -34,6 +35,13 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
             jdbcTemplate.queryForObject(
                 "INSERT INTO empleados (nombres, apellidos, email, rol) " +
                     "VALUES ('Luis', 'Soto', 'luis.backfill@quantum.pe', 'vendedor') RETURNING id",
+                Long::class.java,
+            )!!
+        // `oportunidades.id_modelo` es NOT NULL desde V10; sin un modelo real los
+        // INSERT de abajo fallan con violacion de integridad.
+        val modelo =
+            jdbcTemplate.queryForObject(
+                "INSERT INTO modelos (codigo) VALUES ('BACKFILL-TEST') RETURNING id",
                 Long::class.java,
             )!!
         val financiadora =
@@ -55,8 +63,8 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
         val activa =
             jdbcTemplate.queryForObject(
                 """
-                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, estado, created_by, updated_by)
-                VALUES ($empresa, $vendedorA, $financiadora, 'evaluacion_calidda', $vendedorA, $vendedorA)
+                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, created_by, updated_by)
+                VALUES ($empresa, $vendedorA, $financiadora, $modelo, 'evaluacion_calidda', $vendedorA, $vendedorA)
                 RETURNING id
                 """.trimIndent(),
                 Long::class.java,
@@ -64,8 +72,9 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
         val cerrada =
             jdbcTemplate.queryForObject(
                 """
-                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, estado, motivo_cierre, created_by, updated_by)
-                VALUES ($empresa, $vendedorA, $financiadora, 'cerrado', 'Cliente declino', $vendedorA, $vendedorA)
+                INSERT INTO oportunidades
+                    (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, motivo_cierre, created_by, updated_by)
+                VALUES ($empresa, $vendedorA, $financiadora, $modelo, 'cerrado', 'Cliente declino', $vendedorA, $vendedorA)
                 RETURNING id
                 """.trimIndent(),
                 Long::class.java,
