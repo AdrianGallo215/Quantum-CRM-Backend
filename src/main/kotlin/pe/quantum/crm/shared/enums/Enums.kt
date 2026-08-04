@@ -62,6 +62,7 @@ enum class OrigenLead {
     visita_fria,
     referido_calidda,
     red_contactos,
+    otro,
 }
 
 @Suppress("ktlint:standard:enum-entry-name-case", "EnumNaming", "EnumEntryName")
