@@ -5,17 +5,21 @@ import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.verify
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.put
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.contactos.ContactoService
+import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaListaDto
@@ -23,7 +27,7 @@ import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.support.SinBaseDeDatosMocks
-import java.time.LocalDateTime
+import java.time.Instant
 
 /** Tests de `DELETE /empresas/:id` (contrato_api.md §8): exclusivo admin, sin cuerpo. */
 @SpringBootTest(
@@ -115,7 +119,7 @@ class EmpresaControllerWebMvcTest {
                             tlf_1 = "964415122",
                         ),
                     ),
-                createdAt = LocalDateTime.of(2026, 5, 1, 10, 0),
+                createdAt = Instant.parse("2026-05-01T10:00:00Z"),
                 createdBy = 1,
             )
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
@@ -163,6 +167,69 @@ class EmpresaControllerWebMvcTest {
             jsonPath("$.data[0].contactos_count") { value(2) }
         }
         verify(exactly = 0) { contactoService.countPorEmpresa(any()) }
+    }
+
+    /** Detalle minimo para las respuestas del servicio mockeado. */
+    private fun detalle(notas: String? = null) =
+        EmpresaDetalleDto(
+            id = 3, ruc = "20260426827", razonSocial = "Transp. Negociaciones Sta. Anita S.A.",
+            actividadEcon = null, ciiu = null, sectorIndustrial = null, estadoSunat = null,
+            condicionSunat = null, direccionFiscal = null, ubicacionReal = null, distrito = null,
+            provincia = null, departamento = null, avalFiador = null, origenLead = null,
+            estadoCartera = "prospeccion", fileDrive = null, driveFolderId = null, sitioWeb = null,
+            notas = notas, idVendedor = null, vendedor = null, segmentos = emptyList(),
+            contactos = null, createdAt = Instant.parse("2026-05-01T10:00:00Z"), createdBy = 1,
+        )
+
+    /**
+     * Contrato §8: "Body: mismos campos que POST, todos opcionales". Un PUT de un
+     * solo campo tiene que pasar. Con `ruc` declarado no-nulo y sin default,
+     * jackson-module-kotlin lanza `MissingKotlinParameterException` y el borde
+     * responde 400 antes de llegar al servicio: toda edicion parcial del frontend
+     * se cae salvo que reenvie el RUC.
+     */
+    @Test
+    fun `PUT empresas id acepta un body parcial sin ruc`() {
+        every { empresaService.actualizar(3, any(), any()) } returns detalle(notas = "Llamar en enero")
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
+
+        mockMvc.put("/api/v1/empresas/3") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"notas":"Llamar en enero"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.notas") { value("Llamar en enero") }
+        }
+        // El servicio recibe el request con solo `notas`: `ruc` ausente significa "no lo toques".
+        verify {
+            empresaService.actualizar(
+                3,
+                withArg<ActualizarEmpresaRequest> {
+                    assertThat(it.ruc).isNull()
+                    assertThat(it.notas).isEqualTo("Llamar en enero")
+                },
+                any(),
+            )
+        }
+    }
+
+    /**
+     * Formato de fechas en el borde HTTP (contrato §1). No basta con probar el
+     * serializador: esto comprueba lo que sale por el socket, con el
+     * `ObjectMapper` de la aplicacion.
+     */
+    @Test
+    fun `GET empresas id devuelve created_at como instante UTC con Z`() {
+        every { empresaService.detalle(3, any()) } returns detalle()
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
+
+        mockMvc.get("/api/v1/empresas/3") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.created_at") { value("2026-05-01T10:00:00Z") }
+        }
     }
 
     @Test

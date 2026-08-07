@@ -17,7 +17,7 @@ import pe.quantum.crm.shared.exception.RucDuplicadoException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.io.IOException
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * Unit tests de ImportCsvTempServiceImpl sin Spring ni base de datos: EmpresaService
@@ -62,14 +62,14 @@ class ImportCsvTempServiceImplTest {
         vendedor = null,
         segmentos = listOf("urbano"),
         contactos = null,
-        createdAt = LocalDateTime.now(),
+        createdAt = Instant.now(),
         createdBy = 1,
     )
 
     @Test
     fun `fila valida crea la empresa via EmpresaService`() {
         val slot = slot<CrearEmpresaRequest>()
-        every { empresaService.crear(capture(slot), usuario) } answers {
+        every { empresaService.crearSinCarpetaDrive(capture(slot), usuario) } answers {
             empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
         }
 
@@ -85,8 +85,29 @@ class ImportCsvTempServiceImplTest {
     }
 
     @Test
+    fun `la importacion no crea una carpeta de Drive por fila`() {
+        every { empresaService.crearSinCarpetaDrive(any(), usuario) } answers {
+            empresaDetalleDto(ruc = "20999999999", razonSocial = "Beta SRL")
+        }
+
+        val resultado =
+            service.importarEmpresas(
+                csv("20999999999;Beta SRL;urbano", "20888888888;Gamma SAC;turismo"),
+                usuario,
+            )
+
+        // Una llamada a Drive por fila hacia que un archivo grande tardara minutos
+        // y el proxy cortara la respuesta con las empresas ya commiteadas: el
+        // cliente nunca sabia que filas se habian creado. Las carpetas se rellenan
+        // despues con POST /mantenimiento/carpetas-drive, que es idempotente.
+        verify(exactly = 0) { empresaService.crear(any(), any()) }
+        verify(exactly = 2) { empresaService.crearSinCarpetaDrive(any(), usuario) }
+        assertThat(resultado.carpetasDrivePendientes).isEqualTo(2)
+    }
+
+    @Test
     fun `ruc con menos de 11 digitos queda en error y no aborta el archivo`() {
-        every { empresaService.crear(match { it.ruc == "20999999999" }, usuario) } returns
+        every { empresaService.crearSinCarpetaDrive(match { it.ruc == "20999999999" }, usuario) } returns
             empresaDetalleDto(ruc = "20999999999", razonSocial = "Beta SRL")
 
         val resultado = service.importarEmpresas(csv("123;Empresa Corta;urbano", "20999999999;Beta SRL;urbano"), usuario)
@@ -113,12 +134,12 @@ class ImportCsvTempServiceImplTest {
 
         assertThat(resultado.detalle.single().estado).isEqualTo("error")
         assertThat(resultado.detalle.single().motivo).isEqualTo("Segmento desconocido: corporativo")
-        verify(exactly = 0) { empresaService.crear(any(), any()) }
+        verify(exactly = 0) { empresaService.crearSinCarpetaDrive(any(), any()) }
     }
 
     @Test
     fun `ruc ya existente en BD queda en error con el motivo de RucDuplicadoException`() {
-        every { empresaService.crear(any(), usuario) } throws RucDuplicadoException()
+        every { empresaService.crearSinCarpetaDrive(any(), usuario) } throws RucDuplicadoException()
 
         val resultado = service.importarEmpresas(csv("20999999999;Beta SRL;urbano"), usuario)
 
@@ -129,7 +150,7 @@ class ImportCsvTempServiceImplTest {
     @Test
     fun `dos filas con el mismo ruc - la primera se crea y la segunda queda en error por duplicado`() {
         var primeraLlamada = true
-        every { empresaService.crear(match { it.ruc == "20999999999" }, usuario) } answers {
+        every { empresaService.crearSinCarpetaDrive(match { it.ruc == "20999999999" }, usuario) } answers {
             if (primeraLlamada) {
                 primeraLlamada = false
                 empresaDetalleDto(ruc = "20999999999", razonSocial = "Beta SRL")
@@ -162,8 +183,8 @@ class ImportCsvTempServiceImplTest {
     }
 
     @Test
-    fun `archivo con mas de 1000 filas de datos lanza ValidacionException`() {
-        val filas = (1..1001).map { "fila-de-datos-$it" }.toTypedArray()
+    fun `archivo con mas de 500 filas de datos lanza ValidacionException`() {
+        val filas = (1..501).map { "fila-de-datos-$it" }.toTypedArray()
 
         assertThrows<ValidacionException> { service.importarEmpresas(csv(*filas), usuario) }
     }
@@ -171,7 +192,7 @@ class ImportCsvTempServiceImplTest {
     @Test
     fun `razon social con punto y coma entre comillas se parsea completa`() {
         val slot = slot<CrearEmpresaRequest>()
-        every { empresaService.crear(capture(slot), usuario) } answers {
+        every { empresaService.crearSinCarpetaDrive(capture(slot), usuario) } answers {
             empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
         }
 
@@ -184,7 +205,7 @@ class ImportCsvTempServiceImplTest {
     @Test
     fun `razon social con coma sin comillas se parsea completa`() {
         val slot = slot<CrearEmpresaRequest>()
-        every { empresaService.crear(capture(slot), usuario) } answers {
+        every { empresaService.crearSinCarpetaDrive(capture(slot), usuario) } answers {
             empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
         }
 

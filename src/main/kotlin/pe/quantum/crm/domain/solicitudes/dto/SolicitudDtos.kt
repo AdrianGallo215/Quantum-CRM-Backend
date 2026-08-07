@@ -6,7 +6,7 @@ import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.shared.enums.EntidadSolicitud
 import pe.quantum.crm.shared.enums.TipoSolicitud
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
 
 data class CrearSolicitudRequest(
     @field:NotNull(message = "tipo es obligatorio")
@@ -41,8 +41,8 @@ data class SolicitudDto(
     val solicitante: EmpleadoResumen?,
     val resolutor: EmpleadoResumen?,
     val motivoResolucion: String?,
-    val resolvedAt: LocalDateTime?,
-    val createdAt: LocalDateTime,
+    val resolvedAt: Instant?,
+    val createdAt: Instant,
 )
 
 data class SolicitudFiltros(

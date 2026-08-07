@@ -19,6 +19,7 @@ import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.PoliticaDescuento
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.AprobadorSolicitud
 import pe.quantum.crm.shared.enums.EntidadSolicitud
 import pe.quantum.crm.shared.enums.EstadoSolicitud
@@ -181,8 +182,8 @@ class SolicitudServiceImpl(
                 solicitante = empleados[s.idSolicitante],
                 resolutor = s.idResolutor?.let { empleados[it] },
                 motivoResolucion = s.motivoResolucion,
-                resolvedAt = s.resolvedAt,
-                createdAt = s.createdAt,
+                resolvedAt = s.resolvedAt?.comoInstanteUtc(),
+                createdAt = s.createdAt.comoInstanteUtc(),
             )
         }
     }

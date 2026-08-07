@@ -4,7 +4,6 @@ import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 
 /** Evento expuesto en respuestas (contrato_api.md §11). */
 data class EventoDto(
@@ -18,7 +17,7 @@ data class EventoDto(
     val estado: String,
     val fechaEstimada: LocalDate?,
     val fechaSeguimiento: LocalDate?,
-    val fechaOcurrencia: LocalDateTime?,
+    val fechaOcurrencia: Instant?,
     val disparaCambioEstado: Boolean,
     val estadoDestino: String?,
     val esRecomendado: Boolean,
@@ -87,7 +86,7 @@ data class SugerenciaDto(
 data class EventoOcurridoDto(
     val id: Long,
     val estado: String,
-    val fechaOcurrencia: LocalDateTime?,
+    val fechaOcurrencia: Instant?,
     val sugerencia: SugerenciaDto?,
 )
 

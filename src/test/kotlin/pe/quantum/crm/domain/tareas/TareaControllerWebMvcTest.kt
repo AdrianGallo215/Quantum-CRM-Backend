@@ -16,7 +16,7 @@ import org.springframework.test.web.servlet.put
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.tareas.dto.TareaDto
 import pe.quantum.crm.support.SinBaseDeDatosMocks
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * Validacion del body de tareas (contrato_api.md §12): el borde HTTP debe
@@ -50,7 +50,7 @@ class TareaControllerWebMvcTest {
             id = 12, idEmpresa = 3, empresa = null, idOportunidad = null, idContacto = null,
             contacto = null, idAsignado = 7, asignado = null, idsColaboradores = emptyList(),
             colaboradores = emptyList(), tipoAccion = "llamada", estadoAccion = "pendiente",
-            descripcion = "Llamar al cliente", fechaEjecucion = null, createdAt = LocalDateTime.now(),
+            descripcion = "Llamar al cliente", fechaEjecucion = null, createdAt = Instant.now(),
         )
 
     private fun postTarea(cuerpo: String) =

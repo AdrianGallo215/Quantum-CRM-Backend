@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.contactos
 
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -12,9 +13,10 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
-import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.domain.oportunidades.OportunidadesDeContacto
 import pe.quantum.crm.shared.PageMeta
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.security.UsuarioActual
 import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
@@ -42,7 +44,7 @@ class ContactoControllerWebMvcTest {
     lateinit var contactoService: ContactoService
 
     @MockkBean
-    lateinit var oportunidadService: OportunidadService
+    lateinit var oportunidadesDeContacto: OportunidadesDeContacto
 
     @MockkBean
     lateinit var tareaService: pe.quantum.crm.domain.tareas.TareaService
@@ -63,7 +65,7 @@ class ContactoControllerWebMvcTest {
             )
         every { contactoService.buscar(null, null, any(), 2, 10, null, null) } returns
             Paginado(listOf(item), PageMeta(page = 2, perPage = 10, total = 11, totalPages = 2))
-        every { oportunidadService.countPorContacto(5) } returns 3
+        every { oportunidadesDeContacto.contar(5, any()) } returns 3
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
 
         mockMvc.get("/api/v1/contactos?page=2&per_page=10") {
@@ -101,7 +103,7 @@ class ContactoControllerWebMvcTest {
                 empresas = emptyList(),
             )
         every { contactoService.detalle(5) } returns detalle
-        every { oportunidadService.oportunidadesPorContacto(5) } returns emptyList()
+        every { oportunidadesDeContacto.listar(5, any()) } returns emptyList()
         every { tareaService.actividadesPorContacto(5, any()) } returns emptyList()
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
 
@@ -113,5 +115,31 @@ class ContactoControllerWebMvcTest {
             jsonPath("$.data.oportunidades") { isEmpty() }
             jsonPath("$.data.actividades") { isEmpty() }
         }
+    }
+
+    /**
+     * El detalle de contacto embebe oportunidades: el controller DEBE arrastrar la
+     * identidad del llamante para que el servicio aplique el filtro por vendedor.
+     * Sin esto un vendedor leia el pipeline completo (montos incluidos) enumerando
+     * contactos, que son globales por diseño.
+     */
+    @Test
+    fun `GET contactos por id propaga el usuario autenticado al filtro de oportunidades`() {
+        val detalle =
+            pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto(
+                id = 5, nombres = "Hugo", apellidos = "Rodríguez",
+                email_1 = null, email_2 = null, tlf_1 = "964415122", tlf_2 = null, notas = null,
+                empresas = emptyList(),
+            )
+        every { contactoService.detalle(5) } returns detalle
+        every { oportunidadesDeContacto.listar(5, any()) } returns emptyList()
+        every { tareaService.actividadesPorContacto(5, any()) } returns emptyList()
+        val token = jwtService.generateAccessToken(empleadoId = 42, rol = "vendedor")
+
+        mockMvc.get("/api/v1/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect { status { isOk() } }
+
+        verify { oportunidadesDeContacto.listar(5, UsuarioActual(id = 42, rol = "vendedor")) }
     }
 }

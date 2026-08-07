@@ -18,7 +18,7 @@ import pe.quantum.crm.domain.metasventa.dto.MetaVentaDto
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.support.SinBaseDeDatosMocks
-import java.time.LocalDateTime
+import java.time.Instant
 
 /** Tests de los endpoints de metas de venta via MockMvc, sin base de datos. */
 @SpringBootTest(
@@ -51,7 +51,7 @@ class MetaVentaControllerWebMvcTest {
             metaEnero = 10, metaFebrero = 10, metaMarzo = 10, metaAbril = 10, metaMayo = 10, metaJunio = 10,
             metaJulio = 10, metaAgosto = 10, metaSeptiembre = 10, metaOctubre = 10, metaNoviembre = 10, metaDiciembre = 10,
             metaAnual = 120, estado = estado, propuestoPor = null, resolutor = null, motivoRechazo = null,
-            resolvedAt = null, createdAt = LocalDateTime.now(),
+            resolvedAt = null, createdAt = Instant.now(),
         )
 
     private val bodyAnioCompleto =

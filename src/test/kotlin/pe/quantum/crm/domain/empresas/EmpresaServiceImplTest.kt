@@ -6,6 +6,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -13,6 +14,9 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
+import org.springframework.transaction.TransactionStatus
+import org.springframework.transaction.support.TransactionCallback
+import org.springframework.transaction.support.TransactionTemplate
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
@@ -39,6 +43,7 @@ class EmpresaServiceImplTest {
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>()
     private val contactoService = mockk<ContactoService>()
+    private val transactionTemplate = mockk<TransactionTemplate>()
     private val service =
         EmpresaServiceImpl(
             empresaRepository,
@@ -47,7 +52,16 @@ class EmpresaServiceImplTest {
             eventPublisher,
             driveStorageService,
             contactoService,
+            transactionTemplate,
         )
+
+    init {
+        // En un test unitario no hay transaccion real: el bloque se ejecuta en linea.
+        // Lo que interesa verificar es CUANDO se abre respecto a la llamada a Drive.
+        every { transactionTemplate.execute(any<TransactionCallback<Any>>()) } answers {
+            firstArg<TransactionCallback<Any>>().doInTransaction(mockk<TransactionStatus>(relaxed = true))
+        }
+    }
 
     private fun empresa(
         estadoCartera: EstadoCartera = EstadoCartera.prospeccion,
@@ -490,39 +504,103 @@ class EmpresaServiceImplTest {
     }
 
     @Test
+    fun `crear pide la carpeta a Drive ANTES de abrir la transaccion de escritura`() {
+        val guardada = slot<Empresa>()
+        every { empresaRepository.existsByRuc(any()) } returns false
+        every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-abc"
+        every { empresaRepository.save(capture(guardada)) } answers {
+            empresa().apply { driveFolderId = guardada.captured.driveFolderId }
+        }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        service.crear(
+            CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+            UsuarioActual(id = 9, rol = "gerencia"),
+        )
+
+        // Este orden ES el arreglo: la latencia de Drive ya no transcurre con una
+        // conexion de Hikari retenida. El RUC se comprueba antes de tocar Drive
+        // (un duplicado no debe dejar carpetas huerfanas) y la transaccion de
+        // escritura se abre despues, cuando la carpeta ya existe.
+        verifyOrder {
+            empresaRepository.existsByRuc("20123456789")
+            driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null)
+            transactionTemplate.execute(any<TransactionCallback<Any>>())
+            empresaRepository.save(any<Empresa>())
+        }
+    }
+
+    @Test
+    fun `crearSinCarpetaDrive persiste la empresa sin llamar a Drive`() {
+        val guardada = slot<Empresa>()
+        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.save(capture(guardada)) } answers { empresa() }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val detalle =
+            service.crearSinCarpetaDrive(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+                UsuarioActual(id = 9, rol = "gerencia"),
+            )
+
+        // Import masivo: la carpeta la crea despues POST /mantenimiento/carpetas-drive.
+        verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+        assertThat(guardada.captured.driveFolderId).isNull()
+        assertThat(detalle.driveFolderId).isNull()
+    }
+
+    @Test
     fun `asegurarCarpetaDrive no vuelve a llamar a Drive si la empresa ya tiene carpeta`() {
         val entidad = empresa().apply { driveFolderId = "ya-existe" }
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
-        every { empresaRepository.findByIdForUpdate(1) } returns entidad
 
         assertThat(service.asegurarCarpetaDrive(1)).isEqualTo("ya-existe")
 
         verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+        verify(exactly = 0) { empresaRepository.asignarCarpetaDriveSiFalta(any(), any()) }
     }
 
     @Test
     fun `asegurarCarpetaDrive crea la carpeta de una empresa anterior a la migracion`() {
         val entidad = empresa()
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
-        every { empresaRepository.findByIdForUpdate(1) } returns entidad
         every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-nueva"
-        every { empresaRepository.save(entidad) } returns entidad
+        every { empresaRepository.asignarCarpetaDriveSiFalta(1, "carpeta-nueva") } returns 1
 
         assertThat(service.asegurarCarpetaDrive(1)).isEqualTo("carpeta-nueva")
         assertThat(entidad.driveFolderId).isEqualTo("carpeta-nueva")
     }
 
     @Test
-    fun `asegurarCarpetaDrive usa el fetch con bloqueo pesimista, no el fetch simple`() {
+    fun `asegurarCarpetaDrive fija la carpeta con un UPDATE condicional, no con un save completo`() {
         val entidad = empresa()
-        every { empresaRepository.findByIdForUpdate(1) } returns entidad
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
         every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-nueva"
-        every { empresaRepository.save(entidad) } returns entidad
+        every { empresaRepository.asignarCarpetaDriveSiFalta(1, "carpeta-nueva") } returns 1
 
         service.asegurarCarpetaDrive(1)
 
-        verify { empresaRepository.findByIdForUpdate(1) }
+        // El UPDATE condicional es lo que sustituye al SELECT ... FOR UPDATE: da la
+        // misma exclusion (gana uno solo) sin abarcar la llamada de red.
+        verifyOrder {
+            driveStorageService.crearCarpeta(any(), any())
+            empresaRepository.asignarCarpetaDriveSiFalta(1, "carpeta-nueva")
+        }
+        verify(exactly = 0) { empresaRepository.save(any<Empresa>()) }
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive devuelve la carpeta ganadora si otra peticion se adelanto`() {
+        val entidad = empresa()
+        every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-perdedora"
+        // 0 filas afectadas = la empresa ya tenia carpeta cuando llego el UPDATE.
+        every { empresaRepository.asignarCarpetaDriveSiFalta(1, "carpeta-perdedora") } returns 0
+        every { empresaRepository.findDriveFolderId(1) } returns "carpeta-ganadora"
+
+        assertThat(service.asegurarCarpetaDrive(1)).isEqualTo("carpeta-ganadora")
+        // La empresa conserva UNA sola carpeta: la del ganador, nunca la propia.
+        assertThat(entidad.driveFolderId).isEqualTo("carpeta-ganadora")
     }
 
     @Test
@@ -541,9 +619,8 @@ class EmpresaServiceImplTest {
         val gerencia = UsuarioActual(id = 1, rol = "gerencia")
         val entidad = empresa()
         every { empresaRepository.findById(1) } returns Optional.of(entidad)
-        every { empresaRepository.findByIdForUpdate(1) } returns entidad
         every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-nueva"
-        every { empresaRepository.save(entidad) } returns entidad
+        every { empresaRepository.asignarCarpetaDriveSiFalta(1, "carpeta-nueva") } returns 1
 
         assertThat(service.asegurarCarpetaDrive(1, gerencia)).isEqualTo("carpeta-nueva")
     }

@@ -25,18 +25,47 @@ import java.io.IOException
  * hacen que la integracion funcione y no sature el servidor.
  */
 class DriveStorageServiceImplTest {
+    /** Cliente de timeout largo: las subidas pueden tardar legitimamente. */
     private val drive = mockk<Drive>()
+
+    /** Cliente de timeout corto: crear una carpeta es una operacion de metadatos. */
+    private val driveCarpetas = mockk<Drive>()
     private val files = mockk<Drive.Files>()
+    private val filesCarpetas = mockk<Drive.Files>()
     private val propiedades =
         DriveProperties(
             credentialsBase64 = "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=",
             rootFolderId = RAIZ,
             uploadChunkSizeBytes = 524_288,
         )
-    private val service = DriveStorageServiceImpl(drive, propiedades)
+    private val service = DriveStorageServiceImpl(drive, driveCarpetas, propiedades)
 
     init {
         every { drive.files() } returns files
+        every { driveCarpetas.files() } returns filesCarpetas
+    }
+
+    // ── separacion de timeouts ────────────────────────────────
+
+    @Test
+    fun `crearCarpeta usa el cliente de timeout corto, no el de subidas`() {
+        val metadatos = slot<File>()
+        peticionDeCarpeta(File().setId("x"), metadatos)
+
+        service.crearCarpeta("ACME")
+
+        // `crearCarpeta` es la unica llamada a Drive que puede quedar dentro de una
+        // transaccion (POST /oportunidades, por contrato). Con el timeout de 120 s
+        // de las subidas, una conexion de Hikari quedaba retenida hasta 2 minutos.
+        verify(exactly = 0) { drive.files() }
+        verify { driveCarpetas.files() }
+    }
+
+    @Test
+    fun `el timeout de creacion de carpeta es mucho mas corto que el de subida`() {
+        assertThat(DriveProperties.DEFAULT_FOLDER_READ_TIMEOUT_MS)
+            .isLessThan(DriveProperties.DEFAULT_READ_TIMEOUT_MS)
+        assertThat(propiedades.folderReadTimeoutMs).isEqualTo(DriveProperties.DEFAULT_FOLDER_READ_TIMEOUT_MS)
     }
 
     // ── crearCarpeta ──────────────────────────────────────────
@@ -189,7 +218,7 @@ class DriveStorageServiceImplTest {
     @Test
     fun `un fallo de red se traduce a DriveException y no a un 500 generico`() {
         val peticion = mockk<Drive.Files.Create>()
-        every { files.create(any()) } returns peticion
+        every { filesCarpetas.create(any()) } returns peticion
         every { peticion.setSupportsAllDrives(any()) } returns peticion
         every { peticion.setFields(any()) } returns peticion
         every { peticion.execute() } throws IOException("connection reset")
@@ -202,7 +231,7 @@ class DriveStorageServiceImplTest {
     @Test
     fun `storageQuotaExceeded se traduce a un error que senala la unidad compartida`() {
         val peticion = mockk<Drive.Files.Create>()
-        every { files.create(any()) } returns peticion
+        every { filesCarpetas.create(any()) } returns peticion
         every { peticion.setSupportsAllDrives(any()) } returns peticion
         every { peticion.setFields(any()) } returns peticion
         every { peticion.execute() } throws errorDeCuota()
@@ -219,7 +248,7 @@ class DriveStorageServiceImplTest {
         metadatos: CapturingSlot<File>,
     ): Drive.Files.Create {
         val peticion = mockk<Drive.Files.Create>()
-        every { files.create(capture(metadatos)) } returns peticion
+        every { filesCarpetas.create(capture(metadatos)) } returns peticion
         every { peticion.setSupportsAllDrives(any()) } returns peticion
         every { peticion.setFields(any()) } returns peticion
         every { peticion.execute() } returns respuesta

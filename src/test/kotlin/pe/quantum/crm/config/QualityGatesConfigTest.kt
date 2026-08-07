@@ -7,16 +7,52 @@ import java.io.File
 /**
  * Test de contrato sobre la configuracion de calidad del build (B0.3).
  *
- * Verifica que el `build.gradle.kts` declara los cuatro gates de calidad exigidos
- * por TESTING-backend.md (§8) y SECURITY-backend.md (§12): ktlint, detekt, Kover
- * (con umbrales 90% dominio / 75% global) y OWASP Dependency-Check.
+ * Verifica que `build.gradle.kts` sigue declarando los cuatro gates exigidos por
+ * TESTING-backend.md (§8) y SECURITY-backend.md (§12) —ktlint, detekt, Kover y
+ * OWASP Dependency-Check— y, sobre todo, que **nadie afloja el trinquete de
+ * cobertura**.
  *
- * No ejecuta los gates (eso se valida corriendo `./gradlew ktlintCheck detekt
- * koverVerify dependencyCheckAnalyze`); evita que la configuracion desaparezca
- * silenciosamente.
+ * Sobre el umbral de cobertura, para no repetir el error que este test tenia:
+ *
+ * Un umbral NO se comprueba leyendo el build script. Que la cobertura real llegue
+ * al minimo lo prueba `./gradlew koverVerify`, que corre en CI y es la unica
+ * fuente de verdad. Las versiones anteriores de este archivo tenian dos tests que
+ * hacian `contains("75")` y `contains("90")` sobre el texto del build: pasaban
+ * porque esas cifras aparecian en un *comentario*, mientras el gate real exigia 63
+ * y 58. Fabricaban evidencia de una garantia inexistente; borrar un comentario los
+ * ponia rojos y bajar `minBound` a 10 los dejaba verdes. Estan eliminados.
+ *
+ * Lo que si tiene sentido comprobar aqui es lo que `koverVerify` no puede
+ * comprobar sobre si mismo: que el propio umbral no se rebaje. `koverVerify` pasa
+ * igual de contento con `minBound(58)` que con `minBound(10)`. Este archivo
+ * custodia el suelo (el trinquete), no la cobertura.
+ *
+ * SUELO VIGENTE: 63% global / 58% dominio.
+ * OBJETIVO (TESTING-backend.md §8): 75% global / 90% dominio, hoy incumplido.
+ * La brecha es deuda de tests conocida y esta documentada en `build.gradle.kts`.
+ * Al escribir los tests que faltan, subir el `minBound` Y estas constantes.
  */
 class QualityGatesConfigTest {
+    private companion object {
+        /** Suelo de cobertura global que el build exige hoy. Solo puede subir. */
+        const val SUELO_GLOBAL = 63
+
+        /** Suelo de cobertura de dominio que el build exige hoy. Solo puede subir. */
+        const val SUELO_DOMINIO = 58
+
+        /** Meta de TESTING-backend.md §8, todavia no alcanzada. */
+        const val OBJETIVO_GLOBAL = 75
+        const val OBJETIVO_DOMINIO = 90
+    }
+
     private val buildScript: String = File(File(".").canonicalFile, "build.gradle.kts").readText()
+
+    /** Los `minBound(N)` declarados, en orden de aparicion. Ignora comentarios. */
+    private fun umbralesDeclarados(): List<Int> =
+        Regex("""minBound\((\d+)\)""")
+            .findAll(buildScript)
+            .map { it.groupValues[1].toInt() }
+            .toList()
 
     @Test
     fun `el build aplica el plugin de ktlint`() {
@@ -47,17 +83,50 @@ class QualityGatesConfigTest {
     }
 
     @Test
-    fun `Kover exige el umbral global de 75 por ciento`() {
+    fun `Kover declara una regla de cobertura global y otra de dominio`() {
+        assertThat(umbralesDeclarados())
+            .withFailMessage(
+                "Kover debe declarar exactamente dos umbrales (global y dominio); se encontraron: %s. " +
+                    "Si se borra una regla, koverVerify sigue pasando y la cobertura deja de estar gateada.",
+                umbralesDeclarados(),
+            ).hasSize(2)
         assertThat(buildScript)
-            .withFailMessage("Kover debe exigir 75%% de cobertura global (TESTING-backend.md §8)")
-            .contains("75")
+            .withFailMessage("El umbral de dominio debe medirse sobre la variante filtrada a pe.quantum.crm.domain")
+            .contains("pe.quantum.crm.domain")
     }
 
     @Test
-    fun `Kover exige el umbral de 90 por ciento para el dominio`() {
+    fun `el trinquete de cobertura global no se afloja`() {
+        val global = umbralesDeclarados().first()
+        assertThat(global)
+            .withFailMessage(
+                "El suelo de cobertura global bajo de %d a %d. El trinquete solo sube: si la cobertura " +
+                    "real no alcanza, se escriben tests, no se rebaja el gate. (Objetivo: %d%%.)",
+                SUELO_GLOBAL,
+                global,
+                OBJETIVO_GLOBAL,
+            ).isGreaterThanOrEqualTo(SUELO_GLOBAL)
+    }
+
+    @Test
+    fun `el trinquete de cobertura de dominio no se afloja`() {
+        val dominio = umbralesDeclarados().last()
+        assertThat(dominio)
+            .withFailMessage(
+                "El suelo de cobertura de dominio bajo de %d a %d. El trinquete solo sube. (Objetivo: %d%%.)",
+                SUELO_DOMINIO,
+                dominio,
+                OBJETIVO_DOMINIO,
+            ).isGreaterThanOrEqualTo(SUELO_DOMINIO)
+    }
+
+    @Test
+    fun `koverVerify verifica tambien la variante de dominio`() {
+        // Sin este `dependsOn`, `./gradlew koverVerify` solo comprueba el umbral
+        // global y el de dominio queda declarado pero nunca ejecutado: un gate
+        // que existe en el archivo y no corre en ningun sitio.
         assertThat(buildScript)
-            .withFailMessage("Kover debe exigir 90%% de cobertura para pe.quantum.crm.domain (TESTING-backend.md §8)")
-            .contains("90")
-            .contains("pe.quantum.crm.domain")
+            .withFailMessage("`koverVerify` debe depender de `koverVerifyDomain`, si no el umbral de dominio no corre")
+            .contains("koverVerifyDomain")
     }
 }

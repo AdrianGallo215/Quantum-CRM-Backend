@@ -9,7 +9,6 @@ import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
-import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.shared.Paginado
@@ -79,12 +78,6 @@ interface OportunidadService {
 
     /** Para tareas de prospeccion: ¿la empresa tiene oportunidades activas? */
     fun tieneOportunidadesActivas(idEmpresa: Long): Boolean
-
-    /** Cantidad de oportunidades distintas vinculadas a un contacto (listado de contactos). */
-    fun countPorContacto(idContacto: Long): Int
-
-    /** Oportunidades vinculadas a un contacto, para su vista de detalle (contrato_api.md §9). */
-    fun oportunidadesPorContacto(idContacto: Long): List<OportunidadResumenParaContacto>
 
     /** Oportunidad visible para el usuario (IDOR → 404). Para eventos/tareas. */
     fun vinculoVisible(

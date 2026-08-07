@@ -47,11 +47,17 @@ jobs:
       - name: Compile
         run: ./gradlew compileKotlin --no-daemon
 
-      # Tests unitarios (rapidos, sin Docker) + ArchUnit.
+      # Tests unitarios (rapidos, sin Docker). Incluye las reglas de ArchUnit que
+      # verifican la frontera entre modulos de dominio (ArquitecturaModulosTest).
       - name: Unit tests
         run: ./gradlew test --no-daemon
 
-      # Cobertura: falla si baja del umbral (90% dominio, 75% global).
+      # Cobertura: falla si baja del suelo vigente. Las cifras NO se repiten aqui a
+      # proposito: viven en los `minBound` de build.gradle.kts, que es la unica
+      # fuente de verdad y explica la brecha entre ese suelo y el objetivo de
+      # TESTING-backend.md §8 (todavia incumplido). Duplicar el numero en este
+      # comentario fue justo lo que hizo que el CI anunciara durante meses una
+      # proteccion que no existia. Este paso protege el suelo, no acredita la meta.
       - name: Coverage check (Kover)
         run: ./gradlew koverVerify --no-daemon
 

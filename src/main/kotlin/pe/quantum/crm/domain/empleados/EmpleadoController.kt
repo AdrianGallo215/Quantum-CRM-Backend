@@ -41,24 +41,32 @@ class EmpleadoController(
         @RequestParam(required = false) rol: RolEmpleado?,
     ): ApiResponse<List<EmpleadoDto>> = ApiResponse.ok(empleadoService.listar(activo, rol))
 
+    // El `@PreAuthorize` de las tres operaciones siguientes se apoya en el claim
+    // `rol` del JWT, que sobrevive hasta 1h a una desactivacion o degradacion. Por
+    // eso ademas se arrastra el id del llamante: el servicio revalida contra la
+    // base que ese admin siga vigente antes de tocar nada.
+
     @PostMapping
     @PreAuthorize("hasRole('admin')")
     @ResponseStatus(HttpStatus.CREATED)
     fun crear(
         @Valid @RequestBody request: CrearEmpleadoRequest,
-    ): ApiResponse<EmpleadoDto> = ApiResponse.ok(empleadoService.crear(request))
+        authentication: Authentication,
+    ): ApiResponse<EmpleadoDto> = ApiResponse.ok(empleadoService.crear(request, authentication.principal as Long))
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('admin')")
     fun actualizar(
         @PathVariable id: Long,
-        @RequestBody request: ActualizarEmpleadoRequest,
-    ): ApiResponse<EmpleadoDto> = ApiResponse.ok(empleadoService.actualizar(id, request))
+        @Valid @RequestBody request: ActualizarEmpleadoRequest,
+        authentication: Authentication,
+    ): ApiResponse<EmpleadoDto> = ApiResponse.ok(empleadoService.actualizar(id, request, authentication.principal as Long))
 
     @PatchMapping("/{id}/activo")
     @PreAuthorize("hasRole('admin')")
     fun cambiarActivo(
         @PathVariable id: Long,
         @RequestBody request: CambiarActivoRequest,
-    ): ApiResponse<EmpleadoDto> = ApiResponse.ok(empleadoService.cambiarActivo(id, request.activo))
+        authentication: Authentication,
+    ): ApiResponse<EmpleadoDto> = ApiResponse.ok(empleadoService.cambiarActivo(id, request.activo, authentication.principal as Long))
 }

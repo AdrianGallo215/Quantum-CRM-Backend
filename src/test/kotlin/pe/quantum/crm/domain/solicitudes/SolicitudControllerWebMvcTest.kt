@@ -18,7 +18,7 @@ import pe.quantum.crm.domain.solicitudes.dto.SolicitudDto
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.support.SinBaseDeDatosMocks
-import java.time.LocalDateTime
+import java.time.Instant
 
 /** Tests de los endpoints de solicitudes via MockMvc, sin base de datos. */
 @SpringBootTest(
@@ -62,7 +62,7 @@ class SolicitudControllerWebMvcTest {
             resolutor = null,
             motivoResolucion = null,
             resolvedAt = null,
-            createdAt = LocalDateTime.now(),
+            createdAt = Instant.now(),
         )
 
     @Test

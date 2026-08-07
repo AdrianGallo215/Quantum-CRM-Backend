@@ -27,7 +27,6 @@ import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
-import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
@@ -35,6 +34,7 @@ import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.PoliticaDescuento
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.AprobacionRequeridaException
@@ -329,7 +329,7 @@ class OportunidadServiceImpl(
             LogEstadoDto(
                 estadoAnterior = it.estadoAnterior?.name,
                 estadoNuevo = it.estadoNuevo.name,
-                changedAt = it.changedAt,
+                changedAt = it.changedAt.comoInstanteUtc(),
                 changedBy = empleados[it.changedBy],
             )
         }
@@ -410,37 +410,6 @@ class OportunidadServiceImpl(
     @Transactional(readOnly = true)
     override fun tieneOportunidadesActivas(idEmpresa: Long): Boolean =
         oportunidadRepository.existsByIdEmpresaAndEstadoIn(idEmpresa, EstadoCarteraService.ESTADOS_ACTIVOS)
-
-    @Transactional(readOnly = true)
-    override fun countPorContacto(idContacto: Long): Int = contactoOportunidadRepository.countByIdIdContacto(idContacto).toInt()
-
-    @Transactional(readOnly = true)
-    override fun oportunidadesPorContacto(idContacto: Long): List<OportunidadResumenParaContacto> {
-        val vinculos = contactoOportunidadRepository.findByIdIdContacto(idContacto)
-        if (vinculos.isEmpty()) {
-            return emptyList()
-        }
-        val idsOportunidad = vinculos.map { it.id.idOportunidad }
-        val oportunidades = oportunidadRepository.findAllById(idsOportunidad).associateBy { requireNotNull(it.id) }
-        val empresas = empresaService.resumenPorIds(oportunidades.values.map { it.idEmpresa })
-        val modelos = modeloService.resumenPorIds(oportunidades.values.mapNotNull { it.idModelo })
-        return vinculos.mapNotNull { vinculo ->
-            oportunidades[vinculo.id.idOportunidad]?.let { op ->
-                OportunidadResumenParaContacto(
-                    id = requireNotNull(op.id),
-                    empresa = empresas[op.idEmpresa],
-                    modelo =
-                        op.idModelo?.let { modelos[it] }?.let {
-                            ModeloEnOportunidadDto(id = it.id, codigo = it.codigo, precioBase = it.precioBase?.toPlainString())
-                        },
-                    estado = op.estado.name,
-                    montoTotal = op.montoTotal?.toPlainString(),
-                    fechaCierreEstimado = op.fechaCierreEstimado,
-                    rolEnOportunidad = vinculo.rolEnOportunidad,
-                )
-            }
-        }
-    }
 
     @Transactional(readOnly = true)
     override fun vinculoVisible(
@@ -581,28 +550,27 @@ class OportunidadServiceImpl(
         oportunidadRepository.findById(id).orElseThrow { NoEncontradoException("La oportunidad no existe") }
 
     /** IDOR: oportunidad ajena para vendedor/analista → 404, no 403. */
-    @Transactional
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String {
-        visible(id, usuario)
-        return asegurarCarpetaDriveDe(id)
-    }
+    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
 
-    @Transactional
-    override fun asegurarCarpetaDrive(id: Long): String {
-        entidad(id)
-        return asegurarCarpetaDriveDe(id)
-    }
+    override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
 
     /**
-     * Bloqueo pesimista de fila (hallazgo Important de la revision final): evita
-     * que dos requests concurrentes sobre la misma oportunidad creen dos carpetas.
+     * SIN `@Transactional` en los metodos publicos a proposito. Esta era la ruta
+     * peor: bloqueaba la fila de la oportunidad, entraba en `empresaService` (que
+     * al ser REQUIRED se unia a la misma transaccion y bloqueaba tambien la fila de
+     * la empresa) y encadenaba hasta DOS llamadas a Drive con ambas filas y la
+     * conexion retenidas.
+     *
+     * La no duplicacion la garantiza ahora el UPDATE condicional, que es atomico:
+     * `WHERE drive_folder_id IS NULL` solo casa una vez, asi que la oportunidad
+     * nunca guarda dos carpetas distintas. Ver EmpresaServiceImpl para el detalle.
      */
-    private fun asegurarCarpetaDriveDe(id: Long): String {
-        val oportunidad = oportunidadRepository.findByIdForUpdate(id) ?: throw NoEncontradoException("La oportunidad no existe")
+    private fun asegurarCarpetaDriveDe(oportunidad: Oportunidad): String {
         oportunidad.driveFolderId?.let { return it }
+        val id = requireNotNull(oportunidad.id)
         val carpetaEmpresa = empresaService.asegurarCarpetaDrive(oportunidad.idEmpresa)
         val codigoModelo = oportunidad.idModelo?.let { modeloService.resumen(it).codigo }
         val carpeta =
@@ -610,12 +578,14 @@ class OportunidadServiceImpl(
                 nombre = nombreCarpetaDrive(id, codigoModelo),
                 parentFolderId = carpetaEmpresa,
             )
-        oportunidad.driveFolderId = carpeta
-        oportunidadRepository.save(oportunidad)
-        return carpeta
+        val ganada = oportunidadRepository.asignarCarpetaDriveSiFalta(id, carpeta) > 0
+        val definitiva = if (ganada) carpeta else oportunidadRepository.findDriveFolderId(id) ?: carpeta
+        // Coherencia del contexto de persistencia si hay transaccion llamante.
+        oportunidad.driveFolderId = definitiva
+        return definitiva
     }
 
-    @Transactional(readOnly = true)
+    /** Sin `@Transactional`: el listado de Drive no debe retener conexion del pool. */
     override fun archivosDrive(
         id: Long,
         usuario: UsuarioActual,
@@ -692,7 +662,7 @@ class OportunidadServiceImpl(
                         )
                     }
                 },
-            entradaEtapaActual = entradaEtapa,
+            entradaEtapaActual = entradaEtapa?.comoInstanteUtc(),
         )
     }
 
@@ -738,7 +708,7 @@ class OportunidadServiceImpl(
                 fechaCierreEstimado = op.fechaCierreEstimado,
                 tareasPendientesCount = tareasPendientes[opId] ?: 0,
                 eventosPendientesCount = eventosPendientes[opId] ?: 0,
-                createdAt = op.createdAt,
+                createdAt = op.createdAt.comoInstanteUtc(),
             )
         }
     }

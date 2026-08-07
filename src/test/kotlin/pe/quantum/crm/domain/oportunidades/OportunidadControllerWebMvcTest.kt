@@ -17,10 +17,11 @@ import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import pe.quantum.crm.config.security.JwtService
+import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.support.SinBaseDeDatosMocks
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * Tests de `DELETE /oportunidades/:id` (contrato_api.md §10, exclusivo admin, sin cuerpo)
@@ -103,7 +104,7 @@ class OportunidadControllerWebMvcTest {
             estado = "evaluacion_calidda", cantidad = 8, precioUnitario = "92000.00",
             dcto = "3.00", montoTotal = "714080.00", garantia = true, fincParalelo = false,
             fichaVenta = null, driveFolderId = null, notas = null, motivoCierre = null,
-            fechaCierreEstimado = null, createdAt = LocalDateTime.now(),
+            fechaCierreEstimado = null, createdAt = Instant.now(),
         )
 
     private fun postOportunidad(cuerpo: String) =
@@ -213,5 +214,62 @@ class OportunidadControllerWebMvcTest {
 
         putOportunidad("""{"dcto":0}""").andExpect { status { isOk() } }
         putOportunidad("""{"dcto":100}""").andExpect { status { isOk() } }
+    }
+
+    /**
+     * Contrato §10, `PUT /oportunidades/:id/contactos/:contacto_id`:
+     * Body `{ "rol_en_oportunidad": "Aprobador" }`, respuesta 200. El id del
+     * contacto va en la URL y el servicio lo toma de ahi; el body NO lo lleva.
+     *
+     * Reutilizar el DTO del POST de vinculacion metia un `id_contacto` no-nulo,
+     * sin default y con `@Positive` en un body donde el contrato no lo pone: el
+     * cliente que seguia el contrato recibia 400 y el endpoint solo funcionaba
+     * si adivinaba que debia mandar un id que el backend descarta.
+     */
+    @Test
+    fun `PUT contacto de oportunidad acepta el body del contrato sin id_contacto`() {
+        every { oportunidadService.actualizarContacto(50, 5, "Aprobador", any()) } returns
+            ContactoVinculoRequest(idContacto = 5, rolEnOportunidad = "Aprobador")
+
+        mockMvc.put("/api/v1/oportunidades/50/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"rol_en_oportunidad":"Aprobador"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id_contacto") { value(5) }
+            jsonPath("$.data.rol_en_oportunidad") { value("Aprobador") }
+        }
+        verify { oportunidadService.actualizarContacto(50, 5, "Aprobador", any()) }
+    }
+
+    /** El rol puede limpiarse mandando el body vacio: `rol_en_oportunidad` es opcional. */
+    @Test
+    fun `PUT contacto de oportunidad con body vacio limpia el rol`() {
+        every { oportunidadService.actualizarContacto(50, 5, null, any()) } returns
+            ContactoVinculoRequest(idContacto = 5, rolEnOportunidad = null)
+
+        mockMvc.put("/api/v1/oportunidades/50/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = "{}"
+        }.andExpect {
+            status { isOk() }
+        }
+        verify { oportunidadService.actualizarContacto(50, 5, null, any()) }
+    }
+
+    /** El POST de vinculacion sigue exigiendo `id_contacto`: ahi si es parte del body. */
+    @Test
+    fun `POST contacto de oportunidad sigue rechazando un id_contacto no positivo`() {
+        mockMvc.post("/api/v1/oportunidades/50/contactos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"id_contacto":0,"rol_en_oportunidad":"Aprobador"}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("VALIDACION") }
+        }
+        verify(exactly = 0) { oportunidadService.vincularContacto(any(), any(), any()) }
     }
 }

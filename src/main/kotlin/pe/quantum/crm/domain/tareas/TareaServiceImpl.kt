@@ -21,6 +21,7 @@ import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
 import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.EstadoAccion
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
@@ -299,7 +300,7 @@ class TareaServiceImpl(
                 id = requireNotNull(it.id),
                 titulo = it.tipoAccion.name,
                 descripcion = it.descripcion,
-                fecha = it.fechaEjecucion ?: it.createdAt,
+                fecha = (it.fechaEjecucion ?: it.createdAt).comoInstanteUtc(),
                 estado = it.estadoAccion.name,
             )
         }
@@ -399,8 +400,8 @@ class TareaServiceImpl(
                 tipoAccion = tarea.tipoAccion.name,
                 estadoAccion = tarea.estadoAccion.name,
                 descripcion = tarea.descripcion,
-                fechaEjecucion = tarea.fechaEjecucion,
-                createdAt = tarea.createdAt,
+                fechaEjecucion = tarea.fechaEjecucion?.comoInstanteUtc(),
+                createdAt = tarea.createdAt.comoInstanteUtc(),
             )
         }
     }

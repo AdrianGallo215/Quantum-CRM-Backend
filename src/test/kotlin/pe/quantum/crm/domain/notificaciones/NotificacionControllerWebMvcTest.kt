@@ -16,7 +16,7 @@ import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.notificaciones.dto.NotificacionDto
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.support.SinBaseDeDatosMocks
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * Tests de los 4 endpoints de notificaciones (contrato_api.md §19) via MockMvc,
@@ -69,7 +69,7 @@ class NotificacionControllerWebMvcTest {
                     entidadTipo = "empresa",
                     entidadId = 1,
                     leida = false,
-                    createdAt = LocalDateTime.now(),
+                    createdAt = Instant.now(),
                     actor = null,
                 ),
             )

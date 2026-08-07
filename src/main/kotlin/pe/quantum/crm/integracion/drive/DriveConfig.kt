@@ -2,6 +2,7 @@ package pe.quantum.crm.integracion.drive
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.http.HttpRequestInitializer
+import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
@@ -10,6 +11,7 @@ import com.google.auth.oauth2.GoogleCredentials
 import com.google.auth.oauth2.ServiceAccountCredentials
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Primary
 import java.io.ByteArrayInputStream
 import java.util.Base64
 
@@ -42,26 +44,57 @@ class DriveConfig {
             .createScoped(listOf(DriveScopes.DRIVE))
     }
 
+    /** Un unico transporte (y por tanto un unico pool HTTP) para los dos clientes. */
     @Bean
+    fun driveHttpTransport(): NetHttpTransport = GoogleNetHttpTransport.newTrustedTransport()
+
+    /**
+     * Cliente por defecto: subidas y listados. Timeout de lectura largo, porque
+     * subir un archivo grande tarda de verdad. Ninguna de esas rutas corre dentro
+     * de una transaccion de base de datos.
+     */
+    @Bean
+    @Primary
     fun googleDrive(
         credentials: GoogleCredentials,
+        transporte: NetHttpTransport,
         propiedades: DriveProperties,
+    ): Drive = cliente(credentials, transporte, propiedades, propiedades.readTimeoutMs)
+
+    /**
+     * Cliente exclusivo de la creacion de carpetas, con un timeout de lectura muy
+     * inferior. Crear una carpeta es una llamada de metadatos, y es la unica
+     * operacion de Drive que todavia puede quedar dentro de una transaccion
+     * (POST /oportunidades: contrato_api.md §8 exige que sin carpeta no haya
+     * oportunidad, y el nombre necesita el id que solo existe tras el insert).
+     * Con el timeout de las subidas, una sola caida de Drive retenia conexiones de
+     * Hikari hasta 2 minutos y agotaba el pool.
+     */
+    @Bean
+    fun googleDriveCarpetas(
+        credentials: GoogleCredentials,
+        transporte: NetHttpTransport,
+        propiedades: DriveProperties,
+    ): Drive = cliente(credentials, transporte, propiedades, propiedades.folderReadTimeoutMs)
+
+    private fun cliente(
+        credentials: GoogleCredentials,
+        transporte: NetHttpTransport,
+        propiedades: DriveProperties,
+        readTimeoutMs: Int,
     ): Drive {
         val credencialesHttp = HttpCredentialsAdapter(credentials)
-        // Timeouts explicitos: sin ellos una conexion colgada a Drive retiene la
-        // transaccion (y su conexion a la BD) de forma indefinida.
+        // Timeouts explicitos: sin ellos una conexion colgada a Drive retiene el
+        // hilo (y, donde aun haya transaccion, su conexion a la BD) indefinidamente.
         val inicializador =
             HttpRequestInitializer { request ->
                 credencialesHttp.initialize(request)
                 request.connectTimeout = propiedades.connectTimeoutMs
-                request.readTimeout = propiedades.readTimeoutMs
+                request.readTimeout = readTimeoutMs
             }
         return Drive
-            .Builder(
-                GoogleNetHttpTransport.newTrustedTransport(),
-                GsonFactory.getDefaultInstance(),
-                inicializador,
-            ).setApplicationName(propiedades.applicationName)
+            .Builder(transporte, GsonFactory.getDefaultInstance(), inicializador)
+            .setApplicationName(propiedades.applicationName)
             .build()
     }
 }

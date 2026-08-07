@@ -10,7 +10,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.security.crypto.password.PasswordEncoder
+import pe.quantum.crm.domain.empleados.dto.ActualizarEmpleadoRequest
+import pe.quantum.crm.domain.empleados.dto.CrearEmpleadoRequest
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
+import pe.quantum.crm.shared.exception.PermisoInsuficienteException
+import java.util.Optional
 
 /**
  * Tests unitarios de la autenticacion (B0.8). Toda falla — email inexistente,
@@ -108,6 +112,113 @@ class EmpleadoServiceTest {
         // Mitigacion de timing attack (SECURITY §2.4): se ejecuta BCrypt aunque el
         // usuario no exista, para no delatar la inexistencia por el tiempo de respuesta.
         verify { passwordEncoder.matches("secreta", any()) }
+    }
+
+    // ── Contencion de cuentas revocadas ──────────────────────────────────────
+    // El `SecurityContext` se arma solo con los claims del JWT: ni el filtro ni
+    // `UsuarioActual` releen la base. Como el access token vive 1h, un admin
+    // desactivado o degradado conserva un token que dice `rol=admin` durante ese
+    // rato. Si con el pudiera tocar la administracion de empleados, deshace su
+    // propia revocacion de forma permanente y la desactivacion deja de contener
+    // nada. Estos tests fijan que la administracion de empleados revalide contra
+    // la base quien pide, y que nadie se edite a si mismo.
+
+    private fun admin(
+        id: Long = 9,
+        activo: Boolean = true,
+        rol: RolEmpleado = RolEmpleado.admin,
+    ) = Empleado(
+        id = id,
+        nombres = "Root",
+        apellidos = "Quantum",
+        email = "root$id@quantum.pe",
+        rol = rol,
+        activo = activo,
+    )
+
+    private val nuevoAdmin =
+        CrearEmpleadoRequest(
+            nombres = "Mallory",
+            apellidos = "Puerta",
+            email = "mallory@quantum.pe",
+            password = "contrasena-larga",
+            rol = RolEmpleado.admin,
+        )
+
+    @Test
+    fun `un admin desactivado no puede reactivarse a si mismo`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9, activo = false))
+
+        assertThrows<PermisoInsuficienteException> {
+            service.cambiarActivo(id = 9, activo = true, idSolicitante = 9)
+        }
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `un admin desactivado no puede reactivar a otro empleado`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9, activo = false))
+
+        assertThrows<PermisoInsuficienteException> {
+            service.cambiarActivo(id = 4, activo = true, idSolicitante = 9)
+        }
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    /**
+     * La via alterna: aunque no pueda reactivarse, un admin desactivado con token
+     * vigente podia crearse un admin nuevo con una contraseña elegida por el y
+     * volver a entrar por ahi. Cierra el mismo agujero por otra puerta.
+     */
+    @Test
+    fun `un admin desactivado no puede crear otro admin`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9, activo = false))
+
+        assertThrows<PermisoInsuficienteException> {
+            service.crear(nuevoAdmin, idSolicitante = 9)
+        }
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `un admin degradado no puede administrar empleados`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9, rol = RolEmpleado.vendedor))
+
+        assertThrows<PermisoInsuficienteException> {
+            service.crear(nuevoAdmin, idSolicitante = 9)
+        }
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `nadie puede cambiar su propio rol`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9))
+
+        assertThrows<PermisoInsuficienteException> {
+            service.actualizar(id = 9, request = ActualizarEmpleadoRequest(rol = RolEmpleado.vendedor), idSolicitante = 9)
+        }
+        verify(exactly = 0) { repository.save(any()) }
+    }
+
+    @Test
+    fun `un admin vigente si puede desactivar a otro empleado`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9))
+        every { repository.findById(4) } returns Optional.of(empleado())
+        every { repository.save(any()) } returnsArgument 0
+
+        val resultado = service.cambiarActivo(id = 4, activo = false, idSolicitante = 9)
+
+        assertThat(resultado.activo).isFalse()
+    }
+
+    @Test
+    fun `un admin vigente si puede editar sus propios datos de contacto`() {
+        every { repository.findById(9) } returns Optional.of(admin(id = 9))
+        every { repository.save(any()) } returnsArgument 0
+
+        val resultado = service.actualizar(id = 9, request = ActualizarEmpleadoRequest(nombres = "Raiz"), idSolicitante = 9)
+
+        assertThat(resultado.nombres).isEqualTo("Raiz")
     }
 
     @Test

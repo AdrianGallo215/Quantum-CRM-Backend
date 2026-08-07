@@ -4,6 +4,11 @@ import io.mockk.mockk
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import org.springframework.transaction.TransactionStatus
+import org.springframework.transaction.support.SimpleTransactionStatus
+import org.springframework.transaction.support.TransactionTemplate
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoRepository
 import pe.quantum.crm.domain.contactos.ContactoRepository
 import pe.quantum.crm.domain.contactos.EmpresaContactoRepository
@@ -82,4 +87,22 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mockk(relaxed = true)
+
+    /**
+     * Sin DataSource no hay `PlatformTransactionManager` y, por tanto, Spring Boot
+     * tampoco autoconfigura el `TransactionTemplate` que `EmpresaServiceImpl` usa
+     * para abrir la transaccion del alta DESPUES de hablar con Drive. Estos slices
+     * no tocan la base de datos: un gestor sin efecto basta para que el bloque se
+     * ejecute igual.
+     */
+    @Bean
+    fun transactionTemplate(): TransactionTemplate = TransactionTemplate(GestorSinTransaccion())
+}
+
+private class GestorSinTransaccion : PlatformTransactionManager {
+    override fun getTransaction(definition: TransactionDefinition?): TransactionStatus = SimpleTransactionStatus()
+
+    override fun commit(status: TransactionStatus) = Unit
+
+    override fun rollback(status: TransactionStatus) = Unit
 }

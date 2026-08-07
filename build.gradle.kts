@@ -77,6 +77,9 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testImplementation("com.ninja-squad:springmockk:4.0.2")
+    // ArchUnit: verifica por bytecode la frontera entre modulos de dominio
+    // (CLAUDE.md regla 12). Ver ArquitecturaModulosTest.
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -138,7 +141,14 @@ configurations.matching { it.name == "detekt" }.all {
     }
 }
 
-// Cobertura: 75% global, 90% en los servicios de dominio (TESTING-backend.md §8).
+// Cobertura. Hay DOS cifras y no deben confundirse:
+//   · OBJETIVO (TESTING-backend.md §8): 75% global, 90% en el dominio. Es la meta,
+//     hoy NO se cumple y el build no la exige.
+//   · SUELO VIGENTE (lo que este build falla si se baja): 63% global, 58% dominio.
+//     Es un trinquete fijado en la cobertura real medida, no una meta rebajada.
+// La brecha 63→75 / 58→90 es deuda de tests conocida; ver el comentario de cada
+// regla `verify` mas abajo. Cualquier texto que anuncie 75/90 como "lo que el CI
+// exige" es falso mientras estos minBound digan 63/58.
 // Se excluye de la medicion el "glue" sin logica de negocio: el bootstrap, las
 // entidades JPA, los repositorios, las clases de @ConfigurationProperties y los
 // enums de datos. La cobertura mide logica, no mapeos/estructuras de datos.

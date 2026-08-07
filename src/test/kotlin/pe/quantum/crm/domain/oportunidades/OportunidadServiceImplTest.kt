@@ -5,6 +5,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -260,48 +261,6 @@ class OportunidadServiceImplTest {
     }
 
     @Test
-    fun `countPorContacto devuelve la cantidad de vinculos del contacto`() {
-        every { contactoOportunidadRepository.countByIdIdContacto(5) } returns 3L
-
-        val resultado = service.countPorContacto(5)
-
-        assertThat(resultado).isEqualTo(3)
-    }
-
-    @Test
-    fun `oportunidadesPorContacto mapea empresa, modelo, monto y rol`() {
-        val vinculo =
-            OportunidadContacto(
-                id = OportunidadContactoId(idOportunidad = 100, idContacto = 5),
-                rolEnOportunidad = "Contacto Principal",
-            )
-        every { contactoOportunidadRepository.findByIdIdContacto(5) } returns listOf(vinculo)
-        every { oportunidadRepository.findAllById(listOf(100L)) } returns listOf(oportunidad(id = 100))
-        every { empresaService.resumenPorIds(listOf(10L)) } returns
-            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Transp. Sta. Anita S.A.", distrito = null))
-        every { modeloService.resumenPorIds(listOf(1L)) } returns mapOf(1L to busX())
-
-        val resultado = service.oportunidadesPorContacto(5)
-
-        assertThat(resultado).hasSize(1)
-        val dto = resultado.first()
-        assertThat(dto.id).isEqualTo(100)
-        assertThat(dto.empresa?.razonSocial).isEqualTo("Transp. Sta. Anita S.A.")
-        assertThat(dto.modelo?.codigo).isEqualTo("BUS-X")
-        assertThat(dto.montoTotal).isEqualTo("10")
-        assertThat(dto.rolEnOportunidad).isEqualTo("Contacto Principal")
-    }
-
-    @Test
-    fun `oportunidadesPorContacto devuelve vacio si no hay vinculos`() {
-        every { contactoOportunidadRepository.findByIdIdContacto(5) } returns emptyList()
-
-        val resultado = service.oportunidadesPorContacto(5)
-
-        assertThat(resultado).isEmpty()
-    }
-
-    @Test
     fun `actualizar con dcto sobre el limite del rol lanza APROBACION_REQUERIDA sin guardar`() {
         val vendedor = UsuarioActual(id = 5, rol = "vendedor")
         val entidad = oportunidad(idVendedor = 5)
@@ -542,27 +501,47 @@ class OportunidadServiceImplTest {
     fun `asegurarCarpetaDrive no llama a Drive si la oportunidad ya tiene carpeta`() {
         val entidad = oportunidadConVendedor(3).apply { driveFolderId = "ya-existe" }
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
 
         val carpeta = service.asegurarCarpetaDrive(100, UsuarioActual(id = 3, rol = "vendedor"))
 
         assertThat(carpeta).isEqualTo("ya-existe")
         verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+        verify(exactly = 0) { oportunidadRepository.asignarCarpetaDriveSiFalta(any(), any()) }
     }
 
     @Test
-    fun `asegurarCarpetaDrive usa el fetch con bloqueo pesimista, no el fetch simple`() {
+    fun `asegurarCarpetaDrive fija la carpeta con un UPDATE condicional, no con un save completo`() {
         val entidad = oportunidadConVendedor(3)
-        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
         every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
         every { modeloService.resumen(1) } returns busX()
         every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-op"
-        every { oportunidadRepository.save(entidad) } returns entidad
+        every { oportunidadRepository.asignarCarpetaDriveSiFalta(100, "carpeta-op") } returns 1
 
         service.asegurarCarpetaDrive(100)
 
-        verify { oportunidadRepository.findByIdForUpdate(100) }
+        // Sin SELECT ... FOR UPDATE: esta ruta encadenaba DOS bloqueos de fila
+        // (oportunidad y empresa) y hasta DOS llamadas a Drive dentro de la misma
+        // transaccion. Ahora la red ocurre sin nada bloqueado.
+        verifyOrder {
+            driveStorageService.crearCarpeta(any(), any())
+            oportunidadRepository.asignarCarpetaDriveSiFalta(100, "carpeta-op")
+        }
+        verify(exactly = 0) { oportunidadRepository.save(any<Oportunidad>()) }
+    }
+
+    @Test
+    fun `asegurarCarpetaDrive devuelve la carpeta ganadora si otra peticion se adelanto`() {
+        val entidad = oportunidadConVendedor(3)
+        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
+        every { modeloService.resumen(1) } returns busX()
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-perdedora"
+        every { oportunidadRepository.asignarCarpetaDriveSiFalta(100, "carpeta-perdedora") } returns 0
+        every { oportunidadRepository.findDriveFolderId(100) } returns "carpeta-ganadora"
+
+        assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("carpeta-ganadora")
+        assertThat(entidad.driveFolderId).isEqualTo("carpeta-ganadora")
     }
 
     @Test
@@ -668,11 +647,10 @@ class OportunidadServiceImplTest {
     fun `asegurarCarpetaDrive de sistema crea la carpeta sin exigir visibilidad`() {
         val entidad = oportunidadConVendedor(3)
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
         every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
         every { modeloService.resumen(1) } returns busX()
         every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") } returns "carpeta-op"
-        every { oportunidadRepository.save(entidad) } returns entidad
+        every { oportunidadRepository.asignarCarpetaDriveSiFalta(100, "carpeta-op") } returns 1
 
         assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("carpeta-op")
         assertThat(entidad.driveFolderId).isEqualTo("carpeta-op")
@@ -682,7 +660,6 @@ class OportunidadServiceImplTest {
     fun `asegurarCarpetaDrive de sistema es idempotente`() {
         val entidad = oportunidadConVendedor(3).apply { driveFolderId = "ya-existe" }
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { oportunidadRepository.findByIdForUpdate(100) } returns entidad
 
         assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("ya-existe")
 

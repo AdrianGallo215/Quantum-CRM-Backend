@@ -1,13 +1,13 @@
 package pe.quantum.crm.domain.prospeccion.dto
 
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
-import java.time.LocalDateTime
+import java.time.Instant
 
 /** Hito de prospeccion con su avance (contrato_api.md §16). */
 data class HitoDto(
     val nombre: String,
     val completado: Boolean,
-    val fecha: LocalDateTime?,
+    val fecha: Instant?,
 )
 
 /** Empresa en prospeccion con su avance calculado (contrato_api.md §16). */
@@ -23,7 +23,7 @@ data class ProspeccionItemDto(
     val checkpointsTotal: Int,
     val hitos: List<HitoDto>,
     val diasSinActividad: Int,
-    val ultimaActividadAt: LocalDateTime?,
+    val ultimaActividadAt: Instant?,
     val siguienteTarea: String?,
     val listaParaConvertir: Boolean,
 )

@@ -20,6 +20,7 @@ import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.EstadoEvento
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
@@ -131,7 +132,7 @@ class EventoServiceImpl(
         return EventoOcurridoDto(
             id = requireNotNull(evento.id),
             estado = evento.estado.name,
-            fechaOcurrencia = evento.fechaOcurrencia,
+            fechaOcurrencia = evento.fechaOcurrencia?.comoInstanteUtc(),
             sugerencia = sugerencia,
         )
     }
@@ -338,7 +339,7 @@ class EventoServiceImpl(
             estado = estado.name,
             fechaEstimada = fechaEstimada,
             fechaSeguimiento = fechaSeguimiento,
-            fechaOcurrencia = fechaOcurrencia,
+            fechaOcurrencia = fechaOcurrencia?.comoInstanteUtc(),
             disparaCambioEstado = disparaCambioEstado,
             estadoDestino = estadoDestino?.name,
             esRecomendado = entrada?.esRecomendado ?: false,

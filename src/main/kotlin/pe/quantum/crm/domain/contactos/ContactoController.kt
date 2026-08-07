@@ -21,7 +21,7 @@ import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VincularContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VinculoDto
-import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.domain.oportunidades.OportunidadesDeContacto
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.shared.ApiResponse
 import pe.quantum.crm.shared.security.UsuarioActualProvider
@@ -31,7 +31,7 @@ import pe.quantum.crm.shared.security.UsuarioActualProvider
 @RequestMapping("/api/v1/contactos")
 class ContactoController(
     private val contactoService: ContactoService,
-    private val oportunidadService: OportunidadService,
+    private val oportunidadesDeContacto: OportunidadesDeContacto,
     private val tareaService: TareaService,
     private val usuarioProvider: UsuarioActualProvider,
 ) {
@@ -42,8 +42,9 @@ class ContactoController(
         @RequestParam(required = false) page: Int?,
         @RequestParam(name = "per_page", required = false) perPage: Int?,
     ): ApiResponse<List<ContactoListaDto>> {
-        val resultado = contactoService.buscar(q, idEmpresa, usuarioProvider.actual(), page, perPage, null, null)
-        val conConteo = resultado.items.map { it.copy(oportunidadesCount = oportunidadService.countPorContacto(it.id)) }
+        val usuario = usuarioProvider.actual()
+        val resultado = contactoService.buscar(q, idEmpresa, usuario, page, perPage, null, null)
+        val conConteo = resultado.items.map { it.copy(oportunidadesCount = oportunidadesDeContacto.contar(it.id, usuario)) }
         return ApiResponse.ok(conConteo, resultado.meta)
     }
 
@@ -55,7 +56,7 @@ class ContactoController(
         val contacto = contactoService.detalle(id)
         val completo =
             contacto.copy(
-                oportunidades = oportunidadService.oportunidadesPorContacto(id),
+                oportunidades = oportunidadesDeContacto.listar(id, usuario),
                 actividades = tareaService.actividadesPorContacto(id, usuario),
             )
         return ApiResponse.ok(completo)

@@ -19,6 +19,7 @@ import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.EstadoMeta
 import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
@@ -312,8 +313,8 @@ class MetaVentaServiceImpl(
             propuestoPor = empleados[idPropuestoPor],
             resolutor = idResolutor?.let { empleados[it] },
             motivoRechazo = motivoRechazo,
-            resolvedAt = resolvedAt,
-            createdAt = createdAt,
+            resolvedAt = resolvedAt?.comoInstanteUtc(),
+            createdAt = createdAt.comoInstanteUtc(),
         )
 
     private companion object {

@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Positive
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
-import java.time.LocalDateTime
+import java.time.Instant
 
 data class CrearMetaVentaRequest(
     @field:NotNull(message = "id_empleado es obligatorio")
@@ -88,8 +88,8 @@ data class MetaVentaDto(
     val propuestoPor: EmpleadoResumen?,
     val resolutor: EmpleadoResumen?,
     val motivoRechazo: String?,
-    val resolvedAt: LocalDateTime?,
-    val createdAt: LocalDateTime,
+    val resolvedAt: Instant?,
+    val createdAt: Instant,
 )
 
 data class MetaVentaFiltros(

@@ -11,11 +11,15 @@ import pe.quantum.crm.mantenimiento.dto.ErrorBackfillDto
  * Crea las carpetas de Drive que les faltan a empresas y oportunidades anteriores
  * a la integracion (ver docs/superpowers/specs/2026-07-31-carpetas-drive-creacion-explicita-design.md).
  *
- * NO lleva `@Transactional` a proposito. Cada `asegurarCarpetaDrive` se invoca
- * desde fuera del servicio de dominio, asi que pasa por el proxy de Spring y abre
- * SU PROPIA transaccion: lo ya procesado queda commiteado aunque la llamada se
- * corte a la mitad, y repetir el endpoint retoma donde quedo. Envolver todo el
- * bucle en una transaccion unica romperia justo esa garantia.
+ * NO lleva `@Transactional` a proposito. `asegurarCarpetaDrive` habla con Drive
+ * FUERA de transaccion y cierra con un UPDATE condicional que commitea por su
+ * cuenta: lo ya procesado queda firme aunque la llamada se corte a la mitad, y
+ * repetir el endpoint retoma donde quedo. Envolver el bucle en una transaccion
+ * unica romperia esa garantia y ademas retendria una conexion del pool durante
+ * cientos de llamadas de red seguidas.
+ *
+ * Es tambien el mecanismo que rellena las carpetas de las empresas dadas de alta
+ * por el import masivo de CSV, que no las crea por fila.
  */
 @Service
 class CarpetasDriveBackfillService(

@@ -3,15 +3,15 @@ package pe.quantum.crm.domain.inicio.dto
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.prospeccion.dto.ResumenProspeccionDto
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 
 /** Tarea pendiente en el panel de inicio (contrato_api.md §17). */
 data class TareaInicioDto(
     val id: Long,
     val descripcion: String?,
     val tipoAccion: String,
-    val fechaEjecucion: LocalDateTime?,
+    val fechaEjecucion: Instant?,
     val estaVencida: Boolean,
     val esHoy: Boolean,
     val empresa: EmpresaResumen?,

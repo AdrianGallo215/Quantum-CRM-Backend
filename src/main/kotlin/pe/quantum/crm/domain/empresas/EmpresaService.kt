@@ -39,7 +39,23 @@ interface EmpresaService {
 
     fun checkRuc(ruc: String): RucCheckDto
 
+    /**
+     * Alta de empresa CON carpeta de Drive (contrato_api.md §8): si Drive no
+     * responde, la empresa no se crea y el endpoint devuelve 502.
+     */
     fun crear(
+        request: CrearEmpresaRequest,
+        usuario: UsuarioActual,
+    ): EmpresaDetalleDto
+
+    /**
+     * Alta SIN carpeta de Drive, para altas masivas (import de CSV): una llamada de
+     * red por fila hace que un archivo de cientos de filas tarde minutos y el proxy
+     * corte la respuesta con las empresas ya commiteadas. Las carpetas se rellenan
+     * despues con `POST /mantenimiento/carpetas-drive`, que es idempotente y
+     * reanudable. NO usar en el alta unitaria: rompe el contrato de §8.
+     */
+    fun crearSinCarpetaDrive(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
     ): EmpresaDetalleDto

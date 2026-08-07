@@ -10,8 +10,13 @@ import java.io.File
  *
  * No ejecuta el workflow: valida que `.github/workflows/ci.yml` declare los gates
  * que gatean cada PR y que respete el principio fail-fast (lo mas rapido primero):
- * ktlint, detekt, compilacion, tests (con Testcontainers + ArchUnit) y cobertura
- * (Kover).
+ * ktlint, detekt, compilacion, tests (unitarios + ArchUnit + Testcontainers) y
+ * cobertura (Kover).
+ *
+ * Las aserciones van sobre el YAML *parseado* (pasos, `uses`, `run`, `with`), no
+ * sobre `contains` del texto crudo: un `contains("21")` se satisface con cualquier
+ * "21" del archivo —incluido un comentario— y da por verificado algo que nadie
+ * verifico. Solo se usa el texto donde el parseo no sirve, y se dice por que.
  *
  * El escaneo de vulnerabilidades (OWASP Dependency-Check) NO gatea cada PR: la API
  * publica de la NVD es inestable y su descarga inicial puede tardar horas, lo que
@@ -41,6 +46,23 @@ class CiPipelineConfigTest {
         return workflowFile.readText()
     }
 
+    @Suppress("UNCHECKED_CAST")
+    private fun jobBuild(): Map<String, Any> {
+        val jobs = loadWorkflow()["jobs"] as Map<String, Any>
+        val build = jobs["build"] as? Map<String, Any>
+        assertThat(build).withFailMessage("ci.yml no define el job 'build'").isNotNull
+        return build!!
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun pasos(): List<Map<String, Any>> = jobBuild()["steps"] as List<Map<String, Any>>
+
+    /** Comandos `run` de los pasos, en orden de ejecucion. */
+    private fun comandos(): List<String> = pasos().mapNotNull { it["run"]?.toString() }
+
+    /** Indice del primer paso cuyo `run` contiene el comando dado, o -1. */
+    private fun ordenDe(comando: String): Int = comandos().indexOfFirst { it.contains(comando) }
+
     @Test
     fun `el workflow corre en pull request y en push a develop y main`() {
         // SnakeYAML parsea la clave `on:` como el booleano `true` (YAML 1.1),
@@ -51,78 +73,79 @@ class CiPipelineConfigTest {
             .contains("pull_request")
         assertThat(texto)
             .withFailMessage("El workflow debe dispararse en push a develop y main")
-            .contains("develop")
-            .contains("main")
+            .contains("branches: [develop, main]")
     }
 
-    @Suppress("UNCHECKED_CAST")
     @Test
     fun `el job build corre en ubuntu`() {
-        val jobs = loadWorkflow()["jobs"] as Map<String, Any>
-        val build = jobs["build"] as Map<String, Any>
-        assertThat(build["runs-on"].toString())
+        assertThat(jobBuild()["runs-on"].toString())
             .withFailMessage("El job build debe correr en ubuntu-latest")
             .contains("ubuntu")
     }
 
+    @Suppress("UNCHECKED_CAST")
     @Test
     fun `el workflow configura JDK 21 Temurin`() {
-        val texto = workflowText()
-        assertThat(texto)
-            .withFailMessage("El workflow debe usar setup-java con distribucion Temurin")
-            .contains("setup-java")
-            .contains("temurin")
-        assertThat(texto)
-            .withFailMessage("El workflow debe configurar JDK 21")
-            .contains("21")
+        val setupJava = pasos().firstOrNull { it["uses"]?.toString()?.startsWith("actions/setup-java") == true }
+        assertThat(setupJava)
+            .withFailMessage("El workflow debe usar actions/setup-java")
+            .isNotNull
+        val parametros = setupJava!!["with"] as? Map<String, Any>
+        assertThat(parametros?.get("distribution")?.toString())
+            .withFailMessage("La distribucion del JDK debe ser temurin, fue: %s", parametros?.get("distribution"))
+            .isEqualTo("temurin")
+        assertThat(parametros?.get("java-version")?.toString())
+            .withFailMessage(
+                "El JDK debe ser el 21 (el proyecto compila con toolchain 21), fue: %s",
+                parametros?.get("java-version"),
+            ).isEqualTo("21")
     }
 
     @Test
     fun `el workflow cachea Gradle`() {
-        val texto = workflowText().lowercase()
-        assertThat(texto)
-            .withFailMessage("El workflow debe cachear Gradle para reproducibilidad y velocidad")
-            .contains("gradle")
-            .containsAnyOf("cache", "setup-gradle")
+        val usos = pasos().mapNotNull { it["uses"]?.toString() }
+        assertThat(usos)
+            .withFailMessage(
+                "El workflow debe usar gradle/actions/setup-gradle, que cachea dependencias y el " +
+                    "daemon entre corridas. Pasos declarados: %s",
+                usos,
+            ).anyMatch { it.startsWith("gradle/actions/setup-gradle") }
     }
 
     @Test
     fun `el workflow declara todos los gates de calidad`() {
-        val texto = workflowText()
         val gates =
             mapOf(
                 "ktlint" to "ktlintCheck",
                 "detekt" to "detekt",
                 "compilacion" to "compileKotlin",
-                "tests unitarios" to "gradlew test",
+                "tests unitarios (incluye ArchUnit)" to "gradlew test",
                 "cobertura" to "koverVerify",
                 "tests de integracion" to "integrationTest",
             )
         assertThat(gates.entries).allSatisfy { (gate, comando) ->
-            assertThat(texto)
-                .withFailMessage("El workflow no ejecuta el gate '%s' (%s)", gate, comando)
-                .contains(comando)
+            assertThat(comandos())
+                .withFailMessage("El workflow no ejecuta el gate '%s' (%s). Comandos: %s", gate, comando, comandos())
+                .anyMatch { it.contains(comando) }
         }
     }
 
     @Test
     fun `los gates respetan el orden fail-fast lint antes que tests`() {
-        val texto = workflowText()
-        val posKtlint = texto.indexOf("ktlintCheck")
-        val posDetekt = texto.indexOf("detekt")
-        val posCompile = texto.indexOf("compileKotlin")
-        val posTest = texto.indexOf(":test").let { if (it >= 0) it else texto.indexOf(" test") }
-        assertThat(posKtlint).isGreaterThanOrEqualTo(0)
-        assertThat(posTest).isGreaterThanOrEqualTo(0)
+        val posKtlint = ordenDe("ktlintCheck")
+        val posDetekt = ordenDe("detekt")
+        val posCompile = ordenDe("compileKotlin")
+        val posTest = ordenDe("gradlew test")
+        assertThat(posTest).withFailMessage("El workflow no ejecuta los tests unitarios").isGreaterThanOrEqualTo(0)
         assertThat(posKtlint)
             .withFailMessage("ktlint (rapido) debe correr antes que los tests (lento) - fail fast")
-            .isLessThan(posTest)
+            .isBetween(0, posTest - 1)
         assertThat(posDetekt)
             .withFailMessage("detekt debe correr antes que los tests - fail fast")
-            .isLessThan(posTest)
+            .isBetween(0, posTest - 1)
         assertThat(posCompile)
             .withFailMessage("La compilacion debe correr antes que los tests - fail fast")
-            .isLessThan(posTest)
+            .isBetween(0, posTest - 1)
     }
 
     @Test
@@ -136,9 +159,25 @@ class CiPipelineConfigTest {
 
     @Test
     fun `el workflow sube el reporte de cobertura como artifact`() {
-        val texto = workflowText()
-        assertThat(texto)
-            .withFailMessage("El workflow debe subir el reporte de cobertura con upload-artifact")
-            .contains("upload-artifact")
+        val usos = pasos().mapNotNull { it["uses"]?.toString() }
+        assertThat(usos)
+            .withFailMessage("El workflow debe subir el reporte de cobertura con upload-artifact. Pasos: %s", usos)
+            .anyMatch { it.startsWith("actions/upload-artifact") }
+    }
+
+    @Test
+    fun `el CI no anuncia umbrales de cobertura que no son los suyos`() {
+        // El comentario del paso de Kover llego a anunciar "90% dominio, 75% global"
+        // mientras el build exigia 63 y 58: quien leia el CI se creia protegido al
+        // 90%. La causa raiz fue duplicar la cifra. El workflow no vuelve a nombrar
+        // ningun porcentaje de cobertura; el suelo vigente vive en los `minBound` de
+        // build.gradle.kts y lo custodia QualityGatesConfigTest.
+        val porcentajes = Regex("""\d{1,3}\s?%""").findAll(workflowText()).map { it.value }.toList()
+        assertThat(porcentajes)
+            .withFailMessage(
+                "ci.yml no debe declarar cifras de cobertura: se desincronizan del build y anuncian una " +
+                    "proteccion que no existe. Fuente de verdad: los minBound de build.gradle.kts. Encontrado: %s",
+                porcentajes,
+            ).isEmpty()
     }
 }

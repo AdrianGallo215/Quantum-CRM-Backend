@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.ActualizarRolContactoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambioEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
@@ -96,7 +97,7 @@ class OportunidadController(
     fun actualizarContacto(
         @PathVariable id: Long,
         @PathVariable idContacto: Long,
-        @Valid @RequestBody request: ContactoVinculoRequest,
+        @Valid @RequestBody request: ActualizarRolContactoRequest,
     ): ApiResponse<ContactoVinculoRequest> =
         ApiResponse.ok(
             oportunidadService.actualizarContacto(id, idContacto, request.rolEnOportunidad, usuarioProvider.actual()),

@@ -12,6 +12,7 @@ import pe.quantum.crm.domain.empleados.dto.toResumen
 import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
 import pe.quantum.crm.shared.exception.NoEncontradoException
+import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 
 @Service
 @Suppress("TooManyFunctions") // Igual que su interfaz: autenticacion, CRUD y resumenes.
@@ -61,7 +62,11 @@ class EmpleadoServiceImpl(
     }
 
     @Transactional
-    override fun crear(request: CrearEmpleadoRequest): EmpleadoDto {
+    override fun crear(
+        request: CrearEmpleadoRequest,
+        idSolicitante: Long,
+    ): EmpleadoDto {
+        verificarSolicitanteVigente(idSolicitante)
         if (empleadoRepository.existsByEmail(request.email)) {
             throw ConflictoException("EMAIL_DUPLICADO", "Ya existe un empleado con ese email")
         }
@@ -84,7 +89,9 @@ class EmpleadoServiceImpl(
     override fun actualizar(
         id: Long,
         request: ActualizarEmpleadoRequest,
+        idSolicitante: Long,
     ): EmpleadoDto {
+        verificarSolicitanteVigente(idSolicitante)
         val empleado = porId(id)
         request.email?.let {
             if (it != empleado.email && empleadoRepository.existsByEmail(it)) {
@@ -95,6 +102,9 @@ class EmpleadoServiceImpl(
         request.nombres?.let { empleado.nombres = it }
         request.apellidos?.let { empleado.apellidos = it }
         request.rol?.let { nuevoRol ->
+            if (nuevoRol != empleado.rol && id == idSolicitante) {
+                throw PermisoInsuficienteException("No puedes cambiar tu propio rol")
+            }
             if (empleado.rol == RolEmpleado.admin && nuevoRol != RolEmpleado.admin) {
                 verificarNoUltimoAdmin(id)
             }
@@ -109,7 +119,12 @@ class EmpleadoServiceImpl(
     override fun cambiarActivo(
         id: Long,
         activo: Boolean,
+        idSolicitante: Long,
     ): EmpleadoDto {
+        verificarSolicitanteVigente(idSolicitante)
+        if (id == idSolicitante) {
+            throw PermisoInsuficienteException("No puedes cambiar tu propio estado de activación")
+        }
         val empleado = porId(id)
         if (!activo && empleado.rol == RolEmpleado.admin) {
             verificarNoUltimoAdmin(id)
@@ -141,6 +156,33 @@ class EmpleadoServiceImpl(
         empleadoRepository
             .findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerencia, RolEmpleado.jdv))
             .map { requireNotNull(it.id) }
+
+    /**
+     * Revalida contra la base que quien pide la operacion siga siendo un admin
+     * activo, en vez de fiarse del claim `rol` del JWT.
+     *
+     * El `SecurityContext` se arma solo con los claims del token (ver
+     * `JwtAuthenticationFilter`), asi que tras desactivar o degradar a un admin su
+     * token sigue diciendo `rol=admin` hasta que expira (1h por defecto). La
+     * desactivacion es el unico mecanismo de revocacion que tiene el sistema — el
+     * login y el refresh si exigen `activo` — y sin esta lectura ese admin podia
+     * usar la ventana para reactivarse, restaurar su rol o crearse otro admin, es
+     * decir, deshacer su propia revocacion de forma permanente.
+     *
+     * Se limita a las tres operaciones de administracion de empleados: son las que
+     * permiten escapar de la contencion. Para el resto de la API sigue valiendo el
+     * compromiso normal de JWT (la revocacion tarda como mucho lo que dure el token).
+     */
+    private fun verificarSolicitanteVigente(idSolicitante: Long) {
+        val vigente =
+            empleadoRepository
+                .findById(idSolicitante)
+                .map { it.activo && it.rol == RolEmpleado.admin }
+                .orElse(false)
+        if (!vigente) {
+            throw PermisoInsuficienteException("Tu cuenta ya no puede administrar empleados")
+        }
+    }
 
     /** Regla B1.4: el sistema nunca se queda sin un admin activo. */
     private fun verificarNoUltimoAdmin(id: Long) {

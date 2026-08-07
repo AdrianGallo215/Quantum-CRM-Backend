@@ -24,8 +24,8 @@ data class TareaDto(
     val tipoAccion: String,
     val estadoAccion: String,
     val descripcion: String?,
-    val fechaEjecucion: LocalDateTime?,
-    val createdAt: LocalDateTime,
+    val fechaEjecucion: Instant?,
+    val createdAt: Instant,
 )
 
 /** Longitud maxima de los textos libres de una tarea (columna TEXT, sin tope en BD). */

@@ -1,7 +1,7 @@
 package pe.quantum.crm.domain.notificaciones.dto
 
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
-import java.time.LocalDateTime
+import java.time.Instant
 
 data class NotificacionDto(
     val id: Long,
@@ -10,7 +10,7 @@ data class NotificacionDto(
     val entidadTipo: String,
     val entidadId: Long,
     val leida: Boolean,
-    val createdAt: LocalDateTime,
+    val createdAt: Instant,
     val actor: EmpleadoResumen?,
 )
 

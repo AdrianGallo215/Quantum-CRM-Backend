@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Lazy
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
@@ -30,6 +31,7 @@ import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.Segmento
 import pe.quantum.crm.shared.exception.ConflictoException
@@ -42,7 +44,10 @@ import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 
 @Service
-@Suppress("TooManyFunctions") // Cartera, cascadas y Drive; igual que su interfaz.
+// TooManyFunctions: cartera, cascadas y Drive; igual que su interfaz.
+// LongParameterList: son colaboradores inyectados por constructor (CLAUDE.md regla 8),
+// no argumentos de una llamada; mismo caso ya asumido en OportunidadServiceImpl.
+@Suppress("TooManyFunctions", "LongParameterList")
 class EmpresaServiceImpl(
     private val empresaRepository: EmpresaRepository,
     private val empleadoService: EmpleadoService,
@@ -54,6 +59,10 @@ class EmpresaServiceImpl(
     // depende de EmpresaService (vinculoVisible/resumenPorIds) y Spring Boot 3
     // rechaza los ciclos de constructor; el proxy corta el ciclo al arrancar.
     @Lazy private val contactoService: ContactoService,
+    // Transaccion explicita para el alta. `@Transactional` en `crear` obligaria a
+    // llamar a Drive con la transaccion ya abierta; asi la red ocurre fuera y la
+    // escritura entra despues, en una transaccion propia y corta.
+    private val transactionTemplate: TransactionTemplate,
 ) : EmpresaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -108,16 +117,56 @@ class EmpresaServiceImpl(
             RucCheckDto(existe = false)
         }
 
-    /** Empresa + segmentos en una sola transaccion; RUC validado antes (B2.1/B2.2). */
-    @Transactional
     override fun crear(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
+    ): EmpresaDetalleDto = alta(request, usuario, conCarpetaDrive = true)
+
+    override fun crearSinCarpetaDrive(
+        request: CrearEmpresaRequest,
+        usuario: UsuarioActual,
+    ): EmpresaDetalleDto = alta(request, usuario, conCarpetaDrive = false)
+
+    /**
+     * Alta de empresa. SIN `@Transactional` a proposito: la llamada a Drive ocurre
+     * ANTES de abrir la transaccion de escritura.
+     *
+     * El contrato (contrato_api.md §8) sigue cumpliendose tal cual — si Drive no
+     * responde se lanza aqui y no se llega a insertar nada, asi que la empresa no
+     * se crea y el endpoint devuelve 502 con `drive_folder_id` ya resuelto en la
+     * respuesta del caso feliz. Lo que cambia es que la latencia de Drive (hasta
+     * `app.drive.folder-read-timeout-ms`) ya no transcurre con una conexion de
+     * Hikari retenida: con 10 conexiones en el pool, eso era lo que tumbaba la API
+     * entera —login incluido— en cuanto Drive se degradaba.
+     *
+     * El RUC se comprueba antes de tocar Drive para no dejar carpetas huerfanas en
+     * los duplicados, que es el caso frecuente (reintento de un CSV, doble submit).
+     */
+    private fun alta(
+        request: CrearEmpresaRequest,
+        usuario: UsuarioActual,
+        conCarpetaDrive: Boolean,
     ): EmpresaDetalleDto {
         val idVendedor = vendedorAlCrear(request.idVendedor, usuario)
         if (empresaRepository.existsByRuc(request.ruc)) {
             throw RucDuplicadoException()
         }
+        val carpeta =
+            if (conCarpetaDrive) {
+                driveStorageService.crearCarpeta(nombreCarpetaDrive(request.ruc, request.razonSocial))
+            } else {
+                null
+            }
+        return requireNotNull(transactionTemplate.execute { persistirAlta(request, usuario, idVendedor, carpeta) })
+    }
+
+    /** Empresa + segmentos en una sola transaccion (B2.1/B2.2). */
+    private fun persistirAlta(
+        request: CrearEmpresaRequest,
+        usuario: UsuarioActual,
+        idVendedor: Long?,
+        carpeta: String?,
+    ): EmpresaDetalleDto {
         val ahora = LocalDateTime.now()
         val empresa =
             Empresa(
@@ -146,9 +195,7 @@ class EmpresaServiceImpl(
                 updatedAt = ahora,
                 updatedBy = usuario.id,
             )
-        // Carpeta de Drive dentro de la transaccion: si Drive falla, la empresa no
-        // se crea. Decision explicita — nunca queda una empresa sin carpeta.
-        empresa.driveFolderId = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
+        empresa.driveFolderId = carpeta
         // Recien creada: aun no puede tener contactos, asi que no se consulta.
         return empresaRepository.save(empresa).toDetalle(emptyList())
     }
@@ -182,37 +229,43 @@ class EmpresaServiceImpl(
         return solicitado
     }
 
-    @Transactional
-    override fun asegurarCarpetaDrive(id: Long): String {
-        entidad(id)
-        return asegurarCarpetaDriveDe(id)
-    }
+    override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
 
-    @Transactional
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String {
-        visible(id, usuario)
-        return asegurarCarpetaDriveDe(id)
+    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+
+    /**
+     * SIN `@Transactional` en los metodos publicos a proposito: aqui hay una llamada
+     * de red y no puede correr con una transaccion abierta.
+     *
+     * Antes esto hacia `SELECT ... FOR UPDATE` y llamaba a Drive con la fila
+     * bloqueada. El bloqueo cumplia su funcion (evitar carpetas duplicadas), pero
+     * retenia fila y conexion durante toda la latencia de Drive. La exclusion la da
+     * ahora un UPDATE condicional atomico: el `WHERE drive_folder_id IS NULL` solo
+     * puede casar una vez, asi que la empresa nunca acaba con dos carpetas
+     * distintas. Si esta peticion pierde la carrera (0 filas), devuelve la del
+     * ganador y descarta la suya, que queda vacia y huerfana en Drive — exactamente
+     * el mismo residuo que ya dejaba cualquier rollback posterior a `crearCarpeta`.
+     */
+    private fun asegurarCarpetaDriveDe(empresa: Empresa): String {
+        empresa.driveFolderId?.let { return it }
+        val id = requireNotNull(empresa.id)
+        val carpeta = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
+        val ganada = empresaRepository.asignarCarpetaDriveSiFalta(id, carpeta) > 0
+        val definitiva = if (ganada) carpeta else empresaRepository.findDriveFolderId(id) ?: carpeta
+        // Mantiene coherente la entidad si venia gestionada por una transaccion
+        // llamante: sin esto, un flush posterior reescribiria drive_folder_id a null.
+        empresa.driveFolderId = definitiva
+        return definitiva
     }
 
     /**
-     * Bloqueo pesimista de fila (hallazgo Important de la revision final): si dos
-     * requests llegan a la vez para la misma empresa sin carpeta, el segundo espera
-     * a que el primero termine su transaccion y ve `driveFolderId` ya asignado, en
-     * vez de crear una carpeta duplicada en Drive.
+     * Sin `@Transactional`: `visible` resuelve la visibilidad en su propia lectura
+     * corta y el listado de Drive (paginado, tantas llamadas como paginas) ocurre
+     * ya sin conexion del pool retenida.
      */
-    private fun asegurarCarpetaDriveDe(id: Long): String {
-        val empresa = empresaRepository.findByIdForUpdate(id) ?: throw NoEncontradoException("La empresa no existe")
-        empresa.driveFolderId?.let { return it }
-        val carpeta = driveStorageService.crearCarpeta(nombreCarpetaDrive(empresa.ruc, empresa.razonSocial))
-        empresa.driveFolderId = carpeta
-        empresaRepository.save(empresa)
-        return carpeta
-    }
-
-    @Transactional(readOnly = true)
     override fun archivosDrive(
         id: Long,
         usuario: UsuarioActual,
@@ -517,7 +570,7 @@ class EmpresaServiceImpl(
             segmentos = segmentos.map { it.name }.sorted(),
             contactos = contactos,
             enCarteraMaestra = enCarteraMaestra,
-            createdAt = createdAt,
+            createdAt = createdAt.comoInstanteUtc(),
             createdBy = createdBy,
         )
     }

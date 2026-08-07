@@ -14,12 +14,27 @@ object PoliticaDescuento {
     val LIMITE_VENDEDOR: BigDecimal = BigDecimal(3)
     val LIMITE_JDV: BigDecimal = BigDecimal(7)
 
-    /** Limite directo del rol; null = sin limite. */
+    /**
+     * Roles que pueden aplicar cualquier descuento sin solicitud. Lista cerrada a
+     * proposito: es la unica puerta al "sin limite" y por eso se enumera aqui en
+     * vez de deducirse por descarte.
+     */
+    private val ROLES_SIN_LIMITE = setOf("admin", "gerencia")
+
+    /**
+     * Limite directo del rol; null = sin limite.
+     *
+     * Fail-closed: cualquier rol que no este en `ROLES_SIN_LIMITE` y no sea `jdv`
+     * cae en el limite mas bajo. Eso cubre `otro` (valor real de `RolEmpleado`),
+     * el `gerente` viejo que V25 renombro a `gerencia` y cualquier rol futuro que
+     * se agregue al enum sin pasar por aqui: un rol desconocido pide aprobacion,
+     * no la esquiva.
+     */
     fun limitePara(rol: String): BigDecimal? =
         when (rol) {
-            "vendedor", "analista" -> LIMITE_VENDEDOR
+            in ROLES_SIN_LIMITE -> null
             "jdv" -> LIMITE_JDV
-            else -> null
+            else -> LIMITE_VENDEDOR
         }
 
     @Suppress("ReturnCount") // Guard clauses de salida temprana; dividir la funcion no mejora la legibilidad.

@@ -25,6 +25,13 @@ data class UsuarioActual(
     val visibilidadRestringida: Boolean
         get() = !esSupervisor
 
+    /** Id a pasar como filtro de vendedor en queries; null cuando el rol ve todo. */
+    val filtroVendedor: Long?
+        get() = id.takeIf { visibilidadRestringida }
+
+    /** true si un registro de `idVendedor` cae dentro de la visibilidad de este usuario. */
+    fun alcanza(idVendedor: Long?): Boolean = !visibilidadRestringida || idVendedor == id
+
     /** Cartera Maestra: exclusiva de gerencia y admin (gerencia_contrato_frontend.md §1). */
     val puedeVerCarteraMaestra: Boolean
         get() = rol == "admin" || rol == "gerencia"

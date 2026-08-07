@@ -1,0 +1,23 @@
+-- =============================================================================
+-- V37 — Agrega 'otro' a origen_lead_enum
+--
+-- El commit 9ce6e41 anadio `otro` a `enum class OrigenLead` (Enums.kt) sin la
+-- migracion correspondiente. La columna `empresas.origen_lead` es del tipo enum
+-- nativo de Postgres y se mapea por nombre (@JdbcTypeCode(NAMED_ENUM)), y
+-- `ddl-auto=validate` no valida etiquetas de enum: la app arrancaba sin quejarse
+-- y devolvia 500 (PSQLException: invalid input value for enum) en el primer
+-- POST/PATCH de empresa con `origen_lead: "otro"`.
+--
+-- Mismo caso que V24 resolvio para segmento_enum.
+--
+-- IF NOT EXISTS es deliberado y NO decorativo: el valor ya se agrego a mano en
+-- el panel de Supabase para desbloquear produccion, asi que esta migracion tiene
+-- que ser idempotente. Sin el, Flyway fallaria con "enum label already exists" y
+-- dejaria el despliegue a medias. Se versiona igualmente para que el esquema
+-- quede reproducible desde cero (CI levanta la BD con Testcontainers desde V1).
+--
+-- Va en su propia migracion, sin DML que use la etiqueta: Postgres no permite
+-- usar un valor de enum recien anadido dentro de la misma transaccion.
+-- =============================================================================
+
+ALTER TYPE origen_lead_enum ADD VALUE IF NOT EXISTS 'otro';

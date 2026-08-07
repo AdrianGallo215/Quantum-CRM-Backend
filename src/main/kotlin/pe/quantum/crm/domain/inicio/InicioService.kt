@@ -20,8 +20,9 @@ import pe.quantum.crm.shared.enums.EstadoAccion
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
+import java.time.ZoneOffset
 import kotlin.math.roundToInt
 
 /**
@@ -59,7 +60,7 @@ class InicioService(
                     dir = "asc",
                 ).items
         val hoy = LocalDate.now()
-        val ahora = LocalDateTime.now()
+        val ahora = Instant.now()
         return tareas.map { tarea ->
             TareaInicioDto(
                 id = tarea.id,
@@ -67,7 +68,8 @@ class InicioService(
                 tipoAccion = tarea.tipoAccion,
                 fechaEjecucion = tarea.fechaEjecucion,
                 estaVencida = tarea.fechaEjecucion?.isBefore(ahora) ?: false,
-                esHoy = tarea.fechaEjecucion?.toLocalDate() == hoy,
+                // `hoy` es el dia UTC (la JVM corre con TZ=UTC): mismo reloj que el instante.
+                esHoy = tarea.fechaEjecucion?.atOffset(ZoneOffset.UTC)?.toLocalDate() == hoy,
                 empresa = tarea.empresa,
                 idOportunidad = tarea.idOportunidad,
                 contacto = tarea.contacto,

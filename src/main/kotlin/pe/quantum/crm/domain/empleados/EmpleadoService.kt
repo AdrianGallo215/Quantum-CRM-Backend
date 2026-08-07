@@ -30,18 +30,36 @@ interface EmpleadoService {
         rol: RolEmpleado?,
     ): List<EmpleadoDto>
 
-    /** Crea un empleado; nace con `requiere_cambio_contrasena = true` (B1.4). */
-    fun crear(request: CrearEmpleadoRequest): EmpleadoDto
+    /**
+     * Crea un empleado; nace con `requiere_cambio_contrasena = true` (B1.4).
+     *
+     * `idSolicitante` es el id del admin que pide la operacion, tomado del JWT. Las
+     * tres operaciones de administracion de empleados lo exigen porque revalidan
+     * contra la base que ese admin siga vigente: el `@PreAuthorize` del controller
+     * confia en el claim `rol` del token, que sobrevive hasta 1h a una desactivacion
+     * o degradacion. Sin esta revalidacion, una cuenta ya revocada podia deshacer su
+     * propia revocacion (o crearse otro admin) mientras el token siguiera vivo.
+     */
+    fun crear(
+        request: CrearEmpleadoRequest,
+        idSolicitante: Long,
+    ): EmpleadoDto
 
+    /** Nadie puede cambiar su propio rol, ni siquiera un admin vigente. */
     fun actualizar(
         id: Long,
         request: ActualizarEmpleadoRequest,
+        idSolicitante: Long,
     ): EmpleadoDto
 
-    /** Activa/desactiva. No permite dejar el sistema sin admin activo. */
+    /**
+     * Activa/desactiva. No permite dejar el sistema sin admin activo, ni que nadie
+     * cambie su propio estado de activacion.
+     */
     fun cambiarActivo(
         id: Long,
         activo: Boolean,
+        idSolicitante: Long,
     ): EmpleadoDto
 
     /** Verifica que el empleado exista y este activo (para asignaciones). */

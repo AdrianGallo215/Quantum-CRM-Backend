@@ -15,4 +15,11 @@ data class ImportEmpresasResultDto(
     val creadas: Int,
     val conError: Int,
     val detalle: List<ImportEmpresaFilaResultado>,
+    /**
+     * Empresas creadas que aun no tienen carpeta de Google Drive. El import no
+     * llama a Drive por fila (tardaria minutos y el proxy cortaria la respuesta):
+     * las carpetas se crean despues con `POST /mantenimiento/carpetas-drive`, que
+     * es idempotente y reanudable. Default para no romper llamadores existentes.
+     */
+    val carpetasDrivePendientes: Int = 0,
 )

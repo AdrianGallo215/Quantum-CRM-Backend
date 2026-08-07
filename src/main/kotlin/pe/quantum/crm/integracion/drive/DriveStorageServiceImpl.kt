@@ -5,6 +5,7 @@ import com.google.api.client.http.InputStreamContent
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import java.io.IOException
 import java.io.InputStream
@@ -23,6 +24,12 @@ import java.io.InputStream
 @Service
 class DriveStorageServiceImpl(
     private val drive: Drive,
+    /**
+     * Cliente con el timeout de lectura corto (ver [DriveConfig]). Solo para crear
+     * carpetas: es la unica llamada a Drive que puede quedar dentro de una
+     * transaccion, asi que no puede heredar el timeout de las subidas.
+     */
+    @Qualifier("googleDriveCarpetas") private val driveCarpetas: Drive,
     private val propiedades: DriveProperties,
 ) : DriveStorageService {
     private val log = LoggerFactory.getLogger(DriveStorageServiceImpl::class.java)
@@ -42,7 +49,7 @@ class DriveStorageServiceImpl(
             }
         val creada =
             ejecutar("crear la carpeta '$nombre'") {
-                drive
+                driveCarpetas
                     .files()
                     .create(metadatos)
                     .setSupportsAllDrives(true)

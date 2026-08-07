@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.notificaciones.dto.NotificacionDto
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
@@ -58,7 +59,7 @@ class NotificacionServiceImpl(
                 entidadTipo = notificacion.entidadTipo.name,
                 entidadId = notificacion.entidadId,
                 leida = notificacion.leida,
-                createdAt = notificacion.createdAt,
+                createdAt = notificacion.createdAt.comoInstanteUtc(),
                 actor = notificacion.idActor?.let { actores[it] },
             )
         }

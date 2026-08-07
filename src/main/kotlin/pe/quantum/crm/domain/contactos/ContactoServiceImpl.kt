@@ -266,8 +266,10 @@ class ContactoServiceImpl(
                 predicados +=
                     cb.or(
                         cb.like(cb.lower(cb.concat(cb.concat(root.get("nombres"), " "), root.get("apellidos"))), patron),
-                        cb.like(root.get("tlf1"), "%${texto.trim()}%"),
-                        cb.like(root.get("tlf2"), "%${texto.trim()}%"),
+                        // Los atributos JPA se llaman como el campo de la entidad
+                        // (`tlf_1`/`tlf_2`), no como su version sin guion bajo.
+                        cb.like(root.get("tlf_1"), "%${texto.trim()}%"),
+                        cb.like(root.get("tlf_2"), "%${texto.trim()}%"),
                     )
             }
             cb.and(*predicados.toTypedArray())

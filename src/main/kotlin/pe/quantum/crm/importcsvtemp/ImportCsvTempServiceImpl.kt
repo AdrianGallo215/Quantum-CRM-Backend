@@ -13,10 +13,22 @@ import pe.quantum.crm.shared.security.UsuarioActual
 import java.io.IOException
 
 /**
- * Importación "mejor esfuerzo" de empresas desde CSV: cada fila corre en la
- * transacción propia de `EmpresaService.crear`, así que una fila inválida no
- * revierte las demás y un RUC repetido dentro del mismo archivo se detecta solo
- * (la fila anterior ya commiteó antes de procesar la siguiente).
+ * Importación "mejor esfuerzo" de empresas desde CSV: cada fila corre en su propia
+ * transacción, así que una fila inválida no revierte las demás y un RUC repetido
+ * dentro del mismo archivo se detecta solo (la fila anterior ya commiteó antes de
+ * procesar la siguiente).
+ *
+ * NO crea la carpeta de Google Drive de cada empresa. Hacerlo por fila añadía una
+ * llamada de red (~300 ms) a cada una: 800 filas eran ~4 minutos, el proxy cortaba
+ * la respuesta (~100 s en Render) y el cliente nunca sabía qué filas se habían
+ * creado — pero las empresas ya estaban commiteadas, así que reintentar el archivo
+ * devolvía N errores `RUC_DUPLICADO` indistinguibles de duplicados reales del
+ * origen. Las carpetas se rellenan después con `POST /mantenimiento/carpetas-drive`,
+ * que es idempotente y reanudable.
+ *
+ * Este módulo es desechable y NO forma parte de contrato_api.md (ver
+ * [ImportCsvTempController]), así que puede desacoplarse de Drive; el alta unitaria
+ * `POST /empresas` no puede.
  */
 @Service
 class ImportCsvTempServiceImpl(
@@ -56,6 +68,8 @@ class ImportCsvTempServiceImpl(
             creadas = creadas,
             conError = detalle.size - creadas,
             detalle = detalle,
+            // Todas las creadas quedan sin carpeta: hay que pasar el backfill.
+            carpetasDrivePendientes = creadas,
         )
     }
 
@@ -91,7 +105,7 @@ class ImportCsvTempServiceImpl(
 
         return try {
             val request = CrearEmpresaRequest(ruc = ruc, razonSocial = razonSocial, segmentos = listOf(segmento))
-            empresaService.crear(request, usuario)
+            empresaService.crearSinCarpetaDrive(request, usuario)
             ImportEmpresaFilaResultado(fila, ruc, razonSocial, ESTADO_CREADA, null)
         } catch (ex: ApiException) {
             ImportEmpresaFilaResultado(fila, ruc, razonSocial, ESTADO_ERROR, ex.message)
@@ -129,7 +143,15 @@ class ImportCsvTempServiceImpl(
     }
 
     private companion object {
-        const val MAX_FILAS_DATOS = 1000
+        /**
+         * Tope por archivo. Sin Drive cada fila son ~4 idas y vueltas a PostgreSQL;
+         * a ~20 ms de latencia gestionada, 500 filas son ~40 s, holgadamente por
+         * debajo de los ~100 s a los que el proxy corta. Antes eran 1000 filas CON
+         * una llamada a Drive cada una, lo que garantizaba el corte. Para archivos
+         * mayores, partirlos: el import es reanudable de hecho (las filas ya
+         * creadas vuelven como `RUC_DUPLICADO`).
+         */
+        const val MAX_FILAS_DATOS = 500
         const val COLUMNAS_ESPERADAS = 3
         const val ESTADO_CREADA = "creada"
         const val ESTADO_ERROR = "error"

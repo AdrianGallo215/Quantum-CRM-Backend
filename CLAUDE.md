@@ -24,7 +24,8 @@ Kotlin 1.9 · Spring Boot 3.2 · Spring Data JPA · Flyway · Spring Security 6 
 
 ```bash
 ./gradlew bootRun                 # levantar (puerto 8080)
-./gradlew test                    # tests (Testcontainers)
+./gradlew test                    # tests unitarios + ArchUnit (rápidos, sin Docker)
+./gradlew integrationTest         # tests @Tag("integration") con Testcontainers
 ./gradlew ktlintCheck             # formato
 ./gradlew ktlintFormat            # autoformatear
 ./gradlew detekt                  # análisis estático
@@ -41,12 +42,18 @@ Antes de cada commit: `./gradlew test` debe pasar.
 
 ```
 src/main/kotlin/pe/quantum/crm/
-├── config/      # Security, CORS, async
-├── domain/      # un módulo por dominio (empresas, oportunidades, eventos, tareas...)
+├── config/         # Security, CORS, async
+├── domain/         # un módulo por dominio; los 15 que existen hoy:
+│   │                 catalogoeventos, contactos, empleados, empresas, eventos,
+│   │                 financiadoras, inicio, metasventa, modelos, notificaciones,
+│   │                 oportunidades, prospeccion, reportes, solicitudes, tareas
 │   └── <modulo>/  Controller, Service (interfaz), ServiceImpl, Repository, Entity, Mapper, dto/
-├── shared/      # ApiResponse, excepciones, enums
+├── integracion/    # drive/ — Google Drive como almacén de documentos
+├── importcsvtemp/  # import CSV temporal (utilidad de carga, no es el import de Excel del PRD)
+├── mantenimiento/  # backfills operativos (p. ej. carpetas de Drive)
+├── shared/         # ApiResponse, excepciones, enums
 └── CrmApplication.kt
-src/main/resources/db/migration/   # V1__ a V19__
+src/main/resources/db/migration/   # V1__ a V37__ (37 migraciones)
 docs/                              # referencia (ver abajo)
 ```
 
@@ -66,7 +73,7 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 | `TESTING-backend.md` | **Cómo escribir tests. TDD obligatorio** |
 | `SECURITY-backend.md` | Requisitos de seguridad |
 | `DEVOPS-backend.md` | CI/CD, deploy |
-| `migrations/` | Las 19 migraciones Flyway en orden |
+| `migrations/` | Copia de referencia de las migraciones. **Está desactualizada: solo llega a V19 y el repo va por V37.** La fuente de verdad es `src/main/resources/db/migration/` |
 
 ---
 
@@ -77,13 +84,13 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 3. **`estado_cartera` solo se modifica vía `actualizarEstadoCartera()`**, dentro de la transacción del evento que lo dispara. Ningún otro código lo toca.
 4. **Los eventos no cambian el estado automáticamente.** Devuelven una sugerencia; el cambio es una segunda llamada confirmada.
 5. **`motivo_cierre` obligatorio cuando `estado = 'cerrado'`.** Validar en backend + CHECK constraint.
-6. **El paso a `facturado` solo para admin, gerente, analista.** Verificar en el servicio.
+6. **El paso a `facturado` solo para admin, gerencia, analista.** Verificar en el servicio. (El rol se llama `gerencia`, no `gerente`: lo renombró V25.)
 7. **No existe estado `perdido`.** El enum tiene 4 valores. ¿Necesitas otro? Pregunta.
 8. **Inyección por constructor** (`private val`), nunca `@Autowired` en campos.
 9. **Relaciones JPA siempre `LAZY`.** Nunca exponer entidades en controllers — siempre DTOs.
 10. **`@Transactional(readOnly = true)` en lecturas**, `@Transactional` en escrituras cubriendo toda la operación.
 11. **Queries parametrizadas siempre.** Nunca SQL por concatenación.
-12. **Un módulo nunca accede a tablas ni entidades de otro módulo.** Solo vía su interfaz de servicio pública. ArchUnit lo verifica.
+12. **Un módulo nunca accede a tablas ni entidades de otro módulo.** Solo vía su API pública: interfaces de servicio, DTOs, enums de contrato y eventos publicados. Lo verifica ArchUnit sobre el bytecode, en `src/test/kotlin/pe/quantum/crm/arquitectura/ArquitecturaModulosTest.kt` (corre en `./gradlew test`).
 13. **Nunca secretos en código.** Todo desde variables de entorno. `.env` en `.gitignore`.
 14. **IDOR:** recurso ajeno → devolver 404, no 403.
 
@@ -105,7 +112,9 @@ Construir en orden. No avanzar sin validar la fase anterior. Detalle en `PRD-bac
 
 ## Fuera del MVP — no implementar
 
-Módulo financiero (comisiones, cuotas, balloon) · endpoints de `buses_entregados` · import de Excel · pronta facturación expuesta en API (se calcula y guarda, no se devuelve) · "olvidé mi contraseña" · notificaciones. Las tablas pueden existir en el schema; eso no significa que se implementen ahora.
+Módulo financiero (comisiones, cuotas, balloon) · endpoints de `buses_entregados` · import de Excel · pronta facturación expuesta en API (se calcula y guarda, no se devuelve) · "olvidé mi contraseña". Las tablas pueden existir en el schema; eso no significa que se implementen ahora.
+
+**Notificaciones YA NO está fuera de alcance:** el módulo existe y está en producción (`domain/notificaciones/`, 12 archivos, 4 endpoints, 2 jobs `@Scheduled`, migraciones V22/V28/V34). Se trata como cualquier otro módulo; no lo borres ni te niegues a tocarlo.
 
 **Si parece necesario algo no listado en el PRD, pausa y pregunta. No inventes comportamiento.**
 

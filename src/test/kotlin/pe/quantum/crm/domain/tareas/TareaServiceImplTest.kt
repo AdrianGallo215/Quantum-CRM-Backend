@@ -22,6 +22,7 @@ import pe.quantum.crm.shared.enums.EstadoAccion
 import pe.quantum.crm.shared.enums.TipoAccion
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.Instant
 import java.time.LocalDateTime
 
 class TareaServiceImplTest {
@@ -291,7 +292,8 @@ class TareaServiceImplTest {
         assertThat(actividad.titulo).isEqualTo("llamada")
         assertThat(actividad.descripcion).isEqualTo("Llamar para seguimiento")
         assertThat(actividad.estado).isEqualTo("pendiente")
-        assertThat(actividad.fecha).isEqualTo(LocalDateTime.of(2026, 7, 20, 10, 0))
+        // La columna `fecha_ejecucion` es TIMESTAMP en UTC: el DTO la expone como instante.
+        assertThat(actividad.fecha).isEqualTo(Instant.parse("2026-07-20T10:00:00Z"))
     }
 
     @Test

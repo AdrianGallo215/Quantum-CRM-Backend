@@ -7,7 +7,7 @@ import pe.quantum.crm.domain.empresas.Empresa
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.OrigenLead
 import pe.quantum.crm.shared.enums.Segmento
-import java.time.LocalDateTime
+import java.time.Instant
 
 /** Fila del listado de empresas (contrato_api.md §8). */
 data class EmpresaListaDto(
@@ -65,7 +65,7 @@ data class EmpresaDetalleDto(
     val segmentos: List<String>,
     val contactos: List<ContactoDeEmpresaDto>?,
     val enCarteraMaestra: Boolean = false,
-    val createdAt: LocalDateTime,
+    val createdAt: Instant,
     val createdBy: Long,
 )
 
@@ -95,9 +95,18 @@ data class CrearEmpresaRequest(
     val idVendedor: Long? = null,
 )
 
-/** Body de `PUT /empresas/:id`. No toca `estado_cartera` ni `id_vendedor`. */
+/**
+ * Body de `PUT /empresas/:id`. No toca `estado_cartera` ni `id_vendedor`.
+ *
+ * TODOS los campos son opcionales (contrato §8: "mismos campos que POST, todos
+ * opcionales"): ausente significa "no lo toques", y el servicio actualiza campo a
+ * campo con `?.let`. `ruc` no es la excepcion — declararlo no-nulo y sin default
+ * hacia que jackson-module-kotlin lanzase `MissingKotlinParameterException` ante
+ * cualquier edicion parcial, respondiendo 400 salvo que el cliente reenviara el
+ * RUC que no queria cambiar.
+ */
 data class ActualizarEmpresaRequest(
-    val ruc: String,
+    val ruc: String? = null,
     val razonSocial: String? = null,
     val actividadEcon: String? = null,
     val ciiu: String? = null,

@@ -8,6 +8,7 @@ import pe.quantum.crm.domain.prospeccion.dto.ProspeccionItemDto
 import pe.quantum.crm.domain.prospeccion.dto.ResumenProspeccionDto
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -62,7 +63,7 @@ class ProspeccionServiceImpl(
                 val hitos =
                     hitosCatalogo.map { hito ->
                         val fecha = hitosOcurridos[empresa.id to hito.id]
-                        HitoDto(nombre = hito.nombre, completado = fecha != null, fecha = fecha)
+                        HitoDto(nombre = hito.nombre, completado = fecha != null, fecha = fecha?.comoInstanteUtc())
                     }
                 val completados = hitos.count { it.completado }
                 val ultima = ultimaActividad[empresa.id]
@@ -80,7 +81,7 @@ class ProspeccionServiceImpl(
                     checkpointsTotal = hitosCatalogo.size,
                     hitos = hitos,
                     diasSinActividad = ChronoUnit.DAYS.between(referencia, ahora).toInt().coerceAtLeast(0),
-                    ultimaActividadAt = ultima,
+                    ultimaActividadAt = ultima?.comoInstanteUtc(),
                     siguienteTarea = siguienteTarea[empresa.id],
                     listaParaConvertir = hitosCatalogo.isNotEmpty() && completados == hitosCatalogo.size,
                 )

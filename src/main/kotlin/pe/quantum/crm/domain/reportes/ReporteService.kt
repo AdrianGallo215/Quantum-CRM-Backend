@@ -69,6 +69,17 @@ class ReporteService(
         val modelo: String?,
     )
 
+    /**
+     * Ventas del periodo. La fecha de facturacion es `oportunidades.facturado_en`
+     * (V33: "Fuente del computo"), la misma columna que usa `InicioDao` para el
+     * panel del vendedor — una sola fuente de verdad para "cuando se facturo".
+     *
+     * Antes se derivaba del log de estados con un LATERAL cuyo
+     * `ON f.fecha_facturacion IS NOT NULL` lo volvia un INNER JOIN: toda
+     * oportunidad `facturado` sin fila en el log desaparecia del reporte en
+     * silencio, y gerencia veia una cifra distinta de la del vendedor. Ademas
+     * `facturado_en` esta indexada (idx_oportunidades_facturado_en).
+     */
     @Transactional(readOnly = true)
     fun ventas(
         periodo: PeriodoReporte,
@@ -79,19 +90,14 @@ class ReporteService(
                 append(
                     """
                     SELECT o.id, COALESCE(o.monto_total, 0) AS monto, COALESCE(o.cantidad, 0) AS cantidad, o.dcto,
-                           to_char(f.fecha_facturacion, 'YYYY-MM') AS mes,
+                           to_char(o.facturado_en, 'YYYY-MM') AS mes,
                            o.id_vendedor, CONCAT(e.nombres, ' ', e.apellidos) AS vendedor,
                            m.codigo AS modelo
                     FROM oportunidades o
-                    JOIN LATERAL (
-                        SELECT MAX(l.changed_at) AS fecha_facturacion
-                        FROM oportunidad_estados_log l
-                        WHERE l.id_oportunidad = o.id AND l.estado_nuevo = 'facturado'
-                    ) f ON f.fecha_facturacion IS NOT NULL
                     LEFT JOIN empleados e ON e.id = o.id_vendedor
                     LEFT JOIN modelos m ON m.id = o.id_modelo
                     WHERE o.estado = 'facturado'
-                      AND f.fecha_facturacion >= :desde AND f.fecha_facturacion < :hasta
+                      AND o.facturado_en >= :desde AND o.facturado_en < :hasta
                     """.trimIndent(),
                 )
                 if (idVendedor != null) {
@@ -271,18 +277,16 @@ class ReporteService(
                 """.trimIndent(),
                 MapSqlParameterSource(),
             )
+        // Cerradas del periodo: misma fuente de "cuando se facturo" que `ventas`
+        // e `InicioDao` — `oportunidades.facturado_en` (V33). `extra` = dias entre
+        // la creacion y la facturacion, para velocidadPromedioDias.
         val cerradas =
             agrupadoPorVendedor(
                 """
                 SELECT o.id_vendedor AS clave, COUNT(*) AS n, COALESCE(SUM(o.monto_total), 0) AS monto,
-                       AVG(EXTRACT(EPOCH FROM (f.fecha_facturacion - o.created_at)) / 86400.0) AS extra
+                       AVG(EXTRACT(EPOCH FROM (o.facturado_en - o.created_at)) / 86400.0) AS extra
                 FROM oportunidades o
-                JOIN LATERAL (
-                    SELECT MAX(l.changed_at) AS fecha_facturacion
-                    FROM oportunidad_estados_log l
-                    WHERE l.id_oportunidad = o.id AND l.estado_nuevo = 'facturado'
-                ) f ON f.fecha_facturacion IS NOT NULL
-                WHERE o.estado = 'facturado' AND f.fecha_facturacion >= :desde AND f.fecha_facturacion < :hasta
+                WHERE o.estado = 'facturado' AND o.facturado_en >= :desde AND o.facturado_en < :hasta
                 GROUP BY o.id_vendedor
                 """.trimIndent(),
                 parametros(periodo),
@@ -379,6 +383,14 @@ class ReporteService(
         val diasConversion: Double?,
     )
 
+    /**
+     * Embudo de prospeccion (reglas_negocio.md §10.3). El criterio de ENTRADA por
+     * hitos es exactamente el mismo que el de AVANCE: hito del catalogo
+     * `ocurrido`, sin `id_oportunidad`. Sin esos dos filtros una empresa con un
+     * hito solo agendado (`pendiente`) o `descartado` entraba en `ingresadas`
+     * pero no podia sumar nunca en `hito_N_completado` ni en `convertidas`, con
+     * lo que la tasa de conversion salia siempre por debajo de la real.
+     */
     @Transactional(readOnly = true)
     fun prospeccion(
         periodo: PeriodoReporte,
@@ -398,7 +410,8 @@ class ReporteService(
                       AND (emp.estado_cartera IN ('prospeccion', 'oportunidad_activa', 'cliente')
                            OR EXISTS (SELECT 1 FROM eventos e2
                                       JOIN catalogo_eventos ce ON ce.id = e2.id_catalogo_evento
-                                      WHERE e2.id_empresa = emp.id AND ce.es_hito_prospeccion = true))
+                                      WHERE e2.id_empresa = emp.id AND ce.es_hito_prospeccion = true
+                                        AND e2.id_oportunidad IS NULL AND e2.estado = 'ocurrido'))
                     """.trimIndent(),
                 )
                 if (idVendedor != null) {
@@ -522,27 +535,36 @@ class ReporteService(
             .addValue("desde", periodo.desde.atStartOfDay())
             .addValue("hasta", periodo.hastaExclusivo.atStartOfDay())
 
-    private fun <T> List<T>.sumMonto(selector: (T) -> BigDecimal): BigDecimal =
-        fold(BigDecimal.ZERO) { acc, item -> acc + selector(item) }.setScale(2, RoundingMode.HALF_UP)
-
-    private fun promedio(valores: List<BigDecimal>): BigDecimal? =
-        valores
-            .takeIf { it.isNotEmpty() }
-            ?.fold(BigDecimal.ZERO) { acc, valor -> acc + valor }
-            ?.divide(BigDecimal(valores.size), 2, RoundingMode.HALF_UP)
-
-    private fun porcentaje(
-        parte: Int,
-        total: Int,
-    ): String =
-        if (total == 0) {
-            "0.00"
-        } else {
-            BigDecimal(parte).multiply(BigDecimal(100)).divide(BigDecimal(total), 2, RoundingMode.HALF_UP).toPlainString()
-        }
-
     private companion object {
         const val DIAS_SIN_ACTIVIDAD = 7
         const val MUESTRA_MINIMA = 10
     }
 }
+
+// ── Aritmetica de dinero ───────────────────────────────────────
+// Funciones puras, `internal` y de primer nivel a proposito: son la unica parte
+// de este archivo verificable sin Postgres y por eso tienen tests reales
+// (ReporteAritmeticaTest). Siguen en este archivo y en este paquete, asi que las
+// llamadas dentro de ReporteService no cambian.
+
+/** Suma montos y redondea UNA sola vez, sobre el total (escala 2, HALF_UP). */
+internal fun <T> List<T>.sumMonto(selector: (T) -> BigDecimal): BigDecimal =
+    fold(BigDecimal.ZERO) { acc, item -> acc + selector(item) }.setScale(2, RoundingMode.HALF_UP)
+
+/** Promedio con escala 2 (HALF_UP). null si no hay valores: "sin datos" no es "cero". */
+internal fun promedio(valores: List<BigDecimal>): BigDecimal? =
+    valores
+        .takeIf { it.isNotEmpty() }
+        ?.fold(BigDecimal.ZERO) { acc, valor -> acc + valor }
+        ?.divide(BigDecimal(valores.size), 2, RoundingMode.HALF_UP)
+
+/** Porcentaje con escala 2 (HALF_UP). Total 0 -> "0.00", sin dividir por cero. */
+internal fun porcentaje(
+    parte: Int,
+    total: Int,
+): String =
+    if (total == 0) {
+        "0.00"
+    } else {
+        BigDecimal(parte).multiply(BigDecimal(100)).divide(BigDecimal(total), 2, RoundingMode.HALF_UP).toPlainString()
+    }
