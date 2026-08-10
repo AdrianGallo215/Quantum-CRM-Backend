@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.empresas
 
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -76,10 +77,14 @@ class EmpresaController(
     ): ApiResponse<EmpresaDetalleDto> = ApiResponse.ok(empresaService.detalle(id, usuarioProvider.actual()))
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
     fun crear(
         @Valid @RequestBody request: CrearEmpresaRequest,
-    ): ApiResponse<EmpresaDetalleDto> = ApiResponse.ok(empresaService.crear(request, usuarioProvider.actual()))
+    ): ResponseEntity<ApiResponse<EmpresaDetalleDto>> {
+        val resultado = empresaService.crear(request, usuarioProvider.actual())
+        // 201 solo si de verdad se creo; si el RUC ya era suyo, 200 (reglas §2.1).
+        val status = if (resultado.creada) HttpStatus.CREATED else HttpStatus.OK
+        return ResponseEntity.status(status).body(ApiResponse.ok(resultado.empresa))
+    }
 
     @PutMapping("/{id}")
     fun actualizar(

@@ -144,11 +144,11 @@ configurations.matching { it.name == "detekt" }.all {
 // Cobertura. Hay DOS cifras y no deben confundirse:
 //   · OBJETIVO (TESTING-backend.md §8): 75% global, 90% en el dominio. Es la meta,
 //     hoy NO se cumple y el build no la exige.
-//   · SUELO VIGENTE (lo que este build falla si se baja): 63% global, 58% dominio.
+//   · SUELO VIGENTE (lo que este build falla si se baja): 71% global, 67% dominio.
 //     Es un trinquete fijado en la cobertura real medida, no una meta rebajada.
-// La brecha 63→75 / 58→90 es deuda de tests conocida; ver el comentario de cada
+// La brecha 71→75 / 67→90 es deuda de tests conocida; ver el comentario de cada
 // regla `verify` mas abajo. Cualquier texto que anuncie 75/90 como "lo que el CI
-// exige" es falso mientras estos minBound digan 63/58.
+// exige" es falso mientras estos minBound digan 71/67.
 // Se excluye de la medicion el "glue" sin logica de negocio: el bootstrap, las
 // entidades JPA, los repositorios, las clases de @ConfigurationProperties y los
 // enums de datos. La cobertura mide logica, no mapeos/estructuras de datos.
@@ -173,13 +173,13 @@ kover {
                 annotatedBy("jakarta.persistence.Entity")
             }
         }
-        // Mismo trinquete que el de dominio, por la misma causa. 63 es el suelo
-        // medido en local sin los tests de integracion, asi que la cifra real de
-        // CI es algo mayor; se deja con margen a proposito para no encadenar
-        // corridas rojas ajustando decimales. Objetivo: volver a 75.
+        // Mismo trinquete que el de dominio, por la misma causa. 71 es el suelo
+        // medido en local sin los tests de integracion (72.5% real, -1 de margen),
+        // asi que la cifra real de CI es algo mayor; se deja con margen a proposito
+        // para no encadenar corridas rojas ajustando decimales. Objetivo: volver a 75.
         verify {
-            rule("Cobertura global minima 63 por ciento") {
-                minBound(63)
+            rule("Cobertura global minima 71 por ciento") {
+                minBound(71)
             }
         }
         variant("domain") {
@@ -196,13 +196,15 @@ kover {
             // TRINQUETE, NO OBJETIVO. El umbral era 90% y llevaba incumplido desde
             // que reportes, prospeccion, inicio, modelos, financiadoras y catalogo
             // de eventos entraron sin un solo test: la ultima corrida verde de CI
-            // es anterior a todos ellos. 58 es la cobertura real medida, no una
-            // meta: fijarla aqui impide que siga bajando y deja la deuda a la
-            // vista. Subir este numero conforme se escriban los tests que faltan;
-            // el objetivo sigue siendo 90 (TESTING-backend.md §8).
+            // es anterior a todos ellos. La ola 1 de subagentes escribio tests para
+            // esos modulos y subio la cobertura real medida a 68.3%; 67 es esa
+            // cifra con 1 punto de margen, no una meta: fijarla aqui impide que
+            // siga bajando y deja la deuda a la vista. Subir este numero conforme
+            // se escriban los tests que faltan; el objetivo sigue siendo 90
+            // (TESTING-backend.md §8).
             verify {
-                rule("Cobertura de dominio minima 58 por ciento") {
-                    minBound(58)
+                rule("Cobertura de dominio minima 67 por ciento") {
+                    minBound(67)
                 }
             }
         }

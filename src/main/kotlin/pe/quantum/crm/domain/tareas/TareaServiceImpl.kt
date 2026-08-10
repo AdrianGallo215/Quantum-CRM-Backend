@@ -10,6 +10,7 @@ import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.OrigenRecordatorio
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.tareas.dto.ActividadContactoDto
@@ -176,6 +177,37 @@ class TareaServiceImpl(
         return toDtos(listOf(tareaRepository.save(tarea))).first()
     }
 
+    /**
+     * Sustituye el set de colaboradores de la tarea y devuelve solo los que se
+     * agregaron (los unicos a los que hay que notificar). El dueño nunca es
+     * colaborador de su propia tarea, asi que se excluye del set.
+     */
+    private fun reemplazarColaboradores(
+        id: Long,
+        idsColaboradores: List<Long>,
+        idAsignado: Long?,
+        usuario: UsuarioActual,
+    ): Set<Long> {
+        val nuevoSet = idsColaboradores.toSet() - setOfNotNull(idAsignado)
+        validarPermisoAsignacion(nuevoSet, usuario)
+        nuevoSet.forEach {
+            if (!empleadoService.existeActivo(it)) {
+                throw NoEncontradoException("Un colaborador indicado no existe o está inactivo")
+            }
+        }
+        val setActual = tareaResponsableRepository.findByIdIdTarea(id).map { it.id.idEmpleado }.toSet()
+        tareaResponsableRepository.deleteByIdIdTarea(id)
+        if (nuevoSet.isNotEmpty()) {
+            val ahora = LocalDateTime.now()
+            tareaResponsableRepository.saveAll(
+                nuevoSet.map {
+                    TareaResponsable(id = TareaResponsableId(idTarea = id, idEmpleado = it), createdAt = ahora, createdBy = usuario.id)
+                },
+            )
+        }
+        return nuevoSet - setActual
+    }
+
     @Transactional
     override fun actualizar(
         id: Long,
@@ -188,7 +220,16 @@ class TareaServiceImpl(
         }
         request.tipoAccion?.let { tarea.tipoAccion = it }
         request.descripcion?.let { tarea.descripcion = it }
-        request.fechaEjecucion?.let { tarea.fechaEjecucion = LocalDateTime.ofInstant(it, ZoneOffset.UTC) }
+        // Solo cuenta como reprogramacion si la fecha se mueve de verdad: reiniciar
+        // el dedup en cada edicion reenviaria recordatorios ya entregados.
+        var reprogramada = false
+        request.fechaEjecucion?.let {
+            val nueva = LocalDateTime.ofInstant(it, ZoneOffset.UTC)
+            if (nueva != tarea.fechaEjecucion) {
+                tarea.fechaEjecucion = nueva
+                reprogramada = true
+            }
+        }
         request.idContacto?.let {
             if (!contactoService.existe(it)) {
                 throw NoEncontradoException("El contacto no existe")
@@ -204,29 +245,15 @@ class TareaServiceImpl(
             tarea.idAsignado = request.idAsignado
             nuevoDueno = true
         }
-        val colaboradoresAgregados = mutableSetOf<Long>()
-        if (request.idsColaboradores != null) {
-            val nuevoSet = request.idsColaboradores.toSet() - setOfNotNull(tarea.idAsignado)
-            validarPermisoAsignacion(nuevoSet, usuario)
-            nuevoSet.forEach {
-                if (!empleadoService.existeActivo(it)) {
-                    throw NoEncontradoException("Un colaborador indicado no existe o está inactivo")
-                }
-            }
-            val setActual = tareaResponsableRepository.findByIdIdTarea(id).map { it.id.idEmpleado }.toSet()
-            colaboradoresAgregados += nuevoSet - setActual
-            tareaResponsableRepository.deleteByIdIdTarea(id)
-            if (nuevoSet.isNotEmpty()) {
-                val ahora = LocalDateTime.now()
-                tareaResponsableRepository.saveAll(
-                    nuevoSet.map {
-                        TareaResponsable(id = TareaResponsableId(idTarea = id, idEmpleado = it), createdAt = ahora, createdBy = usuario.id)
-                    },
-                )
-            }
-        }
+        val colaboradoresAgregados =
+            request.idsColaboradores?.let { reemplazarColaboradores(id, it, tarea.idAsignado, usuario) }.orEmpty()
         tarea.updatedAt = LocalDateTime.now()
         tarea.updatedBy = usuario.id
+        // Dentro de la misma transaccion que la reprogramacion: si esta se revierte,
+        // el dedup queda intacto.
+        if (reprogramada) {
+            notificacionService.reiniciarRecordatorios(OrigenRecordatorio.tarea, id)
+        }
         val actualizada = tareaRepository.save(tarea)
         notificarCambiosAsignacion(actualizada, nuevoDueno, colaboradoresAgregados, usuario)
         return toDtos(listOf(actualizada)).first()

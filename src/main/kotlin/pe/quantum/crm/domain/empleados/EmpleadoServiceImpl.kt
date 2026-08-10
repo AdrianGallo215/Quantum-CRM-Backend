@@ -13,6 +13,7 @@ import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
+import pe.quantum.crm.shared.exception.ValidacionException
 
 @Service
 @Suppress("TooManyFunctions") // Igual que su interfaz: autenticacion, CRUD y resumenes.
@@ -156,6 +157,25 @@ class EmpleadoServiceImpl(
         empleadoRepository
             .findByActivoTrueAndRolIn(listOf(RolEmpleado.admin, RolEmpleado.gerencia, RolEmpleado.jdv))
             .map { requireNotNull(it.id) }
+
+    @Transactional
+    override fun cambiarContrasena(
+        idEmpleado: Long,
+        actual: String,
+        nueva: String,
+    ) {
+        val empleado = porId(idEmpleado)
+        val hash = empleado.passwordHash
+        if (hash == null || !passwordEncoder.matches(actual, hash)) {
+            throw CredencialesInvalidasException()
+        }
+        if (passwordEncoder.matches(nueva, hash)) {
+            throw ValidacionException("La contraseña nueva debe ser distinta de la actual", field = "password_nueva")
+        }
+        empleado.passwordHash = passwordEncoder.encode(nueva)
+        empleado.requiereCambioContrasena = false
+        empleadoRepository.save(empleado)
+    }
 
     /**
      * Revalida contra la base que quien pide la operacion siga siendo un admin

@@ -16,10 +16,12 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
+import pe.quantum.crm.domain.empresas.dto.AltaEmpresaResultado
 import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaDetalleDto
 import pe.quantum.crm.domain.empresas.dto.EmpresaListaDto
@@ -229,6 +231,36 @@ class EmpresaControllerWebMvcTest {
         }.andExpect {
             status { isOk() }
             jsonPath("$.data.created_at") { value("2026-05-01T10:00:00Z") }
+        }
+    }
+
+    // ── B1: 200 vs 201 segun si el RUC ya era del vendedor (reglas §2.1) ─────
+
+    @Test
+    fun `POST empresas con RUC nuevo responde 201`() {
+        every { empresaService.crear(any(), any()) } returns AltaEmpresaResultado(detalle(), creada = true)
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
+
+        mockMvc.post("/api/v1/empresas") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"ruc":"20260426827","razon_social":"Transp. Negociaciones Sta. Anita S.A."}"""
+        }.andExpect {
+            status { isCreated() }
+        }
+    }
+
+    @Test
+    fun `POST empresas con RUC ya propio responde 200`() {
+        every { empresaService.crear(any(), any()) } returns AltaEmpresaResultado(detalle(), creada = false)
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
+
+        mockMvc.post("/api/v1/empresas") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"ruc":"20260426827","razon_social":"Transp. Negociaciones Sta. Anita S.A."}"""
+        }.andExpect {
+            status { isOk() }
         }
     }
 

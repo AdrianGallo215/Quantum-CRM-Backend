@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.empresas
 
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
+import pe.quantum.crm.domain.empresas.dto.AltaEmpresaResultado
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.empresas.dto.CarteraMaestraDto
 import pe.quantum.crm.domain.empresas.dto.CrearEmpresaRequest
@@ -42,11 +43,15 @@ interface EmpresaService {
     /**
      * Alta de empresa CON carpeta de Drive (contrato_api.md §8): si Drive no
      * responde, la empresa no se crea y el endpoint devuelve 502.
+     *
+     * Alta de empresa (reglas §2.1). Si el RUC ya existe y es del mismo vendedor,
+     * devuelve la existente con `creada = false` en vez de fallar; si es de otro
+     * vendedor, lanza `RucDuplicadoException`.
      */
     fun crear(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
-    ): EmpresaDetalleDto
+    ): AltaEmpresaResultado
 
     /**
      * Alta SIN carpeta de Drive, para altas masivas (import de CSV): una llamada de

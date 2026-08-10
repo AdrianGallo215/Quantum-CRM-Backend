@@ -193,3 +193,13 @@ fun Empresa.toVinculo(): EmpresaVinculo =
         estadoCartera = estadoCartera.name,
         driveFolderId = driveFolderId,
     )
+
+/**
+ * Resultado del alta de una empresa. `creada = false` significa que el RUC ya
+ * existía en la cartera del MISMO vendedor y se devuelve la empresa existente
+ * (reglas_negocio.md §2.1), lo que el controller traduce a 200 en vez de 201.
+ */
+data class AltaEmpresaResultado(
+    val empresa: EmpresaDetalleDto,
+    val creada: Boolean,
+)

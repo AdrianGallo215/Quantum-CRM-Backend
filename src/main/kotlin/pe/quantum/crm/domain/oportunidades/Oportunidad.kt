@@ -35,8 +35,10 @@ class Oportunidad(
     var idVendedor: Long,
     @Column(name = "id_financiadora", nullable = false)
     var idFinanciadora: Long,
-    @Column(name = "id_modelo")
-    var idModelo: Long? = null,
+    // NOT NULL en la tabla desde su creacion; la entidad lo declaraba opcional y
+    // varios puntos de lectura lo trataban como tal. La columna manda.
+    @Column(name = "id_modelo", nullable = false)
+    var idModelo: Long,
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "estado_op_enum")
     var estado: EstadoOportunidad = EstadoOportunidad.evaluacion_calidda,

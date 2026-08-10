@@ -47,12 +47,20 @@ class ProspeccionDao(
         }
     }
 
-    /** Hitos ocurridos por empresa: `(id_empresa, id_catalogo) → fecha`. */
-    fun hitosOcurridos(idsEmpresa: Collection<Long>): Map<Pair<Long, Long>, LocalDateTime> {
+    /**
+     * Hitos ocurridos por empresa: `(id_empresa, id_catalogo) → fecha`.
+     *
+     * La clave presente significa "el hito ocurrio"; el valor puede ser null.
+     * El CHECK `chk_evento_fecha_ocurrencia` de V14 solo exige que
+     * `fecha_ocurrencia` sea nula si el evento NO ocurrio, no al reves: un
+     * evento `ocurrido` sin fecha es un dato valido, y entonces
+     * `MAX(fecha_ocurrencia)` vuelve NULL.
+     */
+    fun hitosOcurridos(idsEmpresa: Collection<Long>): Map<Pair<Long, Long>, LocalDateTime?> {
         if (idsEmpresa.isEmpty()) {
             return emptyMap()
         }
-        val resultado = mutableMapOf<Pair<Long, Long>, LocalDateTime>()
+        val resultado = mutableMapOf<Pair<Long, Long>, LocalDateTime?>()
         jdbc.query(
             """
             SELECT e.id_empresa, e.id_catalogo_evento, MAX(e.fecha_ocurrencia) AS fecha
@@ -67,7 +75,7 @@ class ProspeccionDao(
             MapSqlParameterSource("ids", idsEmpresa),
         ) { rs ->
             resultado[rs.getLong("id_empresa") to rs.getLong("id_catalogo_evento")] =
-                rs.getTimestamp("fecha").toLocalDateTime()
+                rs.getTimestamp("fecha")?.toLocalDateTime()
         }
         return resultado
     }

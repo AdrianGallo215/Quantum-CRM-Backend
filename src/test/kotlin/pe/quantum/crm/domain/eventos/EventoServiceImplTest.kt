@@ -14,10 +14,12 @@ import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
+import pe.quantum.crm.domain.eventos.dto.ActualizarEventoRequest
 import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.OrigenRecordatorio
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
@@ -27,6 +29,7 @@ import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.LocalDate
 
 /**
  * Unit tests de EventoServiceImpl sin Spring ni base de datos: las 4
@@ -231,6 +234,53 @@ class EventoServiceImplTest {
                 entidadId = 10L,
             )
         }
+    }
+
+    /** Evento pendiente ya programado, base de los tests de reprogramacion. */
+    private fun eventoProgramado() =
+        Evento(
+            id = 1,
+            idOportunidad = 50,
+            idEmpresa = null,
+            idCatalogoEvento = 5,
+            descripcion = "Esperando reporte",
+            fechaEstimada = LocalDate.of(2026, 7, 10),
+            createdBy = 1,
+            updatedBy = 1,
+        )
+
+    @Test
+    fun `reprogramar un evento reinicia el dedup de sus recordatorios`() {
+        // Mismo motivo que en tareas: la clave de dedup no lleva la fecha.
+        every { eventoRepository.findById(1) } returns java.util.Optional.of(eventoProgramado())
+        every { eventoRepository.save(any()) } answers { firstArg() }
+        every { catalogoEventoService.todosPorId() } returns mapOf(5L to catalogo())
+
+        service.actualizar(1, ActualizarEventoRequest(fechaEstimada = LocalDate.of(2026, 7, 20)), usuario)
+
+        verify { notificacionService.reiniciarRecordatorios(OrigenRecordatorio.evento, 1L) }
+    }
+
+    @Test
+    fun `editar un evento sin mover la fecha estimada no reinicia sus recordatorios`() {
+        every { eventoRepository.findById(1) } returns java.util.Optional.of(eventoProgramado())
+        every { eventoRepository.save(any()) } answers { firstArg() }
+        every { catalogoEventoService.todosPorId() } returns mapOf(5L to catalogo())
+
+        service.actualizar(1, ActualizarEventoRequest(descripcion = "Sigue pendiente"), usuario)
+
+        verify(exactly = 0) { notificacionService.reiniciarRecordatorios(any(), any()) }
+    }
+
+    @Test
+    fun `reenviar la misma fecha estimada no reinicia sus recordatorios`() {
+        every { eventoRepository.findById(1) } returns java.util.Optional.of(eventoProgramado())
+        every { eventoRepository.save(any()) } answers { firstArg() }
+        every { catalogoEventoService.todosPorId() } returns mapOf(5L to catalogo())
+
+        service.actualizar(1, ActualizarEventoRequest(fechaEstimada = LocalDate.of(2026, 7, 10)), usuario)
+
+        verify(exactly = 0) { notificacionService.reiniciarRecordatorios(any(), any()) }
     }
 
     @Test

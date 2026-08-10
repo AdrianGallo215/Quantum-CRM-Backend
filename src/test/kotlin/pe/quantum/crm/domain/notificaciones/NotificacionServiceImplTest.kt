@@ -14,8 +14,9 @@ import java.time.LocalDateTime
 
 class NotificacionServiceImplTest {
     private val notificacionRepository = mockk<NotificacionRepository>()
+    private val recordatorioEnviadoRepository = mockk<RecordatorioEnviadoRepository>(relaxed = true)
     private val empleadoService = mockk<EmpleadoService>()
-    private val service = NotificacionServiceImpl(notificacionRepository, empleadoService)
+    private val service = NotificacionServiceImpl(notificacionRepository, recordatorioEnviadoRepository, empleadoService)
 
     private val usuario = UsuarioActual(id = 1, rol = "vendedor")
 

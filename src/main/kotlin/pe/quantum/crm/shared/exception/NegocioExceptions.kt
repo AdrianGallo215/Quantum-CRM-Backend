@@ -40,11 +40,17 @@ class MontoNoEditableException :
         field = "monto_total",
     )
 
-/** El RUC ya existe. No expone a que vendedor pertenece (reglas §2.1). */
+/**
+ * El RUC ya existe y pertenece a otro vendedor. No expone a quien (reglas §2.1).
+ * El mensaje evita culpar al usuario: registrar un RUC que otro ya trabaja no es
+ * un error suyo, es informacion que no tenia.
+ */
 class RucDuplicadoException :
     ApiException(
         code = "RUC_DUPLICADO",
-        message = "Esta empresa ya está registrada en el sistema",
+        message =
+            "Esta empresa ya está registrada en el sistema y la gestiona otro vendedor. " +
+                "Coordina con tu jefe de ventas si necesitas acceder a ella.",
         status = HttpStatus.CONFLICT,
         field = "ruc",
     )

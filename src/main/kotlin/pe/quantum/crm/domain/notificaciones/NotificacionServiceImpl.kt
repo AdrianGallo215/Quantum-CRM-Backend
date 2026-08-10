@@ -12,8 +12,21 @@ import java.time.LocalDateTime
 @Service
 class NotificacionServiceImpl(
     private val notificacionRepository: NotificacionRepository,
+    private val recordatorioEnviadoRepository: RecordatorioEnviadoRepository,
     private val empleadoService: EmpleadoService,
 ) : NotificacionService {
+    /**
+     * Corre dentro de la transaccion de quien reprograma: si la reprogramacion se
+     * revierte, el dedup se queda como estaba y no se reenvia nada de mas.
+     */
+    @Transactional
+    override fun reiniciarRecordatorios(
+        origen: OrigenRecordatorio,
+        idOrigen: Long,
+    ) {
+        recordatorioEnviadoRepository.deleteByOrigenAndIdOrigen(origen, idOrigen)
+    }
+
     @Transactional
     override fun notificar(
         destinatarios: Set<Long>,

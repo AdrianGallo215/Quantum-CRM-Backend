@@ -62,8 +62,16 @@ class ProspeccionServiceImpl(
             .map { empresa ->
                 val hitos =
                     hitosCatalogo.map { hito ->
-                        val fecha = hitosOcurridos[empresa.id to hito.id]
-                        HitoDto(nombre = hito.nombre, completado = fecha != null, fecha = fecha?.comoInstanteUtc())
+                        val clave = empresa.id to hito.id
+                        // El avance lo marca la existencia del evento ocurrido, no su
+                        // fecha: `fecha_ocurrencia` puede ser nula en un evento ya
+                        // ocurrido (CHECK de V14) y aun asi el hito esta cumplido.
+                        val fecha = hitosOcurridos[clave]
+                        HitoDto(
+                            nombre = hito.nombre,
+                            completado = hitosOcurridos.containsKey(clave),
+                            fecha = fecha?.comoInstanteUtc(),
+                        )
                     }
                 val completados = hitos.count { it.completado }
                 val ultima = ultimaActividad[empresa.id]

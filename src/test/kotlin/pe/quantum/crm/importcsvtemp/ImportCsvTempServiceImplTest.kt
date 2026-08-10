@@ -144,7 +144,10 @@ class ImportCsvTempServiceImplTest {
         val resultado = service.importarEmpresas(csv("20999999999;Beta SRL;urbano"), usuario)
 
         assertThat(resultado.detalle.single().estado).isEqualTo("error")
-        assertThat(resultado.detalle.single().motivo).isEqualTo("Esta empresa ya está registrada en el sistema")
+        assertThat(resultado.detalle.single().motivo).isEqualTo(
+            "Esta empresa ya está registrada en el sistema y la gestiona otro vendedor. " +
+                "Coordina con tu jefe de ventas si necesitas acceder a ella.",
+        )
     }
 
     @Test
@@ -167,7 +170,10 @@ class ImportCsvTempServiceImplTest {
 
         assertThat(resultado.detalle[0].estado).isEqualTo("creada")
         assertThat(resultado.detalle[1].estado).isEqualTo("error")
-        assertThat(resultado.detalle[1].motivo).isEqualTo("Esta empresa ya está registrada en el sistema")
+        assertThat(resultado.detalle[1].motivo).isEqualTo(
+            "Esta empresa ya está registrada en el sistema y la gestiona otro vendedor. " +
+                "Coordina con tu jefe de ventas si necesitas acceder a ella.",
+        )
     }
 
     @Test

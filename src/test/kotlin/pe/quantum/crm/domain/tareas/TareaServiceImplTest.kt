@@ -14,6 +14,7 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.OrigenRecordatorio
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.tareas.dto.ActualizarTareaRequest
@@ -170,6 +171,64 @@ class TareaServiceImplTest {
             createdAt = LocalDateTime.of(2026, 7, 1, 9, 0), createdBy = 1,
             updatedAt = LocalDateTime.of(2026, 7, 1, 9, 0), updatedBy = 1,
         )
+
+    /** Tarea pendiente ya programada, base de los tests de reprogramacion. */
+    private val tareaProgramada =
+        Tarea(
+            id = 1, idEmpresa = 10, idOportunidad = null, idContacto = null, idAsignado = 3,
+            tipoAccion = TipoAccion.llamada, estadoAccion = EstadoAccion.pendiente,
+            descripcion = "Llamar",
+            fechaEjecucion = LocalDateTime.of(2026, 7, 10, 15, 0),
+            createdAt = LocalDateTime.of(2026, 7, 1, 9, 0), createdBy = 1,
+            updatedAt = LocalDateTime.of(2026, 7, 1, 9, 0), updatedBy = 1,
+        )
+
+    private fun stubsActualizarTarea(tarea: Tarea) {
+        every { tareaRepository.findById(1) } returns java.util.Optional.of(tarea)
+        every { tareaRepository.save(any()) } answers { firstArg() }
+        every { empresaService.resumenPorIds(listOf(10)) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { contactoService.resumenPorIds(emptyList()) } returns emptyMap()
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+    }
+
+    @Test
+    fun `reprogramar una tarea reinicia el dedup de sus recordatorios`() {
+        // La clave de dedup es (origen, id_origen, umbral) y no incluye la fecha:
+        // sin reiniciarla, una tarea reprogramada no vuelve a recordarse nunca.
+        stubsActualizarTarea(tareaProgramada)
+
+        service.actualizar(
+            1,
+            ActualizarTareaRequest(fechaEjecucion = Instant.parse("2026-07-20T15:00:00Z")),
+            UsuarioActual(id = 1, rol = "gerencia"),
+        )
+
+        verify { notificacionService.reiniciarRecordatorios(OrigenRecordatorio.tarea, 1L) }
+    }
+
+    @Test
+    fun `editar una tarea sin mover la fecha no reinicia sus recordatorios`() {
+        // Reiniciar en cada edicion reenviaria recordatorios ya entregados.
+        stubsActualizarTarea(tareaProgramada)
+
+        service.actualizar(1, ActualizarTareaRequest(descripcion = "Llamar al gerente"), UsuarioActual(id = 1, rol = "gerencia"))
+
+        verify(exactly = 0) { notificacionService.reiniciarRecordatorios(any(), any()) }
+    }
+
+    @Test
+    fun `reenviar la misma fecha de ejecucion no reinicia sus recordatorios`() {
+        stubsActualizarTarea(tareaProgramada)
+
+        service.actualizar(
+            1,
+            ActualizarTareaRequest(fechaEjecucion = Instant.parse("2026-07-10T15:00:00Z")),
+            UsuarioActual(id = 1, rol = "gerencia"),
+        )
+
+        verify(exactly = 0) { notificacionService.reiniciarRecordatorios(any(), any()) }
+    }
 
     @Test
     fun `actualizar reasigna el dueno y notifica solo al nuevo dueno`() {

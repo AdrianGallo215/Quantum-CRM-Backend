@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.empleados
 
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import io.mockk.verify
 import jakarta.servlet.http.Cookie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
@@ -188,5 +190,59 @@ class AuthControllerWebMvcTest {
             status { isUnauthorized() }
             jsonPath("$.error.code") { value("CREDENCIALES_INVALIDAS") }
         }
+    }
+
+    // ── Cambio de contraseña (D1) ────────────────────────────────────────────
+    // Este endpoint vive bajo /auth/**, que en SecurityConfig es permitAll(). Es el
+    // UNICO de la familia que exige sesion: el test 1 es la prueba de que el matcher
+    // explicito quedo antes del permitAll y no quedo publico por accidente.
+
+    private fun cambiarContrasenaBody(
+        actual: String,
+        nueva: String,
+    ) = """{"password_actual":"$actual","password_nueva":"$nueva"}"""
+
+    @Test
+    fun `cambiar contrasena sin autenticacion responde 401`() {
+        mockMvc.post("/api/v1/auth/cambiar-contrasena") {
+            contentType = MediaType.APPLICATION_JSON
+            content = cambiarContrasenaBody("vieja", "NuevaSegura123")
+        }.andExpect {
+            status { isUnauthorized() }
+        }
+
+        verify(exactly = 0) { empleadoService.cambiarContrasena(any(), any(), any()) }
+    }
+
+    @Test
+    fun `cambiar contrasena autenticado con body valido responde 200 y llama al servicio`() {
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "vendedor")
+        every { empleadoService.cambiarContrasena(1, "vieja", "NuevaSegura123") } returns Unit
+
+        mockMvc.post("/api/v1/auth/cambiar-contrasena") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = cambiarContrasenaBody("vieja", "NuevaSegura123")
+        }.andExpect {
+            status { isOk() }
+        }
+
+        verify(exactly = 1) { empleadoService.cambiarContrasena(1, "vieja", "NuevaSegura123") }
+    }
+
+    @Test
+    fun `cambiar contrasena con password_nueva corta responde 400 VALIDACION`() {
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "vendedor")
+
+        mockMvc.post("/api/v1/auth/cambiar-contrasena") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = cambiarContrasenaBody("vieja", "corta")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("VALIDACION") }
+        }
+
+        verify(exactly = 0) { empleadoService.cambiarContrasena(any(), any(), any()) }
     }
 }

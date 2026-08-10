@@ -187,7 +187,7 @@ class OportunidadServiceImpl(
         val nuevoModeloId = request.idModelo
         if (nuevoModeloId != null && nuevoModeloId != oportunidad.idModelo) {
             val modeloNuevo = modeloService.resumen(nuevoModeloId)
-            val precioBaseAnterior = oportunidad.idModelo?.let { modeloService.resumen(it).precioBase }
+            val precioBaseAnterior = modeloService.resumen(oportunidad.idModelo).precioBase
             val precioNoEditado =
                 oportunidad.precioUnitario == null ||
                     (precioBaseAnterior != null && oportunidad.precioUnitario?.compareTo(precioBaseAnterior) == 0)
@@ -572,7 +572,7 @@ class OportunidadServiceImpl(
         oportunidad.driveFolderId?.let { return it }
         val id = requireNotNull(oportunidad.id)
         val carpetaEmpresa = empresaService.asegurarCarpetaDrive(oportunidad.idEmpresa)
-        val codigoModelo = oportunidad.idModelo?.let { modeloService.resumen(it).codigo }
+        val codigoModelo = modeloService.resumen(oportunidad.idModelo).codigo
         val carpeta =
             driveStorageService.crearCarpeta(
                 nombre = nombreCarpetaDrive(id, codigoModelo),
@@ -676,7 +676,7 @@ class OportunidadServiceImpl(
         val vendedores = empleadoService.resumenPorIds(oportunidades.map { it.idVendedor })
         // Terminos de la financiadora por JOIN logico, nunca copiados (reglas §9.4).
         val financiadoras = financiadoraService.porIds(oportunidades.map { it.idFinanciadora })
-        val modelos = modeloService.resumenPorIds(oportunidades.mapNotNull { it.idModelo })
+        val modelos = modeloService.resumenPorIds(oportunidades.map { it.idModelo })
         val tareasPendientes = consultas.tareasPendientesPorOportunidad(ids)
         val eventosPendientes = consultas.eventosPendientesPorOportunidad(ids)
         return oportunidades.map { op ->
@@ -691,7 +691,7 @@ class OportunidadServiceImpl(
                 financiadora = financiadoras[op.idFinanciadora],
                 idModelo = op.idModelo,
                 modelo =
-                    op.idModelo?.let { modelos[it] }?.let {
+                    modelos[op.idModelo]?.let {
                         ModeloEnOportunidadDto(id = it.id, codigo = it.codigo, precioBase = it.precioBase?.toPlainString())
                     },
                 estado = op.estado.name,

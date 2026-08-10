@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.empleados.dto
 
 import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 import pe.quantum.crm.domain.empleados.Empleado
 
 /** Body de `POST /auth/login`. Validado en backend (SECURITY §4.2). */
@@ -42,6 +43,15 @@ data class LoginResponse(
 /** Respuesta de refresh: solo la nueva duracion; el token va en cookie httpOnly. */
 data class RefreshResponse(
     val expiresIn: Long,
+)
+
+/** Cambio de contraseña del propio usuario (contrato_api.md §6). */
+data class CambiarContrasenaRequest(
+    @field:NotBlank(message = "password_actual es obligatorio")
+    val passwordActual: String,
+    @field:NotBlank(message = "password_nueva es obligatorio")
+    @field:Size(min = 8, max = 72, message = "password_nueva debe tener entre 8 y 72 caracteres")
+    val passwordNueva: String,
 )
 
 fun Empleado.toDto(): EmpleadoDto =

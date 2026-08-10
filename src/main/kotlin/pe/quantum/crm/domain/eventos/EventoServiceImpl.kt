@@ -18,6 +18,7 @@ import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
 import pe.quantum.crm.domain.eventos.dto.SugerenciaDto
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.OrigenRecordatorio
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.shared.comoInstanteUtc
@@ -164,11 +165,24 @@ class EventoServiceImpl(
         if (evento.estado != EstadoEvento.pendiente) {
             throw EstadoInvalidoException("Solo se pueden editar eventos pendientes")
         }
-        request.fechaEstimada?.let { evento.fechaEstimada = it }
+        // Solo cuenta como reprogramacion si la fecha se mueve de verdad: reiniciar
+        // el dedup en cada edicion reenviaria recordatorios ya entregados.
+        var reprogramado = false
+        request.fechaEstimada?.let {
+            if (it != evento.fechaEstimada) {
+                evento.fechaEstimada = it
+                reprogramado = true
+            }
+        }
         request.fechaSeguimiento?.let { evento.fechaSeguimiento = it }
         request.descripcion?.let { evento.descripcion = it }
         evento.updatedAt = LocalDateTime.now()
         evento.updatedBy = usuario.id
+        // Dentro de la misma transaccion que la reprogramacion: si esta se revierte,
+        // el dedup queda intacto.
+        if (reprogramado) {
+            notificacionService.reiniciarRecordatorios(OrigenRecordatorio.evento, id)
+        }
         return eventoRepository.save(evento).toDto()
     }
 

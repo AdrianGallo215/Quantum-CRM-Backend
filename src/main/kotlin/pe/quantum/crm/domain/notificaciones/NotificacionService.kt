@@ -24,6 +24,19 @@ interface NotificacionService {
         entidadId: Long,
     )
 
+    /**
+     * Borra el registro de dedup de recordatorios de una tarea o evento.
+     *
+     * Lo llama el modulo dueño al reprogramarla. La clave de dedup es
+     * `(origen, id_origen, umbral)` y NO incluye la fecha, asi que sin este
+     * reinicio una tarea o evento ya recordado no volveria a recordarse nunca
+     * tras moverle la fecha.
+     */
+    fun reiniciarRecordatorios(
+        origen: OrigenRecordatorio,
+        idOrigen: Long,
+    )
+
     fun contarNoLeidas(usuario: UsuarioActual): Long
 
     /** Ultimas 20 notificaciones (leidas + no leidas) del usuario, mas recientes primero. */

@@ -76,4 +76,15 @@ interface EmpleadoService {
 
     /** Empleados activos con rol admin, gerencia o jdv (broadcast de notificaciones). */
     fun idsSupervisoresActivos(): List<Long>
+
+    /**
+     * Cambia la contraseña del propio empleado y apaga `requiere_cambio_contrasena`
+     * (B1.4). Exige la contraseña actual: sin ella, una sesion robada podria
+     * apoderarse de la cuenta de forma permanente.
+     */
+    fun cambiarContrasena(
+        idEmpleado: Long,
+        actual: String,
+        nueva: String,
+    )
 }

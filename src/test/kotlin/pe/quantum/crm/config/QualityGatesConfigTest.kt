@@ -24,10 +24,11 @@ import java.io.File
  *
  * Lo que si tiene sentido comprobar aqui es lo que `koverVerify` no puede
  * comprobar sobre si mismo: que el propio umbral no se rebaje. `koverVerify` pasa
- * igual de contento con `minBound(58)` que con `minBound(10)`. Este archivo
+ * igual de contento con `minBound(67)` que con `minBound(10)`. Este archivo
  * custodia el suelo (el trinquete), no la cobertura.
  *
- * SUELO VIGENTE: 63% global / 58% dominio.
+ * SUELO VIGENTE: 71% global / 67% dominio (subido desde 63/58 tras la ola 1 de
+ * subagentes, que anadio tests a los modulos que no tenian ninguno).
  * OBJETIVO (TESTING-backend.md §8): 75% global / 90% dominio, hoy incumplido.
  * La brecha es deuda de tests conocida y esta documentada en `build.gradle.kts`.
  * Al escribir los tests que faltan, subir el `minBound` Y estas constantes.
@@ -35,10 +36,10 @@ import java.io.File
 class QualityGatesConfigTest {
     private companion object {
         /** Suelo de cobertura global que el build exige hoy. Solo puede subir. */
-        const val SUELO_GLOBAL = 63
+        const val SUELO_GLOBAL = 71
 
         /** Suelo de cobertura de dominio que el build exige hoy. Solo puede subir. */
-        const val SUELO_DOMINIO = 58
+        const val SUELO_DOMINIO = 67
 
         /** Meta de TESTING-backend.md §8, todavia no alcanzada. */
         const val OBJETIVO_GLOBAL = 75

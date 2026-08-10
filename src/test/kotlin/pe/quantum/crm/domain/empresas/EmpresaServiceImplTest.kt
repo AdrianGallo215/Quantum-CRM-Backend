@@ -316,7 +316,7 @@ class EmpresaServiceImplTest {
     fun `crear por gerencia con un vendedor asignable guarda el id_vendedor`() {
         val guardada = slot<Empresa>()
         every { empleadoService.esAsignableComoVendedor(8) } returns true
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
         every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
@@ -332,7 +332,7 @@ class EmpresaServiceImplTest {
     @Test
     fun `crear sin id_vendedor por un vendedor se asigna a si mismo sin validar el destino`() {
         val guardada = slot<Empresa>()
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
         every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
@@ -349,7 +349,7 @@ class EmpresaServiceImplTest {
     @Test
     fun `crear con el propio id_vendedor por un vendedor equivale a no enviarlo`() {
         val guardada = slot<Empresa>()
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
         every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
@@ -366,7 +366,7 @@ class EmpresaServiceImplTest {
     @Test
     fun `crear sin id_vendedor por gerencia deja la empresa sin asignar`() {
         val guardada = slot<Empresa>()
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
         every { empresaRepository.save(capture(guardada)) } answers { empresa().apply { idVendedor = guardada.captured.idVendedor } }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
@@ -470,7 +470,7 @@ class EmpresaServiceImplTest {
     @Test
     fun `crear abre la carpeta de Drive bajo la raiz y guarda su id`() {
         val guardada = slot<Empresa>()
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-abc"
         // JPA devuelve la entidad ya con id; el helper `empresa()` lo trae.
         every { empresaRepository.save(capture(guardada)) } answers {
@@ -478,19 +478,19 @@ class EmpresaServiceImplTest {
         }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
 
-        val detalle =
+        val resultado =
             service.crear(
                 CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
                 UsuarioActual(id = 9, rol = "gerencia"),
             )
 
         assertThat(guardada.captured.driveFolderId).isEqualTo("carpeta-abc")
-        assertThat(detalle.driveFolderId).isEqualTo("carpeta-abc")
+        assertThat(resultado.empresa.driveFolderId).isEqualTo("carpeta-abc")
     }
 
     @Test
     fun `crear no persiste la empresa si Drive falla`() {
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta(any(), any()) } throws DriveException("Drive caido")
 
         assertThatThrownBy {
@@ -506,7 +506,7 @@ class EmpresaServiceImplTest {
     @Test
     fun `crear pide la carpeta a Drive ANTES de abrir la transaccion de escritura`() {
         val guardada = slot<Empresa>()
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null) } returns "carpeta-abc"
         every { empresaRepository.save(capture(guardada)) } answers {
             empresa().apply { driveFolderId = guardada.captured.driveFolderId }
@@ -523,17 +523,75 @@ class EmpresaServiceImplTest {
         // (un duplicado no debe dejar carpetas huerfanas) y la transaccion de
         // escritura se abre despues, cuando la carpeta ya existe.
         verifyOrder {
-            empresaRepository.existsByRuc("20123456789")
+            empresaRepository.findByRuc("20123456789")
             driveStorageService.crearCarpeta("20123456789 - Transportes ABC", null)
             transactionTemplate.execute(any<TransactionCallback<Any>>())
             empresaRepository.save(any<Empresa>())
         }
     }
 
+    // ── B1: el mismo RUC segun a quien pertenece (reglas_negocio.md §2.1) ────
+
+    @Test
+    fun `crear con un RUC del mismo vendedor devuelve la empresa existente sin insertar`() {
+        val usuario = UsuarioActual(id = 9, rol = "vendedor")
+        val existente = empresa(id = 5).apply { idVendedor = 9 }
+        every { empresaRepository.findByRuc("20123456789") } returns existente
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        every { contactoService.contactosDeEmpresa(5) } returns emptyList()
+
+        val resultado =
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+                usuario,
+            )
+
+        assertThat(resultado.creada).isFalse()
+        assertThat(resultado.empresa.id).isEqualTo(5)
+        verify(exactly = 0) { empresaRepository.save(any<Empresa>()) }
+        verify(exactly = 0) { driveStorageService.crearCarpeta(any(), any()) }
+    }
+
+    @Test
+    fun `crear con un RUC de otro vendedor lanza RUC_DUPLICADO`() {
+        val usuario = UsuarioActual(id = 9, rol = "gerencia")
+        val existente = empresa(id = 5).apply { idVendedor = 2 }
+        every { empresaRepository.findByRuc("20123456789") } returns existente
+
+        assertThatThrownBy {
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+                usuario,
+            )
+        }.isInstanceOf(pe.quantum.crm.shared.exception.RucDuplicadoException::class.java)
+
+        verify(exactly = 0) { empresaRepository.save(any<Empresa>()) }
+    }
+
+    @Test
+    fun `crear con un RUC nuevo inserta y marca creada`() {
+        val guardada = slot<Empresa>()
+        every { empresaRepository.findByRuc("20123456789") } returns null
+        every { driveStorageService.crearCarpeta(any(), any()) } returns "carpeta-abc"
+        every { empresaRepository.save(capture(guardada)) } answers {
+            empresa().apply { driveFolderId = guardada.captured.driveFolderId }
+        }
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+
+        val resultado =
+            service.crear(
+                CrearEmpresaRequest(ruc = "20123456789", razonSocial = "Transportes ABC"),
+                UsuarioActual(id = 9, rol = "gerencia"),
+            )
+
+        assertThat(resultado.creada).isTrue()
+        verify { empresaRepository.save(any<Empresa>()) }
+    }
+
     @Test
     fun `crearSinCarpetaDrive persiste la empresa sin llamar a Drive`() {
         val guardada = slot<Empresa>()
-        every { empresaRepository.existsByRuc(any()) } returns false
+        every { empresaRepository.findByRuc(any()) } returns null
         every { empresaRepository.save(capture(guardada)) } answers { empresa() }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
 

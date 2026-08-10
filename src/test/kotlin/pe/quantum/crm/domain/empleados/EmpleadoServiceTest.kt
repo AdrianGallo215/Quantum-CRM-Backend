@@ -4,16 +4,20 @@ import io.mockk.every
 import io.mockk.impl.annotations.InjectMockKs
 import io.mockk.impl.annotations.MockK
 import io.mockk.junit5.MockKExtension
+import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.crypto.password.PasswordEncoder
 import pe.quantum.crm.domain.empleados.dto.ActualizarEmpleadoRequest
 import pe.quantum.crm.domain.empleados.dto.CrearEmpleadoRequest
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
+import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
+import pe.quantum.crm.shared.exception.ValidacionException
 import java.util.Optional
 
 /**
@@ -250,5 +254,78 @@ class EmpleadoServiceTest {
         val resultado = service.idsSupervisoresActivos()
 
         assertThat(resultado).containsExactlyInAnyOrder(1, 2)
+    }
+
+    // ── Cambio de contraseña (D1) ────────────────────────────────────────────
+    // El flag `requiere_cambio_contrasena` nace en `true` (crear()) y hasta ahora
+    // no existia ningun camino que lo apagara: el login lo publicaba pero nunca se
+    // podia cumplir. `cambiarContrasena` es ese camino. Usa un PasswordEncoder REAL
+    // (BCrypt) en vez de un mock: el hashing es justo lo que se prueba.
+
+    private val encoderReal: PasswordEncoder = BCryptPasswordEncoder()
+    private val repositoryCambio: EmpleadoRepository = mockk()
+    private val serviceCambio = EmpleadoServiceImpl(repositoryCambio, encoderReal)
+
+    private fun empleadoConPassword(
+        id: Long = 1,
+        passwordPlano: String = "vieja",
+        requiereCambio: Boolean = true,
+    ) = Empleado(
+        id = id,
+        nombres = "Ana",
+        apellidos = "Diaz",
+        email = "ana@quantum.pe",
+        rol = RolEmpleado.vendedor,
+        activo = true,
+        passwordHash = encoderReal.encode(passwordPlano),
+        requiereCambioContrasena = requiereCambio,
+    )
+
+    @Test
+    fun `cambiar contrasena con la actual correcta guarda el hash nuevo y apaga el flag`() {
+        val empleado = empleadoConPassword()
+        val hashAnterior = empleado.passwordHash
+        every { repositoryCambio.findById(1) } returns Optional.of(empleado)
+        every { repositoryCambio.save(any()) } returnsArgument 0
+
+        serviceCambio.cambiarContrasena(1, "vieja", "NuevaSegura123")
+
+        assertThat(empleado.passwordHash).isNotEqualTo(hashAnterior)
+        assertThat(encoderReal.matches("NuevaSegura123", empleado.passwordHash!!)).isTrue()
+        assertThat(empleado.requiereCambioContrasena).isFalse()
+    }
+
+    @Test
+    fun `cambiar contrasena con la actual incorrecta lanza CREDENCIALES_INVALIDAS y no guarda`() {
+        val empleado = empleadoConPassword()
+        every { repositoryCambio.findById(1) } returns Optional.of(empleado)
+
+        assertThrows<CredencialesInvalidasException> {
+            serviceCambio.cambiarContrasena(1, "incorrecta", "NuevaSegura123")
+        }
+        verify(exactly = 0) { repositoryCambio.save(any()) }
+    }
+
+    @Test
+    fun `cambiar contrasena rechaza que la nueva sea igual a la actual`() {
+        val empleado = empleadoConPassword()
+        every { repositoryCambio.findById(1) } returns Optional.of(empleado)
+
+        val excepcion =
+            assertThrows<ValidacionException> {
+                serviceCambio.cambiarContrasena(1, "vieja", "vieja")
+            }
+        assertThat(excepcion.field).isEqualTo("password_nueva")
+        verify(exactly = 0) { repositoryCambio.save(any()) }
+    }
+
+    @Test
+    fun `cambiar contrasena de un empleado inexistente lanza NO_ENCONTRADO`() {
+        every { repositoryCambio.findById(99) } returns Optional.empty()
+
+        assertThrows<NoEncontradoException> {
+            serviceCambio.cambiarContrasena(99, "vieja", "NuevaSegura123")
+        }
+        verify(exactly = 0) { repositoryCambio.save(any()) }
     }
 }

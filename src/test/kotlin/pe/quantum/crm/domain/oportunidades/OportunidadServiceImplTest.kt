@@ -23,6 +23,7 @@ import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -173,8 +174,53 @@ class OportunidadServiceImplTest {
         verify(exactly = 0) { notificacionService.notificar(any(), any(), any(), any(), any(), any()) }
     }
 
+    /**
+     * C.3 (docs/plan-ejecucion-subagentes.md): la version anterior de este test
+     * afirmaba sobre los ARGUMENTOS que `OportunidadServiceImpl` pasa al mock de
+     * `notificacionService.notificar` (`destinatarios = setOf(1L, 5L, 6L)`,
+     * incluyendo al actor). Eso es correcto — la exclusion del actor NO vive en
+     * `OportunidadServiceImpl`, vive en `NotificacionServiceImpl.notificar`
+     * (`destinatarios - idActor`) — pero como aqui `notificacionService` esta
+     * mockeado, esa linea de produccion nunca se ejecuta: el test pasaria igual
+     * si alguien borrara `- idActor` por completo. No prueba la exclusion, prueba
+     * que se llamo al mock con ciertos argumentos.
+     *
+     * Version corregida: usa una instancia REAL de `NotificacionServiceImpl`
+     * (con su repositorio mockeado, capturando lo que de verdad se persiste) y
+     * afirma sobre el resultado observable — quien terminó recibiendo la
+     * notificacion — no sobre los argumentos de una llamada. Si se elimina la
+     * exclusion en `NotificacionServiceImpl`, el actor (id=1) aparece entre los
+     * destinatarios guardados y el test falla.
+     */
     @Test
-    fun `cambiarEstado notifica a los supervisores activos, excluyendo al actor si es supervisor`() {
+    fun `cambiarEstado no notifica al actor aunque figure entre los supervisores activos`() {
+        val notificacionRepository = mockk<pe.quantum.crm.domain.notificaciones.NotificacionRepository>()
+        val notificacionesGuardadas = mutableListOf<pe.quantum.crm.domain.notificaciones.Notificacion>()
+        every { notificacionRepository.save(any<pe.quantum.crm.domain.notificaciones.Notificacion>()) } answers {
+            firstArg<pe.quantum.crm.domain.notificaciones.Notificacion>().also { notificacionesGuardadas += it }
+        }
+        val recordatorioEnviadoRepository = mockk<pe.quantum.crm.domain.notificaciones.RecordatorioEnviadoRepository>(relaxed = true)
+        val notificacionServiceReal =
+            pe.quantum.crm.domain.notificaciones.NotificacionServiceImpl(
+                notificacionRepository,
+                recordatorioEnviadoRepository,
+                empleadoService,
+            )
+        val serviceConNotificacionReal =
+            OportunidadServiceImpl(
+                oportunidadRepository,
+                logRepository,
+                contactoOportunidadRepository,
+                estadoCarteraService,
+                empresaService,
+                empleadoService,
+                financiadoraService,
+                modeloService,
+                contactoService,
+                consultas,
+                notificacionServiceReal,
+                driveStorageService,
+            )
         val entidad = oportunidad(idVendedor = 1)
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
         every { oportunidadRepository.save(entidad) } returns entidad
@@ -185,25 +231,19 @@ class OportunidadServiceImplTest {
         every { estadoCarteraService.actualizar(10) } returns null
         every { empresaService.resumenPorIds(listOf(10)) } returns
             mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Kincar S.A.C.", distrito = null))
-        every { empleadoService.resumenPorIds(listOf(1)) } returns mapOf(1L to EmpleadoResumen(id = 1, nombres = "Ana", apellidos = "Diaz"))
+        every { empleadoService.resumenPorIds(listOf(1)) } returns
+            mapOf(1L to EmpleadoResumen(id = 1, nombres = "Ana", apellidos = "Diaz"))
+        // El actor (id=1) tambien figura como supervisor activo: es el caso que
+        // desenmascara si se borra la exclusion.
         every { empleadoService.idsSupervisoresActivos() } returns listOf(1, 5, 6)
 
-        service.cambiarEstado(
+        serviceConNotificacionReal.cambiarEstado(
             100,
-            pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest(estado = "documentos_legales"),
+            CambiarEstadoRequest(estado = "documentos_legales"),
             UsuarioActual(id = 1, rol = "vendedor"),
         )
 
-        verify {
-            notificacionService.notificar(
-                destinatarios = setOf(1L, 5L, 6L),
-                idActor = 1L,
-                tipo = TipoNotificacion.oportunidad_cambio_estado,
-                mensaje = "Ana Diaz cambió el estado de Kincar S.A.C. a Documentos legales",
-                entidadTipo = EntidadNotificacion.oportunidad,
-                entidadId = 100L,
-            )
-        }
+        assertThat(notificacionesGuardadas.map { it.idEmpleadoDestinatario }).containsExactlyInAnyOrder(5L, 6L)
     }
 
     @Test
@@ -258,6 +298,33 @@ class OportunidadServiceImplTest {
                 entidadId = 100L,
             )
         }
+    }
+
+    /**
+     * F1 (docs/plan-ejecucion-subagentes.md): `id_modelo` es NOT NULL en la tabla
+     * desde su creacion; la entidad debe dejar de declararlo opcional. La garantia
+     * real la da el tipo de la propiedad (Long, no Long?), asi que se verifica por
+     * reflexion: mientras `idModelo` sea nullable en la entidad, esta asercion
+     * falla aunque el valor concreto que viaja a `save` nunca sea null en la
+     * practica (siempre viene de `CrearOportunidadRequest.idModelo`, que ya es
+     * `Long` no-nulo).
+     */
+    @Test
+    fun `toda oportunidad persistida lleva id_modelo`() {
+        stubsDeCreacion(driveFolderIdEmpresa = "carpeta-empresa")
+        val guardada = slot<Oportunidad>()
+        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(100) }
+
+        service.crear(
+            CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, dcto = BigDecimal.ZERO),
+            UsuarioActual(id = 3, rol = "vendedor"),
+        )
+
+        assertThat(guardada.captured.idModelo).isNotNull()
+        val propiedadIdModelo = Oportunidad::class.members.first { it.name == "idModelo" }
+        assertThat(propiedadIdModelo.returnType.isMarkedNullable)
+            .describedAs("idModelo debe ser NOT NULL en la entidad (F1)")
+            .isFalse()
     }
 
     @Test
@@ -412,6 +479,10 @@ class OportunidadServiceImplTest {
 
         verify { oportunidadRepository.delete(entidad) }
     }
+
+    // ── A1: invariantes de cambiarEstado (docs/plan-ejecucion-subagentes.md) ──
+    // Movidas a OportunidadCambiarEstadoInvariantesTest.kt: juntarlas aqui
+    // disparaba LargeClass en detekt.
 
     @Test
     fun `cambiarEstado a facturado fija facturado_en`() {

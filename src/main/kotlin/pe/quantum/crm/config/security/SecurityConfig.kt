@@ -2,6 +2,7 @@ package pe.quantum.crm.config.security
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -44,6 +45,9 @@ class SecurityConfig(
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests {
+                // ANTES del permitAll de /auth/**: este endpoint es el unico de la
+                // familia que exige sesion. Invertir el orden lo dejaria publico.
+                it.requestMatchers(HttpMethod.POST, "/api/v1/auth/cambiar-contrasena").authenticated()
                 it.requestMatchers("/api/v1/auth/**", "/actuator/health").permitAll()
                 it.anyRequest().authenticated()
             }

@@ -62,14 +62,14 @@ class OportunidadesDeContactoImpl(
         val visibles = oportunidadRepository.findAllById(idsOportunidad).filter { usuario.alcanza(it.idVendedor) }
         val oportunidades = visibles.associateBy { requireNotNull(it.id) }
         val empresas = empresaService.resumenPorIds(oportunidades.values.map { it.idEmpresa })
-        val modelos = modeloService.resumenPorIds(oportunidades.values.mapNotNull { it.idModelo })
+        val modelos = modeloService.resumenPorIds(oportunidades.values.map { it.idModelo })
         return vinculos.mapNotNull { vinculo ->
             oportunidades[vinculo.id.idOportunidad]?.let { op ->
                 OportunidadResumenParaContacto(
                     id = requireNotNull(op.id),
                     empresa = empresas[op.idEmpresa],
                     modelo =
-                        op.idModelo?.let { modelos[it] }?.let {
+                        modelos[op.idModelo]?.let {
                             ModeloEnOportunidadDto(id = it.id, codigo = it.codigo, precioBase = it.precioBase?.toPlainString())
                         },
                     estado = op.estado.name,

@@ -8,4 +8,10 @@ interface RecordatorioEnviadoRepository : JpaRepository<RecordatorioEnviado, Lon
         idOrigen: Long,
         umbral: UmbralRecordatorio,
     ): Boolean
+
+    /** Borra los dos umbrales de un origen; devuelve cuantas filas borro. */
+    fun deleteByOrigenAndIdOrigen(
+        origen: OrigenRecordatorio,
+        idOrigen: Long,
+    ): Long
 }

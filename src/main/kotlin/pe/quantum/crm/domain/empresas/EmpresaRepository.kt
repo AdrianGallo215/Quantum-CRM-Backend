@@ -10,7 +10,20 @@ import org.springframework.transaction.annotation.Transactional
 interface EmpresaRepository :
     JpaRepository<Empresa, Long>,
     JpaSpecificationExecutor<Empresa> {
-    fun findByRuc(ruc: String): Empresa?
+    /**
+     * `segmentos` viene ya inicializado (JOIN FETCH): el unico llamador,
+     * `EmpresaServiceImpl.alta`, puede leerlo fuera de una transaccion cuando
+     * reutiliza la empresa del mismo vendedor (esa funcion no lleva
+     * `@Transactional` a proposito, por la llamada a Drive). Sin el fetch
+     * explicito, `segmentos` es un proxy LAZY y su lectura fuera de sesion
+     * lanza `LazyInitializationException` — no lo detectan los tests
+     * unitarios porque mockean el repositorio, solo un smoke test contra un
+     * Hibernate real lo reproduce.
+     */
+    @Query("select distinct e from Empresa e left join fetch e.segmentos where e.ruc = :ruc")
+    fun findByRuc(
+        @Param("ruc") ruc: String,
+    ): Empresa?
 
     fun existsByRuc(ruc: String): Boolean
 

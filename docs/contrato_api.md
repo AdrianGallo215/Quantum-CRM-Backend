@@ -91,7 +91,8 @@ En caso de error, `data` es `null` y `error` contiene:
 
 | Código | HTTP | Descripción |
 |---|---|---|
-| `RUC_DUPLICADO` | 409 | El RUC ya existe en el sistema |
+| `CREDENCIALES_INVALIDAS` | 401 | Login o `password_actual` de `/auth/cambiar-contrasena` no coincide |
+| `RUC_DUPLICADO` | 409 | El RUC ya existe en el sistema y pertenece a **otro** vendedor (mismo vendedor → `200 OK`, no es error; ver §8) |
 | `MOTIVO_CIERRE_REQUERIDO` | 400 | Se intentó cerrar una oportunidad sin motivo |
 | `MODELO_SIN_APLICACIONES` | 400 | Se intentó crear un modelo sin aplicaciones |
 | `FINANCIADORA_DEFAULT_INEXISTENTE` | 500 | No hay financiadora con `es_default = true` |
@@ -197,6 +198,35 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ```
 
 **Respuesta 200:** misma estructura que `/auth/login` pero sin `empleado`.
+
+---
+
+### POST /auth/cambiar-contrasena
+> Cambia la contraseña del usuario autenticado. Es el único endpoint de `/auth/**` que exige autenticación — todos los demás son públicos por definición.
+
+**Roles:** todos (usuario autenticado, sobre su propia cuenta)
+
+**Body:**
+```json
+{
+  "password_actual": "...",
+  "password_nueva": "..."
+}
+```
+
+`password_nueva`: 8–72 caracteres.
+
+**Respuesta 200:** sin datos (`{ "data": null }`).
+
+**Errores:**
+
+| Código | HTTP | Motivo |
+|---|---|---|
+| `CREDENCIALES_INVALIDAS` | 401 | `password_actual` no coincide con la contraseña vigente |
+| `VALIDACION` | 400 | `password_nueva` es igual a `password_actual`, o no cumple la longitud 8–72 (`field: "password_nueva"`) |
+
+**Notas:**
+- Al completarse con éxito, `requiere_cambio_contrasena` pasa a `false`. El siguiente `/auth/login` ya lo refleja en el `empleado` devuelto.
 
 ---
 
@@ -430,15 +460,19 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 }
 ```
 
-**Respuesta 201:** el objeto empresa completo.
+**Respuesta 201** (RUC nuevo): el objeto empresa completo, recién creado.
+
+**Respuesta 200** (RUC ya existente y asignado al **mismo** vendedor que lo envía): el objeto empresa **existente**, sin crear una fila ni una carpeta de Drive nuevas. Ver `reglas_negocio.md §2.1`.
 
 **Notas:**
-- Se crea la carpeta de Google Drive de la empresa bajo la unidad compartida raíz, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la empresa **no se crea** (`502 DRIVE_NO_DISPONIBLE`).
+- Se crea la carpeta de Google Drive de la empresa bajo la unidad compartida raíz, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la empresa **no se crea** (`502 DRIVE_NO_DISPONIBLE`). Esto solo aplica al camino de creación real (201); el camino de reutilización (200) no llama a Drive.
 - `drive_folder_id` es de **solo lectura**: lo administra el backend y nunca se acepta en el body. No confundir con `file_drive`, que es una URL suelta editable por el usuario.
 
 **Notas:**
 - `segmentos` se inserta en `empresa_segmentos` de forma atómica.
-- El backend valida el RUC antes de insertar. Si ya existe → `409 RUC_DUPLICADO`.
+- El backend valida el RUC antes de insertar. **`reglas_negocio.md §2.1` es la fuente de verdad de esta regla** — si en algún momento este contrato y esa sección dejan de coincidir, manda `reglas_negocio.md` y hay que actualizar este documento, no al revés:
+  - Si el RUC existe y pertenece a **otro** vendedor → `409 RUC_DUPLICADO` con mensaje: *"Esta empresa ya está registrada en el sistema y la gestiona otro vendedor. Coordina con tu jefe de ventas si necesitas acceder a ella."* No se expone a qué vendedor pertenece.
+  - Si el RUC existe y pertenece al **mismo** vendedor → `200 OK` con la empresa existente (ver arriba). No es un error.
 - `estado_cartera` siempre nace como `no_contactado`. No es aceptado como campo de entrada.
 
 ---
@@ -1847,9 +1881,12 @@ Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). S
 
 Notifica a un usuario cuando ocurre una acción relacionada con él pero no accionada por él mismo. También cubre recordatorios de tareas y eventos (job programado, sin actor humano).
 
-**Tipo (`tipo`):** `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`.
+**Tipo (`tipo`):** los 16 valores reales de `TipoNotificacion` (`NotificacionEnums.kt`, migración V22/V28/V34):
+- `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio` — el set original.
+- `solicitud_creada`, `solicitud_aprobada`, `solicitud_denegada` — ciclo de vida de una Solicitud (§20).
+- `meta_propuesta`, `meta_aprobada`, `meta_rechazada`, `meta_modificada` — ciclo de vida de una Meta de venta (§21).
 
-**Entidad referenciada (`entidad_tipo`):** `oportunidad` | `empresa` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
+**Entidad referenciada (`entidad_tipo`):** los 4 valores reales de `EntidadNotificacion`: `oportunidad` | `empresa` | `solicitud` | `meta_venta` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
 
 **DTO `Notificacion`:**
 ```json

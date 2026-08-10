@@ -11,6 +11,7 @@ import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
+import pe.quantum.crm.domain.empresas.dto.AltaEmpresaResultado
 import pe.quantum.crm.domain.empresas.dto.CambioEstadoCartera
 import pe.quantum.crm.domain.empresas.dto.CarteraMaestraDto
 import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
@@ -120,12 +121,12 @@ class EmpresaServiceImpl(
     override fun crear(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
-    ): EmpresaDetalleDto = alta(request, usuario, conCarpetaDrive = true)
+    ): AltaEmpresaResultado = alta(request, usuario, conCarpetaDrive = true, reutilizarDelMismoVendedor = true)
 
     override fun crearSinCarpetaDrive(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
-    ): EmpresaDetalleDto = alta(request, usuario, conCarpetaDrive = false)
+    ): EmpresaDetalleDto = alta(request, usuario, conCarpetaDrive = false, reutilizarDelMismoVendedor = false).empresa
 
     /**
      * Alta de empresa. SIN `@Transactional` a proposito: la llamada a Drive ocurre
@@ -146,9 +147,16 @@ class EmpresaServiceImpl(
         request: CrearEmpresaRequest,
         usuario: UsuarioActual,
         conCarpetaDrive: Boolean,
-    ): EmpresaDetalleDto {
+        reutilizarDelMismoVendedor: Boolean,
+    ): AltaEmpresaResultado {
         val idVendedor = vendedorAlCrear(request.idVendedor, usuario)
-        if (empresaRepository.existsByRuc(request.ruc)) {
+        val existente = empresaRepository.findByRuc(request.ruc)
+        if (existente != null) {
+            // Del mismo vendedor: no es un error, ya la tiene en su cartera. Se
+            // devuelve tal cual, sin insertar ni crear carpeta de Drive.
+            if (reutilizarDelMismoVendedor && existente.idVendedor == idVendedor) {
+                return AltaEmpresaResultado(existente.conContactos(), creada = false)
+            }
             throw RucDuplicadoException()
         }
         val carpeta =
@@ -157,7 +165,10 @@ class EmpresaServiceImpl(
             } else {
                 null
             }
-        return requireNotNull(transactionTemplate.execute { persistirAlta(request, usuario, idVendedor, carpeta) })
+        return AltaEmpresaResultado(
+            requireNotNull(transactionTemplate.execute { persistirAlta(request, usuario, idVendedor, carpeta) }),
+            creada = true,
+        )
     }
 
     /** Empresa + segmentos en una sola transaccion (B2.1/B2.2). */

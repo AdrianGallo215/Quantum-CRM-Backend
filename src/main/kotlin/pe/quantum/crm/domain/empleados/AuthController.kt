@@ -3,6 +3,7 @@ package pe.quantum.crm.domain.empleados
 import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpHeaders
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -13,6 +14,7 @@ import pe.quantum.crm.config.security.JwtProperties
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.config.security.LoginRateLimiter
 import pe.quantum.crm.config.security.TipoToken
+import pe.quantum.crm.domain.empleados.dto.CambiarContrasenaRequest
 import pe.quantum.crm.domain.empleados.dto.LoginRequest
 import pe.quantum.crm.domain.empleados.dto.LoginResponse
 import pe.quantum.crm.domain.empleados.dto.RefreshResponse
@@ -84,6 +86,24 @@ class AuthController(
 
         emitAuthCookies(empleado, response)
         return ApiResponse.ok(RefreshResponse(expiresIn = jwtProperties.accessExpirationMs / MILLIS_PER_SECOND))
+    }
+
+    /**
+     * Cambio de contraseña del usuario autenticado. Vive bajo `/auth` por afinidad
+     * de dominio, pero a diferencia del resto de las rutas de auth EXIGE
+     * autenticacion: ver el matcher explicito en SecurityConfig.
+     */
+    @PostMapping("/cambiar-contrasena")
+    fun cambiarContrasena(
+        @Valid @RequestBody request: CambiarContrasenaRequest,
+        authentication: Authentication,
+    ): ApiResponse<Unit> {
+        empleadoService.cambiarContrasena(
+            authentication.principal as Long,
+            request.passwordActual,
+            request.passwordNueva,
+        )
+        return ApiResponse.ok(Unit)
     }
 
     private fun emitAuthCookies(
