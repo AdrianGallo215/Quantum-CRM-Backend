@@ -168,4 +168,99 @@ class ContactoServiceImplTest {
         assertThatThrownBy { service.detalle(99) }
             .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
     }
+
+    /**
+     * Cada fila del listado arrastra sus empresas con el cargo del vinculo. La
+     * empresa que el modulo de empresas no devuelve (borrada o fuera del alcance
+     * del usuario) se cae de la lista en vez de reventar el listado entero.
+     */
+    @Test
+    fun `buscar arma las empresas de cada fila y descarta las que empresas no resuelve`() {
+        every { contactoRepository.findAll(any(), any<PageRequest>()) } returns
+            PageImpl(listOf(contacto()), PageRequest.of(0, 20), 1)
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns
+            listOf(
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 3, idContacto = 1), cargo = "Gerente"),
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 4, idContacto = 1), cargo = "Asesor"),
+            )
+        every { empresaService.resumenPorIds(listOf(3L, 4L)) } returns
+            mapOf(3L to EmpresaResumen(id = 3, razonSocial = "Transp. Sta. Anita S.A.", distrito = "Ate"))
+
+        val resultado = service.buscar(q = null, idEmpresa = null, usuario = usuario, page = null, perPage = null, sort = null, dir = null)
+
+        val fila = resultado.items.first()
+        assertThat(fila.nombres).isEqualTo("Hugo")
+        assertThat(fila.apellidos).isEqualTo("Rodríguez")
+        assertThat(fila.tlf_1).isEqualTo("964415122")
+        assertThat(fila.empresas).hasSize(1)
+        assertThat(fila.empresas.first().id).isEqualTo(3)
+        assertThat(fila.empresas.first().razonSocial).isEqualTo("Transp. Sta. Anita S.A.")
+        assertThat(fila.empresas.first().cargo).isEqualTo("Gerente")
+    }
+
+    /** El detalle descarta igual que el listado la empresa que no se resuelve. */
+    @Test
+    fun `detalle omite la empresa que el modulo de empresas no resuelve`() {
+        every { contactoRepository.findById(1) } returns Optional.of(contacto())
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns
+            listOf(EmpresaContacto(id = EmpresaContactoId(idEmpresa = 3, idContacto = 1)))
+        every { empresaService.resumenPorIds(listOf(3L)) } returns emptyMap()
+        every { empresaService.segmentosPorIds(listOf(3L)) } returns emptyMap()
+
+        assertThat(service.detalle(1).empresas).isEmpty()
+    }
+
+    /** El principal va primero: es el contacto que el vendedor ve al abrir la empresa. */
+    @Test
+    fun `contactosDeEmpresa pone el contacto principal al principio`() {
+        every { empresaContactoRepository.findByIdIdEmpresa(3) } returns
+            listOf(
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 3, idContacto = 1), esPrincipal = false),
+                EmpresaContacto(id = EmpresaContactoId(idEmpresa = 3, idContacto = 2), esPrincipal = true),
+            )
+        every { contactoRepository.findAllById(listOf(1L, 2L)) } returns listOf(contacto(1), contacto(2))
+
+        val resultado = service.contactosDeEmpresa(3)
+
+        assertThat(resultado.map { it.id }).containsExactly(2, 1)
+    }
+
+    @Test
+    fun `contactosDeEmpresa sin vinculos devuelve vacio sin consultar contactos`() {
+        every { empresaContactoRepository.findByIdIdEmpresa(3) } returns emptyList()
+
+        assertThat(service.contactosDeEmpresa(3)).isEmpty()
+
+        verify(exactly = 0) { contactoRepository.findAllById(any()) }
+    }
+
+    @Test
+    fun `countPorEmpresa devuelve el conteo del repositorio como Int`() {
+        every { empresaContactoRepository.countByIdIdEmpresa(3) } returns 4L
+
+        assertThat(service.countPorEmpresa(3)).isEqualTo(4)
+    }
+
+    @Test
+    fun `existe delega en el repositorio`() {
+        every { contactoRepository.existsById(1) } returns true
+        every { contactoRepository.existsById(99) } returns false
+
+        assertThat(service.existe(1)).isTrue()
+        assertThat(service.existe(99)).isFalse()
+    }
+
+    /** `resumenPorIds` deduplica antes de consultar: lo llaman tareas y oportunidades con ids repetidos. */
+    @Test
+    fun `resumenPorIds deduplica los ids y devuelve el resumen indexado`() {
+        every { contactoRepository.findAllById(setOf(1L, 2L)) } returns listOf(contacto(1), contacto(2))
+
+        val resultado = service.resumenPorIds(listOf(1L, 2L, 1L))
+
+        assertThat(resultado.keys).containsExactlyInAnyOrder(1L, 2L)
+        assertThat(resultado[1]?.nombres).isEqualTo("Hugo")
+        assertThat(resultado[1]?.apellidos).isEqualTo("Rodríguez")
+        assertThat(resultado[1]?.tlf_1).isEqualTo("964415122")
+        verify(exactly = 1) { contactoRepository.findAllById(any()) }
+    }
 }

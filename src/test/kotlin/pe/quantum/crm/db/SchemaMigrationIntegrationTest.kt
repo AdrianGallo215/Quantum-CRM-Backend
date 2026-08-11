@@ -123,4 +123,23 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
         val rol = str("SELECT rol::text FROM empleados WHERE email = '${SeedFixtures.ADMIN_EMAIL}'")
         assertThat(rol).isEqualTo(SeedFixtures.ADMIN_ROL)
     }
+
+    @Test
+    fun `los campos de SUNAT de empresas admiten null tras V38`() {
+        // V6 los creo NOT NULL, pero el contrato, el DTO y la entidad los tratan
+        // como opcionales; `ddl-auto=validate` no compara nulabilidad, asi que la
+        // discrepancia solo salia como 500 en el primer POST /empresas con body
+        // minimo. V38 relaja la columna; esto impide que alguien la vuelva a
+        // apretar sin darse cuenta.
+        val obligatorias =
+            strList(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'empresas'
+                  AND is_nullable = 'NO'
+                  AND column_name IN ('actividad_econ', 'estado_sunat', 'condicion_sunat', 'direccion_fiscal')
+                """.trimIndent(),
+            )
+        assertThat(obligatorias).isEmpty()
+    }
 }

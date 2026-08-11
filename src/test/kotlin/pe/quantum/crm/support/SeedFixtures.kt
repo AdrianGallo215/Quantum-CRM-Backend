@@ -25,5 +25,5 @@ object SeedFixtures {
 
     /** Total de migraciones commiteadas (cuenta real de archivos; hay huecos en la numeración
      *  por trabajo en curso de otras features aun sin commitear). Actualizar al agregar migraciones. */
-    const val MIGRACIONES_TOTAL = 37
+    const val MIGRACIONES_TOTAL = 38
 }

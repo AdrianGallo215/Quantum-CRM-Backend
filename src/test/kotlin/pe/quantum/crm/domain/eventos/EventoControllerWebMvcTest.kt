@@ -11,10 +11,15 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.eventos.dto.EventoDto
+import pe.quantum.crm.domain.eventos.dto.EventoOcurridoDto
+import pe.quantum.crm.domain.eventos.dto.EventosAgrupadosDto
+import pe.quantum.crm.domain.eventos.dto.SugerenciaDto
 import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
@@ -102,5 +107,115 @@ class EventoControllerWebMvcTest {
             jsonPath("$.error.code") { value("VALIDACION") }
         }
         verify(exactly = 0) { eventoService.actualizar(any(), any(), any()) }
+    }
+
+    @Test
+    fun `PUT eventos valido llega al servicio con el id del path`() {
+        every { eventoService.actualizar(4, any(), any()) } returns eventoDto()
+
+        mockMvc.put("/api/v1/eventos/4") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"fecha_estimada":"2026-08-01"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(4) }
+        }
+        verify { eventoService.actualizar(4, any(), any()) }
+    }
+
+    // ── listados (contrato §11) ────────────────────────────────
+
+    private fun agrupados() = EventosAgrupadosDto(pendientes = listOf(eventoDto()), ocurridos = emptyList(), descartados = emptyList())
+
+    @Test
+    fun `GET eventos de una oportunidad devuelve los tres grupos`() {
+        every { eventoService.listarPorOportunidad(50, any()) } returns agrupados()
+
+        mockMvc.get("/api/v1/oportunidades/50/eventos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.pendientes[0].id") { value(4) }
+            jsonPath("$.data.ocurridos") { isEmpty() }
+            jsonPath("$.data.descartados") { isEmpty() }
+        }
+        verify { eventoService.listarPorOportunidad(50, any()) }
+    }
+
+    @Test
+    fun `GET eventos de una empresa usa la ruta de prospeccion`() {
+        every { eventoService.listarPorEmpresa(10, any()) } returns agrupados()
+
+        mockMvc.get("/api/v1/empresas/10/eventos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.pendientes[0].id") { value(4) }
+        }
+        verify { eventoService.listarPorEmpresa(10, any()) }
+    }
+
+    @Test
+    fun `POST eventos de empresa crea el hito de prospeccion`() {
+        every { eventoService.crearEnEmpresa(10, any(), any()) } returns eventoDto()
+
+        mockMvc.post("/api/v1/empresas/10/eventos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"id_catalogo_evento":2}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.data.id") { value(4) }
+        }
+        verify { eventoService.crearEnEmpresa(10, any(), any()) }
+    }
+
+    // ── transiciones (contrato §11) ────────────────────────────
+
+    @Test
+    fun `PATCH ocurrido devuelve la sugerencia tal cual la da el servicio`() {
+        val sugerencia =
+            SugerenciaDto(dispara = true, estadoDestino = "facturado", mensaje = "¿Deseas mover la oportunidad a Facturado?")
+        every { eventoService.marcarOcurrido(4, any(), any()) } returns
+            EventoOcurridoDto(id = 4, estado = "ocurrido", fechaOcurrencia = null, sugerencia = sugerencia)
+
+        mockMvc.patch("/api/v1/eventos/4/ocurrido") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"descripcion":"Calidda desembolsó"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.sugerencia.dispara") { value(true) }
+            jsonPath("$.data.sugerencia.estado_destino") { value("facturado") }
+        }
+        verify { eventoService.marcarOcurrido(4, any(), any()) }
+    }
+
+    @Test
+    fun `PATCH ocurrido sin body usa un request vacio`() {
+        every { eventoService.marcarOcurrido(4, any(), any()) } returns
+            EventoOcurridoDto(id = 4, estado = "ocurrido", fechaOcurrencia = null, sugerencia = null)
+
+        mockMvc.patch("/api/v1/eventos/4/ocurrido") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.estado") { value("ocurrido") }
+        }
+        verify { eventoService.marcarOcurrido(4, match { it.descripcion == null && it.fechaOcurrencia == null }, any()) }
+    }
+
+    @Test
+    fun `PATCH descartado sin body descarta igualmente`() {
+        every { eventoService.marcarDescartado(4, any(), any()) } returns eventoDto()
+
+        mockMvc.patch("/api/v1/eventos/4/descartado") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(4) }
+        }
+        verify { eventoService.marcarDescartado(4, match { it.descripcion == null }, any()) }
     }
 }

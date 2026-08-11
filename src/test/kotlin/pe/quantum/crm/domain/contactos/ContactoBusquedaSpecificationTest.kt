@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
 import pe.quantum.crm.domain.empresas.EmpresaService
+import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 
@@ -53,6 +54,43 @@ class ContactoBusquedaSpecificationTest {
         assertThat(hql).contains("nombres", "apellidos", "tlf_1", "tlf_2")
     }
 
+    @Test
+    fun `buscar con id_empresa restringe por los ids de los contactos vinculados`() {
+        val hql = buscar(q = null, idEmpresa = 10, contactosDeLaEmpresa = listOf(1L, 2L))
+
+        assertThat(hql).containsIgnoringCase("where").containsIgnoringCase(" in ")
+    }
+
+    /**
+     * Una empresa sin contactos debe devolver la lista vacia, NUNCA el listado
+     * completo: si el filtro por ids desapareciera al quedarse vacio, un vendedor
+     * veria todos los contactos del CRM pidiendo `?id_empresa=` de una empresa
+     * recien creada. Se compara contra la busqueda sin filtro para no depender de
+     * como Hibernate escriba la disyuncion vacia.
+     */
+    @Test
+    fun `buscar con una empresa sin contactos no cae en el listado completo`() {
+        val sinFiltro = buscar(q = null)
+        val vacio = buscar(q = null, idEmpresa = 10, contactosDeLaEmpresa = emptyList())
+
+        assertThat(vacio).isNotEqualTo(sinFiltro)
+        assertThat(vacio).containsIgnoringCase("where")
+    }
+
+    @Test
+    fun `buscar combina el filtro por empresa con el texto en un solo where`() {
+        val hql = buscar(q = "Hugo", idEmpresa = 10, contactosDeLaEmpresa = listOf(1L))
+
+        assertThat(hql).containsIgnoringCase(" in ").contains("nombres", "apellidos", "tlf_1", "tlf_2")
+    }
+
+    @Test
+    fun `buscar con q en blanco no añade ningun filtro de texto`() {
+        val enBlanco = buscar(q = "   ")
+
+        assertThat(enBlanco).isEqualTo(buscar(q = null))
+    }
+
     /**
      * El `sort` no pasa por la Specification: Spring Data lo resuelve como property
      * path de la entidad al ejecutar la query, asi que un campo de la allowlist que
@@ -81,13 +119,21 @@ class ContactoBusquedaSpecificationTest {
     private fun buscar(
         q: String?,
         sort: String? = null,
+        idEmpresa: Long? = null,
+        contactosDeLaEmpresa: List<Long> = emptyList(),
     ): String {
         var hql = ""
+        idEmpresa?.let { id ->
+            every { empresaService.vinculoVisible(id, usuario) } returns
+                EmpresaVinculo(id = id, razonSocial = "Transp. Sta. Anita S.A.", idVendedor = null, estadoCartera = "prospeccion")
+            every { empresaContactoRepository.findByIdIdEmpresa(id) } returns
+                contactosDeLaEmpresa.map { EmpresaContacto(id = EmpresaContactoId(idEmpresa = id, idContacto = it)) }
+        }
         every { contactoRepository.findAll(any<Specification<Contacto>>(), any<PageRequest>()) } answers {
             hql = compilar(firstArg(), secondArg())
             PageImpl(emptyList(), PageRequest.of(0, 20), 0)
         }
-        service.buscar(q = q, idEmpresa = null, usuario = usuario, page = null, perPage = null, sort = sort, dir = null)
+        service.buscar(q = q, idEmpresa = idEmpresa, usuario = usuario, page = null, perPage = null, sort = sort, dir = null)
         return hql
     }
 
@@ -102,7 +148,9 @@ class ContactoBusquedaSpecificationTest {
         query.select(root)
         pageRequest.sort.forEach { orden -> root.get<Any>(orden.property) }
         spec.toPredicate(root, query, cb)?.let { query.where(it) }
-        return (query as SqmSelectStatement<*>).toHqlString()
+        // El alias del root lo genera Hibernate con un numero distinto en cada
+        // compilacion; se normaliza para poder comparar dos HQL entre si.
+        return (query as SqmSelectStatement<*>).toHqlString().replace(ALIAS_GENERADO, "c")
     }
 
     private fun camposOrdenablesPermitidos(): List<String> {
@@ -114,6 +162,8 @@ class ContactoBusquedaSpecificationTest {
     }
 
     companion object {
+        private val ALIAS_GENERADO = Regex("alias_\\d+")
+
         /**
          * SessionFactory solo-metamodelo: con el dialecto fijado y la lectura de
          * metadata JDBC deshabilitada, Hibernate arranca sin DataSource. Basta para

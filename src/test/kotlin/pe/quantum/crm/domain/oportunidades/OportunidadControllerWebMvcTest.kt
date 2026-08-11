@@ -4,7 +4,9 @@ import com.ninjasquad.springmockk.MockkBean
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
+import io.mockk.slot
 import io.mockk.verify
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -14,11 +16,19 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
+import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import pe.quantum.crm.config.security.JwtService
+import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
+import pe.quantum.crm.domain.oportunidades.dto.CambioEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
+import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.shared.PageMeta
+import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.support.SinBaseDeDatosMocks
 import java.time.Instant
@@ -271,5 +281,179 @@ class OportunidadControllerWebMvcTest {
             jsonPath("$.error.code") { value("VALIDACION") }
         }
         verify(exactly = 0) { oportunidadService.vincularContacto(any(), any(), any()) }
+    }
+
+    // ---------------------------------------------------------------------
+    // Ruteo del resto de endpoints del contrato §10: que cada uno llegue al
+    // servicio con los parametros que la URL y el body traen, y que la
+    // respuesta salga en el envelope { data, meta, error } con snake_case.
+    // ---------------------------------------------------------------------
+
+    @Test
+    fun `GET oportunidades traduce los query params a filtros y paginacion`() {
+        val filtros = slot<OportunidadFiltros>()
+        every { oportunidadService.listar(capture(filtros), any(), 2, 50, "monto_total", "asc") } returns
+            Paginado(listOf(oportunidadDto()), PageMeta(page = 2, perPage = 50, total = 120, totalPages = 3))
+
+        mockMvc.get("/api/v1/oportunidades") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            param("estado", "facturado")
+            param("id_empresa", "3")
+            param("id_vendedor", "7")
+            param("id_financiadora", "1")
+            param("incluir_cerradas", "true")
+            param("page", "2")
+            param("per_page", "50")
+            param("sort", "monto_total")
+            param("dir", "asc")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data[0].id") { value(50) }
+            jsonPath("$.data[0].monto_total") { value("714080.00") }
+            jsonPath("$.meta.page") { value(2) }
+            jsonPath("$.meta.per_page") { value(50) }
+            jsonPath("$.meta.total_pages") { value(3) }
+        }
+
+        assertThat(filtros.captured).isEqualTo(
+            OportunidadFiltros(estado = "facturado", idEmpresa = 3, idVendedor = 7, idFinanciadora = 1, incluirCerradas = true),
+        )
+    }
+
+    /** Sin query params: filtros vacios e `incluir_cerradas` en false (contrato §10). */
+    @Test
+    fun `GET oportunidades sin filtros excluye las cerradas por defecto`() {
+        val filtros = slot<OportunidadFiltros>()
+        every { oportunidadService.listar(capture(filtros), any(), null, null, null, null) } returns
+            Paginado(emptyList(), PageMeta(page = 1, perPage = 20, total = 0, totalPages = 0))
+
+        mockMvc.get("/api/v1/oportunidades") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.error") { value(null) }
+        }
+
+        assertThat(filtros.captured).isEqualTo(OportunidadFiltros())
+    }
+
+    @Test
+    fun `GET oportunidades id devuelve el detalle`() {
+        every { oportunidadService.detalle(50, any()) } returns oportunidadDto()
+
+        mockMvc.get("/api/v1/oportunidades/50") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(50) }
+            jsonPath("$.data.id_empresa") { value(3) }
+            jsonPath("$.data.estado") { value("evaluacion_calidda") }
+        }
+        verify { oportunidadService.detalle(50, any()) }
+    }
+
+    @Test
+    fun `GET oportunidades id inexistente devuelve 404`() {
+        every { oportunidadService.detalle(999, any()) } throws NoEncontradoException("La oportunidad no existe")
+
+        mockMvc.get("/api/v1/oportunidades/999") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error.code") { value("NO_ENCONTRADO") }
+        }
+    }
+
+    @Test
+    fun `POST oportunidades valido devuelve 201`() {
+        every { oportunidadService.crear(any(), any()) } returns oportunidadDto()
+
+        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"dcto":3.00}""").andExpect {
+            status { isCreated() }
+            jsonPath("$.data.id") { value(50) }
+        }
+        verify { oportunidadService.crear(any(), any()) }
+    }
+
+    @Test
+    fun `PATCH estado devuelve el estado nuevo, el retroceso y las advertencias`() {
+        every { oportunidadService.cambiarEstado(50, any(), any()) } returns
+            CambioEstadoDto(estado = "documentos_legales", esRetroceso = false, advertencias = listOf("Visita técnica no fue registrado"))
+
+        mockMvc.patch("/api/v1/oportunidades/50/estado") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"estado":"documentos_legales"}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.estado") { value("documentos_legales") }
+            jsonPath("$.data.es_retroceso") { value(false) }
+            jsonPath("$.data.advertencias[0]") { value("Visita técnica no fue registrado") }
+        }
+        verify { oportunidadService.cambiarEstado(50, any(), any()) }
+    }
+
+    @Test
+    fun `PATCH estado sin estado en el body devuelve 400 VALIDACION`() {
+        mockMvc.patch("/api/v1/oportunidades/50/estado") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"estado":"  "}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("VALIDACION") }
+        }
+        verify(exactly = 0) { oportunidadService.cambiarEstado(any(), any(), any()) }
+    }
+
+    @Test
+    fun `GET log devuelve el historial de estados`() {
+        every { oportunidadService.log(50, any()) } returns
+            listOf(
+                LogEstadoDto(
+                    estadoAnterior = null,
+                    estadoNuevo = "evaluacion_calidda",
+                    changedAt = Instant.parse("2026-01-15T09:30:00Z"),
+                    changedBy = EmpleadoResumen(id = 7, nombres = "Ana", apellidos = "Diaz"),
+                ),
+            )
+
+        mockMvc.get("/api/v1/oportunidades/50/log") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data[0].estado_anterior") { value(null) }
+            jsonPath("$.data[0].estado_nuevo") { value("evaluacion_calidda") }
+            jsonPath("$.data[0].changed_by.nombres") { value("Ana") }
+        }
+        verify { oportunidadService.log(50, any()) }
+    }
+
+    @Test
+    fun `POST contacto de oportunidad valido devuelve 201`() {
+        every { oportunidadService.vincularContacto(50, any(), any()) } returns
+            ContactoVinculoRequest(idContacto = 5, rolEnOportunidad = "Aprobador")
+
+        mockMvc.post("/api/v1/oportunidades/50/contactos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"id_contacto":5,"rol_en_oportunidad":"Aprobador"}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.data.id_contacto") { value(5) }
+        }
+        verify { oportunidadService.vincularContacto(50, any(), any()) }
+    }
+
+    @Test
+    fun `DELETE contacto de oportunidad devuelve 204 sin cuerpo`() {
+        every { oportunidadService.desvincularContacto(50, 5, any()) } just Runs
+
+        mockMvc.delete("/api/v1/oportunidades/50/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
+        }.andExpect {
+            status { isNoContent() }
+        }
+        verify { oportunidadService.desvincularContacto(50, 5, any()) }
     }
 }

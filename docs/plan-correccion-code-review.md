@@ -139,9 +139,23 @@ Sin `git commit` en ningún punto de la ejecución previo, conforme a las reglas
 
 ---
 
+### Ola 2 — cierre de la brecha de cobertura (F3), 2026-08-10/11
+
+Con la Ola 1 commiteada, se midió la brecha antes de escribir nada y se repartió por tamaño entre 4 agentes sobre archivos disjuntos: H (oportunidades), I (contactos), J (tareas+eventos), K (empresas, empleados, solicitudes, metas, inicio).
+
+**Tres de los cuatro (H, J, K) murieron a mitad por límite de sesión de la API**, no por un fallo del trabajo. Su código ya escrito se recuperó de los worktrees, compiló entero y pasó salvo dos defectos que se corrigieron a mano: un mock de `EmpleadoAdminServiceTest` que devolvía la entidad sin `id` (un `save()` real de JPA sí lo asigna, así que `toDto()` fallaba — defecto del test, no del código) y una violación de formato de ktlint. **La verificación final la hizo la sesión principal, no los agentes**: 775 tests en verde, más `ktlintCheck`, `detekt` y `koverVerify`.
+
+**Resultado:** global 72.5% → **86.6%**, dominio 68.3% → **85.0%**. Trinquete subido a **85/84**.
+
+La palanca que más rindió fue replicar `ContactoBusquedaSpecificationTest`, que compila las JPA Specification contra el metamodelo real de Hibernate sin base de datos: los filtros de listado (`especificacion$lambda`) sumaban ~98 líneas repartidas por cinco servicios y no los tocaba ningún test.
+
+**Sobre el objetivo 90% de dominio:** no se alcanza midiendo en local, pero la brecha ya no es deuda de tests unitarios. De las 555 líneas restantes, 366 son SQL nativo agregado que solo cubren los `@Tag("integration")`, bloqueados por Testcontainers/Docker 29. Contándolos, el dominio da 94.9%. **Desbloquear Testcontainers es ahora la única acción que separa al proyecto de su objetivo de cobertura** — más que escribir tests.
+
+---
+
 ## Orden de ejecución
 
 ```
-Tanda 1 (bugs)  →  Tanda 2 + Tanda 3 (Ola 1, en paralelo)  →  Tanda 4 (Ola 2)
-   ✅ hecho              ✅ hecho — 2026-08-07                  ✅ hecho — 2026-08-07
+Tanda 1 (bugs)  →  Tanda 2 + Tanda 3 (Ola 1)  →  Tanda 4 / F3 (Ola 2)
+   ✅ 2026-08-07        ✅ 2026-08-07              ✅ 2026-08-10/11
 ```
