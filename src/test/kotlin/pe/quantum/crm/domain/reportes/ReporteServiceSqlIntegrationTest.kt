@@ -377,7 +377,11 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
     @Test
     fun `descuentos trata un dcto NULL como cero para el promedio`() {
         val vendedor = crearVendedor("D2")
-        val empresa = crearEmpresa("99999999", vendedor, "2019-05-05 09:00:00")
+        // RUC deliberadamente distinto de "99999999": VendedorSyncBackfillIntegrationTest
+        // y SegmentoOtroIntegrationTest siembran datos sin @Transactional (no hacen
+        // rollback) y ya ocupan "20999999999"/"20999999998" en el mismo contenedor
+        // compartido de Testcontainers.
+        val empresa = crearEmpresa("12300002", vendedor, "2019-05-05 09:00:00")
         val financiadora = crearFinanciadora("D2")
         val modelo = crearModelo("D2")
 
