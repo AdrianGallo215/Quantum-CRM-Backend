@@ -99,15 +99,17 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
         montoTotal: String = "100000.00",
         cantidad: Int = 2,
         dcto: String? = "0.00",
+        motivoCierre: String? = null,
     ): Long =
         id(
             """
             INSERT INTO oportunidades
                 (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, cantidad, precio_unitario,
-                 dcto, monto_total, facturado_en, created_at, created_by, updated_by)
+                 dcto, monto_total, facturado_en, motivo_cierre, created_at, created_by, updated_by)
             VALUES
                 ($idEmpresa, $idVendedor, $idFinanciadora, $idModelo, '$estado', $cantidad, 50000.00,
                  ${dcto ?: "NULL"}, $montoTotal, ${facturadoEn?.let { "TIMESTAMP '$it'" } ?: "NULL"},
+                 ${motivoCierre?.let { "'$it'" } ?: "NULL"},
                  TIMESTAMP '$creadaEn', $idVendedor, $idVendedor)
             RETURNING id
             """.trimIndent(),
@@ -306,7 +308,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
                 idFinanciadora = crearFinanciadora("P1"),
                 idModelo = crearModelo("P1"),
                 creadaEn = "2019-05-08 09:00:00",
-                estado = "prospeccion",
+                estado = "evaluacion_calidda",
                 facturadoEn = null,
             )
         crearHito(empresaConOportunidad, vendedor, posicionHito = 1, estado = "ocurrido", idOportunidad = oportunidad)
@@ -334,7 +336,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
             idFinanciadora = financiadora,
             idModelo = modelo,
             creadaEn = "2019-05-05 09:00:00",
-            estado = "prospeccion",
+            estado = "evaluacion_calidda",
             dcto = "10.00",
         )
         crearOportunidad(
@@ -343,7 +345,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
             idFinanciadora = financiadora,
             idModelo = modelo,
             creadaEn = "2019-05-06 09:00:00",
-            estado = "prospeccion",
+            estado = "evaluacion_calidda",
             dcto = "20.00",
         )
         crearOportunidad(
@@ -352,7 +354,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
             idFinanciadora = financiadora,
             idModelo = modelo,
             creadaEn = "2019-05-07 09:00:00",
-            estado = "prospeccion",
+            estado = "evaluacion_calidda",
             dcto = "0.00",
         )
 
@@ -386,7 +388,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
             idFinanciadora = financiadora,
             idModelo = modelo,
             creadaEn = "2019-05-05 09:00:00",
-            estado = "prospeccion",
+            estado = "evaluacion_calidda",
             dcto = "20.00",
         )
         crearOportunidad(
@@ -395,7 +397,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
             idFinanciadora = financiadora,
             idModelo = modelo,
             creadaEn = "2019-05-06 09:00:00",
-            estado = "prospeccion",
+            estado = "evaluacion_calidda",
             dcto = null,
         )
 
@@ -428,6 +430,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
             creadaEn = "2019-05-05 09:00:00",
             estado = "cerrado",
             dcto = "15.00",
+            motivoCierre = "Cliente desistio",
         )
 
         val reporte = reporteService.descuentos(periodoMayo2019)

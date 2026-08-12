@@ -18,7 +18,7 @@ interface NotificacionRepository : JpaRepository<Notificacion, Long> {
 
     fun findByIdEmpleadoDestinatarioAndLeidaFalse(idEmpleadoDestinatario: Long): List<Notificacion>
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("DELETE FROM Notificacion n WHERE n.leida = true AND n.createdAt < :umbral")
     fun purgarLeidasAntesDe(
         @Param("umbral") umbral: LocalDateTime,
