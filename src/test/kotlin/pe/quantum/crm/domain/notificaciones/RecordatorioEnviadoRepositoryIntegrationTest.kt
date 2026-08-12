@@ -6,10 +6,12 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.support.IntegrationTestBase
 
 @Tag("integration")
 @SpringBootTest
+@Transactional
 class RecordatorioEnviadoRepositoryIntegrationTest : IntegrationTestBase() {
     @Autowired
     lateinit var repository: RecordatorioEnviadoRepository

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.support.IntegrationTestBase
 import java.time.LocalDateTime
 
@@ -17,6 +18,7 @@ import java.time.LocalDateTime
  */
 @Tag("integration")
 @SpringBootTest
+@Transactional
 class NotificacionRepositoryPurgaIntegrationTest : IntegrationTestBase() {
     @Autowired
     lateinit var repository: NotificacionRepository
