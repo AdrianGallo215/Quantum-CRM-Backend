@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.support.IntegrationTestBase
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -19,6 +20,7 @@ import java.time.temporal.ChronoUnit
  */
 @Tag("integration")
 @SpringBootTest
+@Transactional
 class ProspeccionDaoSqlIntegrationTest : IntegrationTestBase() {
     @Autowired
     lateinit var jdbcTemplate: JdbcTemplate
