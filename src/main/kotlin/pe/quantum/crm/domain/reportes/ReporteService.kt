@@ -430,20 +430,26 @@ class ReporteService(
         // Hitos completados por empresa, en el orden del catalogo (1, 2, 3).
         val hitosPorEmpresa = mutableMapOf<Long, MutableSet<Int>>()
         if (rows.isNotEmpty()) {
-            jdbc.query(
-                """
-                SELECT e.id_empresa, orden.posicion
-                FROM eventos e
-                JOIN (
-                    SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS posicion
-                    FROM catalogo_eventos WHERE es_hito_prospeccion = true
-                ) orden ON orden.id = e.id_catalogo_evento
-                WHERE e.id_empresa IN (:ids) AND e.id_oportunidad IS NULL AND e.estado = 'ocurrido'
-                GROUP BY e.id_empresa, orden.posicion
-                """.trimIndent(),
-                MapSqlParameterSource("ids", rows.map { it.idEmpresa }),
-            ) { rs ->
-                hitosPorEmpresa.getOrPut(rs.getLong("id_empresa")) { mutableSetOf() }.add(rs.getInt("posicion"))
+            val idsHito =
+                jdbc.query(
+                    "SELECT id FROM catalogo_eventos WHERE es_hito_prospeccion = true ORDER BY id",
+                    MapSqlParameterSource(),
+                ) { rs, _ -> rs.getLong("id") }
+            val posiciones = posicionesDeHito(idsHito)
+            if (posiciones.isNotEmpty()) {
+                jdbc.query(
+                    """
+                    SELECT DISTINCT e.id_empresa, e.id_catalogo_evento
+                    FROM eventos e
+                    WHERE e.id_empresa IN (:ids) AND e.id_oportunidad IS NULL AND e.estado = 'ocurrido'
+                      AND e.id_catalogo_evento IN (:idsHito)
+                    """.trimIndent(),
+                    MapSqlParameterSource("ids", rows.map { it.idEmpresa }).addValue("idsHito", posiciones.keys),
+                ) { rs ->
+                    posiciones[rs.getLong("id_catalogo_evento")]?.let {
+                        hitosPorEmpresa.getOrPut(rs.getLong("id_empresa")) { mutableSetOf() }.add(it)
+                    }
+                }
             }
         }
         val convertidas = rows.count { it.convertida }
@@ -568,3 +574,16 @@ internal fun porcentaje(
     } else {
         BigDecimal(parte).multiply(BigDecimal(100)).divide(BigDecimal(total), 2, RoundingMode.HALF_UP).toPlainString()
     }
+
+/** Huecos de hito que expone `ReporteProspeccionDto`: hito_1, hito_2, hito_3. */
+private const val HITOS_EN_EL_EMBUDO = 3
+
+/**
+ * Posicion de cada hito en el embudo, anclada a su id de catalogo y no a su orden
+ * relativo. `ROW_NUMBER()` renumeraba al quitar un hito: el 3 pasaba a ser el 2 y
+ * `hito_2_completado` cambiaba de significado retroactivamente, con lo que los
+ * informes ya emitidos dejaban de ser comparables. El DTO solo tiene tres huecos,
+ * asi que un cuarto hito se ignora en vez de desplazar a los anteriores.
+ */
+internal fun posicionesDeHito(idsHitoOrdenados: List<Long>): Map<Long, Int> =
+    idsHitoOrdenados.take(HITOS_EN_EL_EMBUDO).withIndex().associate { (indice, id) -> id to indice + 1 }

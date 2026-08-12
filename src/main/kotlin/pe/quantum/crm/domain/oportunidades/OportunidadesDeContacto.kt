@@ -28,6 +28,12 @@ interface OportunidadesDeContacto {
         usuario: UsuarioActual,
     ): Int
 
+    /** Conteo por lote del listado de contactos: una consulta para toda la pagina. */
+    fun contarPorContactos(
+        idsContacto: Collection<Long>,
+        usuario: UsuarioActual,
+    ): Map<Long, Int>
+
     /** Oportunidades del contacto que `usuario` puede ver (detalle de contacto). */
     fun listar(
         idContacto: Long,
@@ -47,6 +53,19 @@ class OportunidadesDeContactoImpl(
         idContacto: Long,
         usuario: UsuarioActual,
     ): Int = contactoOportunidadRepository.countVisiblesPorContacto(idContacto, usuario.filtroVendedor).toInt()
+
+    @Transactional(readOnly = true)
+    override fun contarPorContactos(
+        idsContacto: Collection<Long>,
+        usuario: UsuarioActual,
+    ): Map<Long, Int> {
+        if (idsContacto.isEmpty()) {
+            return emptyMap()
+        }
+        return contactoOportunidadRepository
+            .contarVisiblesPorContactos(idsContacto.toSet(), usuario.filtroVendedor)
+            .associate { it.idContacto to it.total.toInt() }
+    }
 
     @Transactional(readOnly = true)
     override fun listar(

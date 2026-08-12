@@ -9,4 +9,10 @@ interface CatalogoEventoRepository : JpaRepository<CatalogoEvento, Long> {
     fun findByEsHitoProspeccionTrueOrderById(): List<CatalogoEvento>
 
     fun existsByNombre(nombre: String): Boolean
+
+    /** Unicidad al actualizar: el propio evento no cuenta como duplicado de si mismo. */
+    fun existsByNombreAndIdNot(
+        nombre: String,
+        id: Long,
+    ): Boolean
 }

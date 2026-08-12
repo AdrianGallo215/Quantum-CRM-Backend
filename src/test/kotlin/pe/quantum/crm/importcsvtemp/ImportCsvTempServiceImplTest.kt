@@ -228,4 +228,76 @@ class ImportCsvTempServiceImplTest {
 
         assertThrows<ValidacionException> { service.importarEmpresas(archivo, usuario) }
     }
+
+    /**
+     * Excel exporta asi en cuanto una razon social lleva un salto de linea. Antes el
+     * registro se partia en dos filas fantasma con errores incomprensibles.
+     */
+    @Test
+    fun `un salto de linea dentro de un campo entrecomillado no parte el registro`() {
+        val slot = slot<CrearEmpresaRequest>()
+        every { empresaService.crearSinCarpetaDrive(capture(slot), usuario) } answers {
+            empresaDetalleDto(ruc = slot.captured.ruc, razonSocial = slot.captured.razonSocial)
+        }
+
+        val resultado =
+            service.importarEmpresas(
+                csv("20999999999;\"Transportes\nUnidos S.A.C.\";urbano"),
+                usuario,
+            )
+
+        assertThat(resultado.totalFilas).isEqualTo(1)
+        assertThat(resultado.creadas).isEqualTo(1)
+        assertThat(slot.captured.razonSocial).isEqualTo("Transportes\nUnidos S.A.C.")
+    }
+
+    /**
+     * Un archivo exportado sin fila de titulos perdia su primera empresa en silencio.
+     * La cabecera se reconoce por no ser un dato: su primera columna no es un RUC. La
+     * fixture `csv(...)` de este fichero siempre antepone una cabecera, asi que aqui
+     * se arma el multipart a mano para simular el archivo real sin titulos.
+     */
+    @Test
+    fun `un archivo sin cabecera no pierde su primera empresa`() {
+        every { empresaService.crearSinCarpetaDrive(any(), any()) } answers {
+            empresaDetalleDto(ruc = "20999999999", razonSocial = "Kincar S.A.C.")
+        }
+        val contenido = "20999999999;Kincar S.A.C.;urbano\n20888888888;Otra S.A.;urbano"
+        val archivo = MockMultipartFile("file", "empresas.csv", "text/csv", contenido.toByteArray(Charsets.UTF_8))
+
+        val resultado = service.importarEmpresas(archivo, usuario)
+
+        assertThat(resultado.totalFilas).isEqualTo(2)
+        assertThat(resultado.creadas).isEqualTo(2)
+    }
+
+    @Test
+    fun `una cabecera de verdad se sigue descartando`() {
+        every { empresaService.crearSinCarpetaDrive(any(), any()) } answers {
+            empresaDetalleDto(ruc = "20999999999", razonSocial = "Kincar S.A.C.")
+        }
+
+        val resultado = service.importarEmpresas(csv("20999999999;Kincar S.A.C.;urbano"), usuario)
+
+        assertThat(resultado.totalFilas).isEqualTo(1)
+    }
+
+    /**
+     * El reporte de errores es el unico entregable util del import: si sus numeros de
+     * fila no casan con lo que el usuario ve en Excel, no sirve para corregir nada.
+     */
+    @Test
+    fun `los numeros de fila del reporte cuentan las lineas en blanco`() {
+        every { empresaService.crearSinCarpetaDrive(any(), any()) } answers {
+            empresaDetalleDto(ruc = "20999999999", razonSocial = "Kincar S.A.C.")
+        }
+
+        val resultado =
+            service.importarEmpresas(
+                csv("", "", "20999999999;Kincar S.A.C.;urbano", "", "123;Mala S.A.;urbano"),
+                usuario,
+            )
+
+        assertThat(resultado.detalle.map { it.fila }).containsExactly(4, 6)
+    }
 }

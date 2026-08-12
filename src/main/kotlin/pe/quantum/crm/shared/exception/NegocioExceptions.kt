@@ -63,11 +63,12 @@ class ContactoVinculadoException :
         status = HttpStatus.CONFLICT,
     )
 
-/** Conflicto de negocio generico (409) con codigo especifico. */
+/** Conflicto de negocio generico (409) con codigo especifico y, opcionalmente, el campo que lo provoca. */
 class ConflictoException(
     code: String,
     message: String,
-) : ApiException(code = code, message = message, status = HttpStatus.CONFLICT)
+    field: String? = null,
+) : ApiException(code = code, message = message, status = HttpStatus.CONFLICT, field = field)
 
 /** El rol del usuario no tiene acceso a la operacion (matriz_permisos.md). */
 class PermisoInsuficienteException(

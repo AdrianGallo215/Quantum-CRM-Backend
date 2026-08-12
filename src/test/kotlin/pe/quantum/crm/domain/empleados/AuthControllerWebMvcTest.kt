@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.post
 import pe.quantum.crm.config.security.AuthCookieFactory
 import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
+import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
@@ -183,6 +184,24 @@ class AuthControllerWebMvcTest {
     fun `refresh de un empleado inactivo devuelve 401`() {
         every { empleadoService.porId(1) } returns empleado("ana@quantum.pe").apply { activo = false }
         val refreshToken = jwtService.generateRefreshToken(empleadoId = 1)
+
+        mockMvc.post("/api/v1/auth/refresh") {
+            cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.error.code") { value("CREDENCIALES_INVALIDAS") }
+        }
+    }
+
+    /**
+     * Un refresh token valido cuyo empleado ya no existe es una credencial muerta
+     * (401), no un recurso ausente (404). El 404 ademas confirmaba al portador del
+     * token que ese id llego a existir.
+     */
+    @Test
+    fun `refresh con un empleado ya borrado responde 401 y no 404`() {
+        every { empleadoService.porId(99) } throws NoEncontradoException("El empleado no existe")
+        val refreshToken = jwtService.generateRefreshToken(empleadoId = 99)
 
         mockMvc.post("/api/v1/auth/refresh") {
             cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))

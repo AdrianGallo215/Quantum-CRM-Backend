@@ -56,13 +56,21 @@ class MetaVentaServiceImpl(
                 "Ya existe una meta ${existente.estado.name} para ese empleado y año; usa PATCH para modificarla",
             )
         }
+        // Se resuelve ANTES de guardar: despues, `existente` y `meta` son la misma fila.
+        val esNueva = existente == null
         val meta = existente ?: MetaVenta(idEmpleado = idEmpleado, anio = anio, idPropuestoPor = usuario.id)
         meta.establecerMeses(request.meses())
 
         if (esGerenciaOAdmin) {
             aprobarDirecto(meta, usuario)
             val guardada = metaVentaRepository.save(meta)
-            notificarResolucion(guardada, usuario, TipoNotificacion.meta_modificada, "modificó")
+            // Una meta que no existia no se "modifico". El mensaje va al vendedor y a
+            // quien la propuso: decir lo que de verdad paso no es cosmetica.
+            if (esNueva) {
+                notificarResolucion(guardada, usuario, TipoNotificacion.meta_aprobada, "estableció")
+            } else {
+                notificarResolucion(guardada, usuario, TipoNotificacion.meta_modificada, "modificó")
+            }
             return toDtos(listOf(guardada)).first()
         }
         meta.idPropuestoPor = usuario.id

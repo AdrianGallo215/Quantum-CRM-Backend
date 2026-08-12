@@ -137,6 +137,37 @@ class EventoServiceImplTest {
         assertThrows<NoEncontradoException> { service.listarPorEmpresa(99, usuario) }
     }
 
+    /**
+     * Invariante #4 de CLAUDE.md: marcar un evento como ocurrido devuelve la
+     * SUGERENCIA y NO toca la oportunidad; el cambio es una segunda llamada
+     * confirmada del usuario. Solo existia el test negativo (evento que no dispara),
+     * asi que borrar el guard no ponia nada en rojo.
+     */
+    @Test
+    fun `marcar ocurrido un evento que dispara cambio de estado sugiere sin cambiar la oportunidad`() {
+        val evento =
+            Evento(
+                id = 7,
+                idOportunidad = 50,
+                idCatalogoEvento = 5,
+                disparaCambioEstado = true,
+                estadoDestino = EstadoOportunidad.documentos_legales,
+                createdBy = 1,
+                updatedBy = 1,
+            )
+        every { eventoRepository.findById(7) } returns java.util.Optional.of(evento)
+        every { oportunidadService.vinculoVisible(50, usuario) } returns
+            OportunidadVinculo(id = 50, idEmpresa = 10, idVendedor = 3, estado = "evaluacion_calidda")
+        every { eventoRepository.save(evento) } returns evento
+
+        val resultado = service.marcarOcurrido(7, MarcarOcurridoRequest(), usuario)
+
+        assertThat(resultado.sugerencia).isNotNull
+        assertThat(resultado.sugerencia?.dispara).isTrue()
+        assertThat(resultado.sugerencia?.estadoDestino).isEqualTo("documentos_legales")
+        verify(exactly = 0) { oportunidadService.cambiarEstado(any(), any(), any()) }
+    }
+
     @Test
     fun `marcar ocurrido un hito de empresa no genera sugerencia de cambio de estado`() {
         val evento =

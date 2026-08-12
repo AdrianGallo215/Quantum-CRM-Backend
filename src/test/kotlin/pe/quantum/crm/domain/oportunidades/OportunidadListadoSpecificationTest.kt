@@ -10,6 +10,7 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.query.sqm.tree.select.SqmSelectStatement
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
@@ -118,12 +119,24 @@ class OportunidadListadoSpecificationTest {
         assertThat(compilada.hql).contains("estado")
     }
 
-    /** Un estado que no existe en el enum se ignora: ni filtra ni reactiva la exclusion. */
+    /**
+     * Un `?estado=` fuera del enum es un typo del cliente. Antes se ignoraba en
+     * silencio y la respuesta salia 200 con TODO el pipeline, cerradas incluidas.
+     */
     @Test
-    fun `un estado desconocido no anade ningun predicado`() {
-        val compilada = listar(OportunidadFiltros(estado = "perdido"), admin)
+    fun `un estado desconocido devuelve 400 en vez de ignorarse`() {
+        val ex = assertThrows<ValidacionException> { listar(OportunidadFiltros(estado = "perdido"), admin) }
 
-        assertThat(compilada.predicados).isZero()
+        assertThat(ex.field).isEqualTo("estado")
+        assertThat(ex.message).contains("cerrado")
+    }
+
+    /** Un valor en blanco no es un typo: no filtra, pero conserva la exclusion de cerradas. */
+    @Test
+    fun `un estado en blanco no filtra y conserva la exclusion de cerradas`() {
+        val compilada = listar(OportunidadFiltros(estado = "   "), admin)
+
+        assertThat(compilada.predicados).isEqualTo(1)
     }
 
     @Test

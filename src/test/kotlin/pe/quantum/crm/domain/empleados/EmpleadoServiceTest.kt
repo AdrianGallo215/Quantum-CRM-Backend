@@ -39,12 +39,14 @@ class EmpleadoServiceTest {
     private fun empleado(
         activo: Boolean = true,
         passwordHash: String? = "\$2a\$12\$hashValido",
+        id: Long = 1,
+        rol: RolEmpleado = RolEmpleado.vendedor,
     ) = Empleado(
-        id = 1,
+        id = id,
         nombres = "Ana",
         apellidos = "Diaz",
         email = "ana@quantum.pe",
-        rol = RolEmpleado.vendedor,
+        rol = rol,
         activo = activo,
         passwordHash = passwordHash,
     )
@@ -327,5 +329,27 @@ class EmpleadoServiceTest {
             serviceCambio.cambiarContrasena(99, "vieja", "NuevaSegura123")
         }
         verify(exactly = 0) { repositoryCambio.save(any()) }
+    }
+
+    /**
+     * Documenta por que `verificarNoUltimoAdmin` no salta hoy: `verificarSolicitanteVigente`
+     * ya exige que quien pide la operacion sea OTRO admin activo, asi que al contar
+     * los admins activos distintos del objetivo siempre queda al menos el
+     * solicitante. La guarda se conserva como defensa en profundidad; si algun dia se
+     * relaja esa revalidacion, este test es el aviso de que la regla B1.4 vuelve a
+     * estar en juego.
+     */
+    @Test
+    fun `desactivar al unico otro admin no salta ULTIMO_ADMIN porque el solicitante ya es admin activo`() {
+        val solicitante = empleado(id = 1, rol = RolEmpleado.admin, activo = true)
+        val objetivo = empleado(id = 2, rol = RolEmpleado.admin, activo = true)
+        every { repository.findById(1) } returns Optional.of(solicitante)
+        every { repository.findById(2) } returns Optional.of(objetivo)
+        every { repository.countByRolAndActivoTrueAndIdNot(RolEmpleado.admin, 2) } returns 1
+        every { repository.save(any()) } answers { firstArg() }
+
+        val dto = service.cambiarActivo(id = 2, activo = false, idSolicitante = 1)
+
+        assertThat(dto.activo).isFalse()
     }
 }

@@ -44,7 +44,8 @@ class ContactoController(
     ): ApiResponse<List<ContactoListaDto>> {
         val usuario = usuarioProvider.actual()
         val resultado = contactoService.buscar(q, idEmpresa, usuario, page, perPage, null, null)
-        val conConteo = resultado.items.map { it.copy(oportunidadesCount = oportunidadesDeContacto.contar(it.id, usuario)) }
+        val conteos = oportunidadesDeContacto.contarPorContactos(resultado.items.map { it.id }, usuario)
+        val conConteo = resultado.items.map { it.copy(oportunidadesCount = conteos[it.id] ?: 0) }
         return ApiResponse.ok(conConteo, resultado.meta)
     }
 

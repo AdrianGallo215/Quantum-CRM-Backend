@@ -18,20 +18,22 @@ import java.time.Instant
  *
  * 1. Purga perezosa: al consultar una clave cuya ventana ya expiro, se elimina.
  * 2. Cota dura: el mapa es un LRU (`LinkedHashMap` en modo acceso) de `maxEntries`
- *    entradas; al superarla se descarta la menos usada recientemente.
+ *    entradas. Al superarla se descartan primero las claves caducadas y las que aun
+ *    no alcanzaron `maxAttempts`; una clave BLOQUEADA solo se desaloja si no queda
+ *    ninguna otra candidata, porque desalojarla equivale a levantarle el bloqueo al
+ *    atacante.
  *
  * Se prefiere la cota LRU a un barrido periodico porque no necesita hilo ni
  * dependencia extra y acota la memoria pase lo que pase: un barrido solo acota a
  * "intentos de la ultima ventana", que ante un flood sostenido sigue siendo
- * ilimitado. El modo acceso hace que la clave realmente atacada se refresque en
- * cada intento contra ella y no sea la candidata a desalojo.
+ * ilimitado.
  */
 @Component
 class LoginRateLimiter(
     private val maxAttempts: Int = MAX_ATTEMPTS,
     private val window: Duration = Duration.ofMinutes(WINDOW_MINUTES),
     private val clock: Clock = Clock.systemUTC(),
-    maxEntries: Int = MAX_ENTRIES,
+    private val maxEntries: Int = MAX_ENTRIES,
 ) {
     private data class Attempts(
         val count: Int,
@@ -39,10 +41,9 @@ class LoginRateLimiter(
     )
 
     // Sin sincronizar por si mismo: todo acceso va dentro de `synchronized(byKey)`.
-    private val byKey =
-        object : LinkedHashMap<String, Attempts>(INITIAL_CAPACITY, LOAD_FACTOR, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Attempts>): Boolean = size > maxEntries
-        }
+    // Modo acceso para que `acotar` desaloje por orden de uso; la cota se aplica a
+    // mano en vez de con `removeEldestEntry` porque hay que respetar los bloqueos.
+    private val byKey = LinkedHashMap<String, Attempts>(INITIAL_CAPACITY, LOAD_FACTOR, true)
 
     fun isBlocked(key: String): Boolean = (activeAttempts(key)?.count ?: 0) >= maxAttempts
 
@@ -56,6 +57,30 @@ class LoginRateLimiter(
                 } else {
                     existing.copy(count = existing.count + 1)
                 }
+            acotar(now)
+        }
+    }
+
+    /**
+     * Cota de memoria consciente del bloqueo. Se sacrifican primero las claves
+     * caducadas y las que aun no alcanzaron el limite —las que no protegen nada— y
+     * solo si todas las vigentes estan bloqueadas se cae al orden LRU, para que el
+     * mapa siga acotado pase lo que pase. Se llama siempre dentro de
+     * `synchronized(byKey)`.
+     */
+    private fun acotar(now: Instant) {
+        if (byKey.size <= maxEntries) {
+            return
+        }
+        val iterador = byKey.entries.iterator()
+        while (byKey.size > maxEntries && iterador.hasNext()) {
+            val entrada = iterador.next()
+            if (windowExpired(entrada.value, now) || entrada.value.count < maxAttempts) {
+                iterador.remove()
+            }
+        }
+        while (byKey.size > maxEntries) {
+            byKey.remove(byKey.keys.first())
         }
     }
 

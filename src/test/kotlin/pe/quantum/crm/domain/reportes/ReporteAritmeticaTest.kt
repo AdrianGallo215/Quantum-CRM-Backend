@@ -89,4 +89,32 @@ class ReporteAritmeticaTest {
         assertThat(periodo.desde).isEqualTo(hoy.withDayOfMonth(1))
         assertThat(periodo.hastaExclusivo).isEqualTo(hoy.withDayOfMonth(1).plusMonths(1))
     }
+
+    /**
+     * `ROW_NUMBER()` renumeraba: quitar un hito del catalogo movia a los siguientes y
+     * cambiaba el significado de `hito_2_completado` en los informes ya emitidos.
+     * Anclar la posicion al id del catalogo hace que quitar el hito 2 deje ese hueco
+     * vacio en vez de rellenarlo con el 3.
+     */
+    @Test
+    fun `las posiciones de hito se anclan a los tres primeros ids del catalogo`() {
+        val posiciones = posicionesDeHito(listOf(10L, 20L, 30L, 40L))
+
+        assertThat(posiciones).isEqualTo(mapOf(10L to 1, 20L to 2, 30L to 3))
+    }
+
+    /** Un cuarto hito existe en el catalogo pero el DTO solo tiene tres huecos: se ignora, no desplaza. */
+    @Test
+    fun `un cuarto hito no desplaza a los tres primeros`() {
+        val posiciones = posicionesDeHito(listOf(10L, 20L, 30L, 40L))
+
+        assertThat(posiciones).doesNotContainKey(40L)
+    }
+
+    @Test
+    fun `con menos de tres hitos las posiciones sobrantes simplemente no existen`() {
+        val posiciones = posicionesDeHito(listOf(10L, 20L))
+
+        assertThat(posiciones).isEqualTo(mapOf(10L to 1, 20L to 2))
+    }
 }

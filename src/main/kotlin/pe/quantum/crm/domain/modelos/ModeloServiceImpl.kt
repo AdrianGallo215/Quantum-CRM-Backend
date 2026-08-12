@@ -27,7 +27,7 @@ class ModeloServiceImpl(
             throw ModeloSinAplicacionesException()
         }
         if (modeloRepository.existsByCodigo(request.codigo)) {
-            throw ConflictoException("CODIGO_DUPLICADO", "Ya existe un modelo con ese código")
+            throw ConflictoException("CODIGO_DUPLICADO", "Ya existe un modelo con ese código", field = "codigo")
         }
         val modelo =
             Modelo(
@@ -48,7 +48,14 @@ class ModeloServiceImpl(
         request: ActualizarModeloRequest,
     ): ModeloDto {
         val modelo = porId(id)
-        request.codigo?.let { modelo.codigo = it }
+        request.codigo?.let {
+            // Se valida en backend igual que en `crear`: dejarlo a la constraint
+            // devolvia otro codigo de error para el mismo problema.
+            if (it != modelo.codigo && modeloRepository.existsByCodigoAndIdNot(it, id)) {
+                throw ConflictoException("CODIGO_DUPLICADO", "Ya existe un modelo con ese código", field = "codigo")
+            }
+            modelo.codigo = it
+        }
         request.longitud?.let { modelo.longitud = it }
         request.capacidadTanques?.let { modelo.capacidadTanques = it }
         request.maxAsientos?.let { modelo.maxAsientos = it }

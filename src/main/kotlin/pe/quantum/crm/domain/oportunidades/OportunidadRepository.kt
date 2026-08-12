@@ -1,7 +1,9 @@
 package pe.quantum.crm.domain.oportunidades
 
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -25,6 +27,22 @@ interface OportunidadRepository :
         idEmpresa: Long,
         estados: Collection<EstadoOportunidad>,
     ): List<Oportunidad>
+
+    /**
+     * Oportunidad bloqueada para escritura (`SELECT ... FOR UPDATE`). La usa
+     * `cambiarEstado`: dos PATCH concurrentes sobre la misma fila leian el mismo
+     * `estado_anterior` y escribian dos filas de log con el mismo origen,
+     * corrompiendo el historial del que sale la pronta facturacion.
+     *
+     * El bloqueo es corto y no envuelve ninguna llamada de red: la transaccion de
+     * `cambiarEstado` no habla con Drive (a diferencia de `asegurarCarpetaDrive`,
+     * que por eso resuelve la exclusion con un UPDATE condicional en vez de un lock).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Oportunidad o where o.id = :id")
+    fun findByIdBloqueando(
+        @Param("id") id: Long,
+    ): Oportunidad?
 
     /** Ids de oportunidades sin carpeta de Drive (backfill, ver modulo `mantenimiento`). */
     @Query("select o.id from Oportunidad o where o.driveFolderId is null order by o.id")
@@ -58,6 +76,12 @@ interface OportunidadEstadoLogRepository : JpaRepository<OportunidadEstadoLog, L
     fun findFirstByIdOportunidadOrderByChangedAtDescIdDesc(idOportunidad: Long): OportunidadEstadoLog?
 }
 
+/** Proyeccion del conteo por lote del listado de contactos. */
+interface ConteoPorContacto {
+    val idContacto: Long
+    val total: Long
+}
+
 interface OportunidadContactoRepository : JpaRepository<OportunidadContacto, OportunidadContactoId> {
     fun findByIdIdOportunidad(idOportunidad: Long): List<OportunidadContacto>
 
@@ -78,4 +102,22 @@ interface OportunidadContactoRepository : JpaRepository<OportunidadContacto, Opo
         @Param("idContacto") idContacto: Long,
         @Param("idVendedor") idVendedor: Long?,
     ): Long
+
+    /**
+     * Conteo por lote para el listado de contactos: misma regla de visibilidad que
+     * [countVisiblesPorContacto], pero UNA consulta para toda la pagina en vez de una
+     * por fila. Los contactos sin ninguna oportunidad visible no salen en el
+     * resultado; el llamador los resuelve a 0.
+     */
+    @Query(
+        "select oc.id.idContacto as idContacto, count(oc) as total " +
+            "from OportunidadContacto oc, Oportunidad o " +
+            "where o.id = oc.id.idOportunidad and oc.id.idContacto in :idsContacto " +
+            "and (:idVendedor is null or o.idVendedor = :idVendedor) " +
+            "group by oc.id.idContacto",
+    )
+    fun contarVisiblesPorContactos(
+        @Param("idsContacto") idsContacto: Collection<Long>,
+        @Param("idVendedor") idVendedor: Long?,
+    ): List<ConteoPorContacto>
 }

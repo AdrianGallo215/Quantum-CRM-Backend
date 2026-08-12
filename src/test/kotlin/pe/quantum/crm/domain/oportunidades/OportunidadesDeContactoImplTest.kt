@@ -119,6 +119,47 @@ class OportunidadesDeContactoImplTest {
         assertThat(resultado.map { it.id }).containsExactly(100)
     }
 
+    /**
+     * El listado de contactos pedia el conteo fila a fila (~101 consultas con
+     * per_page=100). El conteo por lote conserva exactamente la misma regla de
+     * visibilidad: `filtroVendedor` null = supervisor, cuenta todas.
+     */
+    @Test
+    fun `contarPorContactos resuelve toda la pagina en una sola consulta`() {
+        every { contactoOportunidadRepository.contarVisiblesPorContactos(setOf(7L, 8L, 9L), null) } returns
+            listOf(conteo(7, 2), conteo(9, 5))
+
+        val conteos = service.contarPorContactos(listOf(7, 8, 9), admin)
+
+        assertThat(conteos).containsExactlyInAnyOrderEntriesOf(mapOf(7L to 2, 9L to 5))
+        io.mockk.verify(exactly = 1) { contactoOportunidadRepository.contarVisiblesPorContactos(any(), any()) }
+    }
+
+    @Test
+    fun `contarPorContactos con la lista vacia no consulta nada`() {
+        val conteos = service.contarPorContactos(emptyList(), admin)
+
+        assertThat(conteos).isEmpty()
+        io.mockk.verify(exactly = 0) { contactoOportunidadRepository.contarVisiblesPorContactos(any(), any()) }
+    }
+
+    @Test
+    fun `un vendedor solo cuenta las oportunidades que alcanza`() {
+        every { contactoOportunidadRepository.contarVisiblesPorContactos(setOf(7L), 7L) } returns listOf(conteo(7, 1))
+
+        val conteos = service.contarPorContactos(listOf(7), vendedor)
+
+        assertThat(conteos).isEqualTo(mapOf(7L to 1))
+    }
+
+    private fun conteo(
+        idContactoValor: Long,
+        totalValor: Long,
+    ) = object : ConteoPorContacto {
+        override val idContacto = idContactoValor
+        override val total = totalValor
+    }
+
     @Test
     fun `listar muestra al supervisor las oportunidades de todos los vendedores`() {
         every { contactoOportunidadRepository.findByIdIdContacto(5) } returns listOf(vinculo(100), vinculo(200))

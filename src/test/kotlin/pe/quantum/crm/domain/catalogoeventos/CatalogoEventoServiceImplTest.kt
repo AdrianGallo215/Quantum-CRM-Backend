@@ -7,6 +7,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import pe.quantum.crm.domain.catalogoeventos.dto.ActualizarCatalogoEventoRequest
 import pe.quantum.crm.domain.catalogoeventos.dto.CrearCatalogoEventoRequest
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -120,6 +121,37 @@ class CatalogoEventoServiceImplTest {
 
         assertThat(resultado).hasSize(1)
         verify(exactly = 0) { repository.findByEtapaAsociada(any()) }
+    }
+
+    /**
+     * La unicidad se validaba solo al crear. Al actualizar, el choque llegaba a la
+     * constraint y salia como `CONFLICTO_DATOS` generico: otro codigo de error para
+     * el mismo problema, y sin `field` con el que el frontend pueda marcar el input.
+     */
+    @Test
+    fun `cambiar el nombre a uno que ya existe devuelve NOMBRE_DUPLICADO`() {
+        every { repository.findById(1) } returns Optional.of(CatalogoEvento(id = 1, nombre = "Visita inicial"))
+        every { repository.existsByNombreAndIdNot("Cita agendada", 1) } returns true
+
+        val ex =
+            assertThrows<ConflictoException> {
+                service.actualizar(1, ActualizarCatalogoEventoRequest(nombre = "Cita agendada"))
+            }
+
+        assertThat(ex.code).isEqualTo("NOMBRE_DUPLICADO")
+        assertThat(ex.field).isEqualTo("nombre")
+    }
+
+    /** Reenviar su propio nombre no es un duplicado: es una actualizacion parcial normal. */
+    @Test
+    fun `reenviar el mismo nombre no dispara el conflicto`() {
+        val evento = CatalogoEvento(id = 1, nombre = "Visita inicial")
+        every { repository.findById(1) } returns Optional.of(evento)
+        every { repository.save(any()) } answers { firstArg() }
+
+        service.actualizar(1, ActualizarCatalogoEventoRequest(nombre = "Visita inicial"))
+
+        verify(exactly = 0) { repository.existsByNombreAndIdNot(any(), any()) }
     }
 
     @Test

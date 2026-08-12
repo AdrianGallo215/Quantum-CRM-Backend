@@ -85,6 +85,8 @@ En caso de error, `data` es `null` y `error` contiene:
 }
 ```
 
+`error.field` va siempre en **snake_case**, igual que el resto del JSON (§1): un campo compuesto como `idContacto` sale como `id_contacto`, casando con el nombre que el frontend envió en el request. Un campo anidado con índice de array conserva el índice: `contactos[0].id_contacto`.
+
 ---
 
 ## 3. Códigos de error
@@ -198,6 +200,9 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ```
 
 **Respuesta 200:** misma estructura que `/auth/login` pero sin `empleado`.
+
+**Errores:**
+- `401 CREDENCIALES_INVALIDAS` — el refresh token no es válido, expiró, el empleado está inactivo, **o el empleado ya no existe** (una credencial muerta no es un recurso ausente: nunca `404`).
 
 ---
 
@@ -324,7 +329,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 | Param | Tipo | Descripción |
 |---|---|---|
 | `q` | string | Búsqueda por razón social o RUC |
-| `estado_cartera` | enum | Filtrar por estado de cartera |
+| `estado_cartera` | enum | Filtrar por estado de cartera. Un valor fuera del enum responde `400 VALIDACION` (`field: "estado_cartera"`), no se ignora en silencio |
 | `id_vendedor` | long | Filtrar por vendedor (solo admin/gerencia/jdv) |
 | `segmento` | string | Filtrar por segmento |
 | `distrito` | string | Filtrar por distrito |
@@ -836,7 +841,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 
 | Param | Tipo | Descripción |
 |---|---|---|
-| `estado` | enum | Filtrar por etapa del pipeline |
+| `estado` | enum | Filtrar por etapa del pipeline. Un valor fuera del enum responde `400 VALIDACION` (`field: "estado"`), no se ignora en silencio |
 | `id_empresa` | long | Filtrar por empresa |
 | `id_vendedor` | long | Solo admin/gerente/jdv |
 | `id_financiadora` | long | Filtrar por financiadora |
@@ -1128,6 +1133,9 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 **Body:** `{ "id_contacto": 5, "rol_en_oportunidad": "Contacto Principal" }`
 
 **Respuesta 201:** la vinculación creada.
+
+**Errores:**
+- `409 CONTACTO_YA_VINCULADO` — el contacto ya está vinculado a esta oportunidad; usa `PUT` para cambiar su rol en vez de reenviar el `POST`.
 
 ---
 
@@ -1463,6 +1471,9 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 
 **Respuesta 200:** la financiadora actualizada.
 
+**Errores:**
+- `409 FINANCIADORA_DEFAULT_REQUERIDA` — se intenta desmarcar (`es_default: false`) la única financiadora default; marca otra antes de desmarcar esta.
+
 ---
 
 ## 14. Modelos
@@ -1526,6 +1537,9 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 
 **Respuesta 200:** el modelo actualizado.
 
+**Errores:**
+- `409 CODIGO_DUPLICADO` (`field: "codigo"`) — el código ya lo usa otro modelo. Mismo código y `field` que devuelve `POST /modelos`.
+
 ---
 
 ## 15. Catálogo de eventos
@@ -1585,6 +1599,9 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 **Body:** mismos campos que POST, todos opcionales.
 
 **Respuesta 200:** el evento actualizado.
+
+**Errores:**
+- `409 NOMBRE_DUPLICADO` (`field: "nombre"`) — el nombre ya lo usa otro evento del catálogo. Mismo código y `field` que devuelve `POST /catalogo-eventos`.
 
 ---
 

@@ -10,7 +10,7 @@ Registro del code-review de corrección (no seguridad) hecho sobre toda la codeb
 - 🟡 **Parcial** — se corrigió una parte, o se corrigió la desinformación pero no la causa raíz.
 - 🗄️ **Pendiente en Supabase** — requiere cambio de esquema, gestionado a mano por el dueño del proyecto.
 
-**Resumen (actualizado tras la Ola 2, 2026-08-10/11):** 29 corregidos · 27 pendientes · 1 pendiente en Supabase. **Sin [Crítico] ni [Alto] pendientes en código.** El único [Alto] que queda es el 🗄️ de `POST /empresas` con columnas `NOT NULL`, y ya tiene su migración escrita y verificada (`V38`): solo falta aplicarla a mano en Supabase. Todo lo demás que era [Alto] (B1, D1, D2, F1, A1, F2, E2, F3) quedó cerrado. Lo que resta son [Medio] y [Bajo]. Plan de ataque en `docs/plan-correccion-code-review.md`.
+**Resumen (actualizado 2026-08-12, migración V38 aplicada en Supabase):** 57 corregidos · 0 pendientes · 0 pendientes en Supabase. **Registro cerrado: sin [Crítico], [Alto], [Medio] ni [Bajo] pendientes, ni en código ni en Supabase.** Plan de ataque de la tanda [Medio]/[Bajo] en `docs/plan-ejecucion-medios-bajos.md`; historial de la tanda [Alto]/[Crítico] en `docs/plan-correccion-code-review.md`.
 
 **Cobertura:** global 86.6%, dominio 85.0% en local (94.9% contando los `@Tag("integration")` que solo corren en CI). Trinquete del build en 85/84.
 
@@ -28,16 +28,16 @@ Registro del code-review de corrección (no seguridad) hecho sobre toda la codeb
 ✅ **Corregido.** Las reglas ya estaban bien implementadas en `OportunidadServiceImpl.cambiarEstado`; lo que faltaba era la aserción que impidiera borrarlas sin darse cuenta. `OportunidadCambiarEstadoInvariantesTest.kt` (nuevo, 12 tests) cubre: `motivo_cierre` obligatorio al cerrar (`MOTIVO_CIERRE_REQUERIDO`) y que se limpia al retroceder desde `cerrado`; guard de rol en `facturado` (vendedor y jdv no pueden, admin/gerencia/analista sí); `es_retroceso` en `true`/`false` según la dirección del cambio; `cambiar al mismo estado` y `estado desconocido` → `ESTADO_INVALIDO`; el log de estados registra estado anterior y nuevo; `MONTO_NO_EDITABLE` si `actualizar` recibe `monto_total`. `EstadoCarteraServiceTest.kt` (nuevo, 5 tests) cubre `EstadoCarteraService` en aislamiento: facturado gana sobre activa, sin oportunidades el derivado es `null`, etc.
 
 ### [Medio] `estado` inválido en `GET /oportunidades` se traga en silencio — `OportunidadServiceImpl.kt:626-633`
-⬜ **Pendiente.** `?estado=perdido` (estado que no existe) devuelve 200 con todas las oportunidades, incluidas las cerradas, en vez de 400. Inconsistente con `cambiarEstado`, que sí valida el mismo enum.
+✅ **Corregido (A.1).** `?estado=perdido` ahora responde `400 VALIDACION` (`field: "estado"`) en vez de 200 con todo sin filtrar. Mismo criterio que `cambiarEstado`.
 
 ### [Medio] `archivosDrive` retiene conexión JDBC durante llamada a Drive — `OportunidadServiceImpl.kt:586-590`
 ✅ **Corregido** (junto con el fix de resiliencia de Drive — encontrado por el agente como caso adicional no pedido explícitamente).
 
 ### [Medio] `cambiarEstado` no bloquea la fila: carrera en transición de estado — `OportunidadServiceImpl.kt:229,261-273`
-⬜ **Pendiente.** Dos `PATCH` concurrentes sobre la misma oportunidad pueden dejar dos filas con el mismo `estado_anterior` en el log, corrompiendo el historial que usa la pronta facturación.
+✅ **Corregido (A.2).** Nuevo `OportunidadRepository.findByIdBloqueando` con `@Lock(PESSIMISTIC_WRITE)`; `cambiarEstado` lo usa en vez de `findById`. Test de arquitectura `DriveFueraDeTransaccionTest` ajustado para permitir explícitamente este lock (no toca Drive, no reproduce el problema que ese test vigila).
 
 ### [Medio] `POST /oportunidades/:id/contactos` sobre vínculo existente hace UPDATE silencioso y responde 201 — `OportunidadServiceImpl.kt:369-374`
-⬜ **Pendiente.** Vincular dos veces el mismo contacto sobreescribe el rol anterior sin aviso y responde `201 Created` como si fuera nuevo.
+✅ **Corregido (A.3).** Ahora responde `409 CONTACTO_YA_VINCULADO` si el vínculo ya existe; usa `PUT` para cambiar el rol.
 
 ---
 
@@ -47,13 +47,13 @@ Registro del code-review de corrección (no seguridad) hecho sobre toda la codeb
 ✅ **Corregido.** La Specification pedía `root.get("tlf1")`/`"tlf2"` pero la entidad declara `tlf_1`/`tlf_2`. Como los tres predicados iban en un solo `cb.or`, moría también la búsqueda por nombre.
 
 ### [Alto] `POST /empresas` inserta NULL en columnas `NOT NULL` — `EmpresaServiceImpl.kt:126`
-🗄️ **Migración creada; pendiente de aplicar en Supabase.** `actividad_econ`, `estado_sunat`, `condicion_sunat`, `direccion_fiscal` son `NOT NULL` en `V6__create_empresas.sql` pero nullable en DTO, entidad y contrato — la BD era la única de las cuatro capas que los exigía. `ddl-auto=validate` no compara nulabilidad, así que la app arrancaba en verde y reventaba con 500 en el primer `POST` con body mínimo (el caso real: registrar un lead sin tener aún la ficha RUC).
+✅ **Corregido — migración `V38` aplicada en Supabase (2026-08-12).** `actividad_econ`, `estado_sunat`, `condicion_sunat`, `direccion_fiscal` eran `NOT NULL` en `V6__create_empresas.sql` pero nullable en DTO, entidad y contrato — la BD era la única de las cuatro capas que los exigía. `ddl-auto=validate` no compara nulabilidad, así que la app arrancaba en verde y reventaba con 500 en el primer `POST` con body mínimo (el caso real: registrar un lead sin tener aún la ficha RUC).
 
 Se decidió **relajar el esquema**, no exigir los campos en el DTO: el dato de SUNAT no siempre existe al dar de alta, y forzarlo obligaría al vendedor a inventárselo o a no registrar la empresa.
 
-`V38__empresas_campos_sunat_opcionales.sql` creada, idempotente igual que V37 (se aplica primero a mano en Supabase, y `DROP NOT NULL` sobre una columna ya nullable es un no-op en Postgres). `SeedFixtures.MIGRACIONES_TOTAL` subido a 38 y añadido un test de regresión en `SchemaMigrationIntegrationTest` que falla si alguien vuelve a apretar esas columnas — `@Tag("integration")`, solo corre en CI.
+`V38__empresas_campos_sunat_opcionales.sql` creada, idempotente igual que V37. `SeedFixtures.MIGRACIONES_TOTAL` subido a 38 y añadido un test de regresión en `SchemaMigrationIntegrationTest` que falla si alguien vuelve a apretar esas columnas — `@Tag("integration")`, solo corre en CI.
 
-**Verificado contra Postgres real (2026-08-10):** la BD local ya tenía las columnas nullable (el SQL de la sesión previa se aplicó a mano ahí), así que sirvió para probar el caso exacto de Supabase: la migración corre limpia sobre columnas ya relajadas, y un `INSERT` con solo `ruc`/`razon_social` —el que antes daba 500— ahora pasa. Falta aplicarla en Supabase.
+**Verificado contra Postgres real (2026-08-10):** la BD local ya tenía las columnas nullable, así que sirvió para probar el caso exacto de Supabase: la migración corre limpia sobre columnas ya relajadas, y un `INSERT` con solo `ruc`/`razon_social` —el que antes daba 500— ahora pasa. **Aplicada a mano en Supabase el 2026-08-12; ya no queda ningún ítem 🗄️ pendiente.**
 
 ### [Alto] RUC del mismo vendedor devuelve 409 en vez de la empresa con 200 — `EmpresaServiceImpl.kt:118` (B1)
 ✅ **Corregido.** `EmpresaServiceImpl.crear` ahora usa `EmpresaRepository.findByRuc` (antes código muerto): si el RUC existe y pertenece al mismo vendedor, devuelve la empresa existente con `200 OK` sin insertar fila ni crear carpeta de Drive (`AltaEmpresaResultado.creada = false`); si pertenece a otro vendedor, sigue lanzando `RucDuplicadoException` → `409 RUC_DUPLICADO`, ahora con un mensaje que no culpa al usuario. El camino `crearSinCarpetaDrive` (usado por el import CSV) queda sin tocar a propósito: sigue lanzando siempre ante duplicado, porque el import construye su reporte de errores a partir de esa excepción. `contrato_api.md §8` se actualizó (tareas F.1/F.2 del plan de ejecución) para documentar el 200/201 y el mensaje nuevo, y dejó de contradecir `reglas_negocio.md §2.1`.
@@ -64,19 +64,19 @@ Se decidió **relajar el esquema**, no exigir los campos en el DTO: el dato de S
 ✅ **Corregido.** `ruc` era el único campo no-nulo sin default; cualquier edición parcial sin reenviar el RUC daba 400.
 
 ### [Medio] Reasignar vendedor de empresa en Cartera Maestra viola el CHECK de V27 — `EmpresaServiceImpl.kt:303`
-⬜ **Pendiente.** `PATCH .../vendedor` sobre una empresa con `en_cartera_maestra = true` revienta con `DataIntegrityViolationException` → 409 genérico sin explicar por qué. También le falta fijar `updatedBy`.
+✅ **Corregido (B.1).** Ahora responde `409 EMPRESA_EN_CARTERA_MAESTRA` explicando que hay que liberarla primero, en vez de dejarlo caer en la constraint. De paso se fijó `updatedBy`, que faltaba.
 
 ### [Medio] Llamada a Google Drive dentro de transacción y bajo lock pesimista — `EmpresaServiceImpl.kt:209`
 ✅ **Corregido.**
 
 ### [Medio] N+1 en `GET /contactos`: hasta ~301 consultas por página — `ContactoController.kt:47`
-⬜ **Pendiente.** `oportunidadesDeContacto.contar(...)` se llama una vez por fila del listado en vez de por lote; existe ya `findByIdIdContactoIn` sin usar en producción.
+✅ **Corregido (A.4).** Nuevo `OportunidadesDeContacto.contarPorContactos(...)` resuelve toda la página en una sola consulta agrupada (`OportunidadContactoRepository.contarVisiblesPorContactos`), misma regla de visibilidad que el conteo individual. `contar(...)` se conserva para el detalle.
 
 ### [Medio] Eliminar empresa no elimina la carpeta del Drive
-⬜ **Pendiente.** 
+✅ **Corregido (B.3).** Decisión del dueño: mover a la papelera de Drive (`trashed = true`, reversible ~30 días), no borrado permanente. `DriveStorageService.enviarCarpetaAPapelera(...)` nuevo; `EmpresaServiceImpl.eliminar` la invoca después de que la transacción de borrado confirme, y un fallo de Drive no revierte el borrado (se loguea y sigue).
 
 ### [Medio] `estado_cartera` inválido en filtro se descarta en silencio — `EmpresaServiceImpl.kt:463`
-⬜ **Pendiente.** Mismo patrón que el de oportunidades: `?estado_cartera=perdido` devuelve todo sin filtrar en vez de 400.
+✅ **Corregido (B.2).** Mismo tratamiento que en oportunidades: `?estado_cartera=perdido` responde `400 VALIDACION` (`field: "estado_cartera"`).
 
 ---
 
@@ -91,19 +91,19 @@ Se decidió **relajar el esquema**, no exigir los campos en el DTO: el dato de S
 ✅ **Corregido** (junto con el barrido completo de fechas en toda la API — ver el mensaje enviado al frontend).
 
 ### [Medio] El job de recordatorios escanea la tabla entera cada hora, con query por ítem — `TareaServiceImpl.kt:309`
-⬜ **Pendiente.** Sin cota temporal en la query; cada tarea vencida genera una consulta `exists` por hora indefinidamente, aunque su recordatorio se enviara hace meses.
+✅ **Corregido (C.1).** Nueva query `findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionBetween` acota a la ventana [ahora-30d, ahora+24h], superconjunto estricto de lo que `RecordatorioJob` puede notificar. Test de integración nuevo (`TareaRepositoryVentanaIntegrationTest`, `@Tag("integration")`) escrito pero **no ejecutado** en esta máquina (Testcontainers/Docker 29); pendiente de CI.
 
 ### [Medio] Recordatorios de eventos usan `LocalDate.now()` en UTC pero `fecha_estimada` es calendario peruano — `RecordatorioJob.kt:65`
-⬜ **Pendiente.** A las 19:00 de Lima la fecha UTC ya es la del día siguiente; el vendedor puede recibir "evento vencido" con 5 horas del día hábil aún por delante, y por el dedup permanente nunca se repite.
+✅ **Corregido (C.2).** `RecordatorioJob` recibe un `Clock` inyectable; los eventos se evalúan contra `LocalDate.now(clock.withZone(ZONA_PERU))` (`shared/ZonaHoraria.kt`, nuevo). **Hallazgo nuevo encontrado al corregir, no arreglado aquí:** un evento con `fecha_estimada == hoy` nunca genera ningún recordatorio (`isBefore(hoy)` es falso y `== hoy.plusDays(1)` también) — un evento creado hoy para hoy no avisa.
 
 ### [Medio] `contrato_api.md §19` desactualizado: los enums de notificación crecieron — `NotificacionEnums.kt:15`
 ✅ **Corregido (solo documentación).** `TipoNotificacion` tiene 16 valores reales (9 del set original + `solicitud_creada`/`solicitud_aprobada`/`solicitud_denegada` + `meta_propuesta`/`meta_aprobada`/`meta_rechazada`/`meta_modificada`, usados por `SolicitudServiceImpl` y `MetaVentaServiceImpl` respectivamente). `contrato_api.md §19` ahora lista los 16. De paso se corrigió `entidad_tipo`: el contrato solo mencionaba `oportunidad`/`empresa`, pero `EntidadNotificacion` tiene 4 valores (`solicitud`, `meta_venta` también). No se tocó el enum ni ningún archivo `.kt`.
 
 ### [Medio] La invariante #4 de CLAUDE.md (eventos no cambian estado) no tiene test que la proteja — `EventoServiceImplTest.kt:138`
-⬜ **Pendiente.** Solo existe el test negativo; no hay ninguno que verifique el camino positivo (`sugerencia.dispara = true`) ni que afirme `verify(exactly = 0) { oportunidadService.cambiarEstado(...) }`.
+✅ **Corregido (C.3).** Test positivo nuevo: marcar ocurrido un evento con `disparaCambioEstado = true` devuelve la sugerencia y `verify(exactly = 0) { oportunidadService.cambiarEstado(...) }`.
 
 ### [Medio] Umbrales de `RecordatorioJob` solo testeados en el caso trivial — `RecordatorioJobTest.kt:39`
-⬜ **Pendiente.** Sin cobertura de los bordes reales (24h ±1min, el propio día del evento, destino nulo). `LimpiezaNotificacionesJobTest.kt:18` afirma solo sobre el argumento capturado del mock, no sobre el criterio real de borrado.
+✅ **Corregido (C.4).** Bordes cubiertos: 24h exactas, 23h59m, 24h01m (no genera), vencida por 1 minuto, evento cuya oportunidad ya no existe (se ignora sin notificar). `LimpiezaNotificacionesJobTest` reescrito con reloj fijo: afirma el corte exacto de purga (30 días antes de la ejecución), no una franja de un minuto alrededor de `now()`.
 
 ---
 
@@ -122,16 +122,16 @@ Se decidió **relajar el esquema**, no exigir los campos en el DTO: el dato de S
 ✅ **Corregido.** `EmpleadoCrudControllerWebMvcTest.kt` (nuevo, 11 tests): `GET /empleados` (lista y 403 con rol `vendedor`), `POST /empleados` happy path (201) y `EMAIL_DUPLICADO` (409), `PUT /empleados/:id` con email malformado (400, no llega al servicio), con nombres en blanco (400), con un solo campo (actualización parcial dejando el resto en `null`), con email válido (sí llega al servicio); y los `@PreAuthorize` de `POST`/`PUT`/`PATCH activo` devolviendo 403 con rol `gerencia`.
 
 ### [Medio] La guarda de último admin quedó inalcanzable tras el fix de revocación — `EmpleadoServiceImpl.kt:188-192`
-⬜ **Pendiente (informacional).** No es un bug — es código muerto tras el fix de seguridad de la sesión previa (`verificarSolicitanteVigente` ya garantiza que siempre queda otro admin). Vale la pena documentarlo o retirarlo para que nadie lo "arregle" a ciegas.
+✅ **Corregido (D.4, documentación).** Decisión del dueño: mantener + documentar, no retirar. KDoc nuevo explica por qué hoy es inalcanzable (`verificarSolicitanteVigente` garantiza que el solicitante ya es otro admin activo) y qué la reactivaría. Test nuevo (`EmpleadoServiceTest`) fija el comportamiento actual como red de seguridad.
 
 ### [Medio] `LoginRateLimiter` puede evaporarse por desalojo LRU — `LoginRateLimiter.kt:44`
-⬜ **Pendiente.** El bloqueo depende de que la clave atacada se siga consultando; un flood con 10.000 emails distintos puede desalojarla antes de que expire la ventana de 15 min.
+✅ **Corregido (D.3).** El desalojo ahora es consciente del bloqueo: se sacrifican primero las claves caducadas y las que no alcanzaron `maxAttempts`; una clave bloqueada solo se desaloja si no queda otra candidata. La cota de memoria se sigue respetando incluso si todas las claves vigentes están bloqueadas.
 
 ### [Medio] `Paginacion.meta` (fabrica `total_pages` para toda la API paginada) sin test propio — `Paginacion.kt:86-93`
-⬜ **Pendiente.** La aritmética se verificó correcta manualmente, pero ningún test la ejercita como sujeto — un off-by-one futuro rompería la paginación de 6+ módulos en silencio.
+✅ **Corregido (D.2).** 6 tests nuevos: sin resultados, un resultado, borde exacto (llena la página justo), borde exacto+1 (abre la segunda), máximo de `per_page`, y que `page`/`per_page`/`total` se devuelven tal cual. Pasaron a la primera (la aritmética ya era correcta).
 
 ### [Medio] `POST /auth/refresh` devuelve 404 en vez de 401 si el empleado del token fue borrado — `AuthController.kt:80`
-⬜ **Pendiente.**
+✅ **Corregido (D.1).** Ahora responde `401 CREDENCIALES_INVALIDAS` en vez de 404: una credencial muerta no es un recurso ausente, y el 404 además confirmaba al portador del token que ese id existió.
 
 ---
 
@@ -152,16 +152,16 @@ El fix **no es solo un `?.`**: el mapa pasó a `Map<Pair<Long, Long>, LocalDateT
 ✅ **Corregido** (para `ReporteService`, el bloque más grande; `ProspeccionDao` ya se cubrió en la sesión previa). Se añadieron los tests unitarios de los helpers de dinero puros (`sumMonto`, `promedio`, `porcentaje`) y, sobre todo, `ReporteServiceSqlIntegrationTest.kt` (nuevo, 6 tests `@Tag("integration")` contra Postgres real vía Testcontainers, porque mockear el `JdbcTemplate` solo probaría el mock): rango de fechas de `ventas` con una operación dentro y otra fuera; regresión del hallazgo [Crítico] ya corregido (una oportunidad facturada sin fila en `oportunidad_estados_log` debe seguir contando, la fuente real es `oportunidades.facturado_en`); `equipo` no mezcla cifras entre dos vendedores; `prospeccion` exige `estado = 'ocurrido'` Y `id_oportunidad IS NULL` para contar como ingresada; `descuentos` documenta (sin corregir) el comportamiento actual frente a `NULL`. **No se pudieron ejecutar en esta máquina** (bloqueo de Testcontainers/Docker 29, ver memoria del proyecto) — las aserciones se derivaron leyendo `ReporteService.kt` línea por línea; se verificarán en CI vía `integrationTest`. `InicioDao` y `OportunidadConsultas` siguen sin test propio.
 
 ### [Medio] `/reportes/descuentos` mezcla "sin descuento" como 0% y descarta las cerradas — `ReporteService.kt:474,481`
-⬜ **Pendiente.** Criterio de NULL inconsistente con `/reportes/ventas`: dos endpoints, dos respuestas distintas para "cuál es el descuento promedio".
+✅ **Revisado (E.4) — confirmado como comportamiento intencional, no era un bug (2026-08-12).** Se probó un cambio (excluir NULL del promedio, incluir cerradas) que el dueño del proyecto vetó explícitamente: `dcto` NULL debe seguir contando como 0% y las oportunidades `cerrado` deben seguir excluidas de este reporte y de todos los cálculos de descuento. El código se revirtió a su comportamiento original; `ReporteServiceSqlIntegrationTest.kt` documenta ambos criterios como intencionales.
 
 ### [Medio] Los índices de hito del embudo se calculan por `ROW_NUMBER()` y se desalinean al tocar el catálogo — `ReporteService.kt:425`
-⬜ **Pendiente.** Un cuarto hito creado en `catalogo_eventos` nunca aparecería en el reporte; desactivar el hito 2 cambiaría retroactivamente el significado de `hito_2_completado`.
+✅ **Corregido (E.3).** Nueva función `posicionesDeHito(idsHitoOrdenados)`: la posición se ancla al id de catálogo, no al orden relativo. Quitar un hito deja su hueco vacío en vez de renumerar los siguientes; un cuarto hito se ignora en vez de desplazar a los tres primeros.
 
 ### [Medio] `dias_sin_actividad` usa `updated_at` y admite fechas futuras — `ProspeccionDao.kt:88`
-⬜ **Pendiente.** Puede dar `dias_sin_actividad = 0` durante meses en tareas completadas con `fecha_ejecucion` futura, ocultando empresas abandonadas del indicador `requieren_atencion`.
+✅ **Corregido (E.2).** `ultimaActividad` acota con `LEAST(COALESCE(fecha_ejecucion, updated_at), updated_at)` para tareas (la actividad real es, como muy tarde, cuando se completó) y con `f <= :ahora` para todo el conjunto. Test de integración nuevo (`ProspeccionDaoSqlIntegrationTest`, `@Tag("integration")`) escrito pero **no ejecutado**; pendiente de CI.
 
 ### [Medio] `POST /metas-venta` de gerencia sobre una meta nueva notifica como "modificó" — `MetaVentaServiceImpl.kt:64`
-⬜ **Pendiente.** No corrompe números, pero envía un mensaje factualmente falso al vendedor y a gerencia.
+✅ **Corregido (E.1).** Una meta que no existía notifica ahora `meta_aprobada` / "estableció"; sobre una meta existente sigue siendo `meta_modificada` / "modificó".
 
 ---
 
@@ -174,19 +174,19 @@ El fix **no es solo un `?.`**: el mapa pasó a `Map<Pair<Long, Long>, LocalDateT
 ✅ **Corregido.**
 
 ### [Medio] El parser CSV no soporta saltos de línea dentro de campos entrecomillados — `ImportCsvTempServiceImpl.kt:35,106-129`
-⬜ **Pendiente.** Un campo exportado por Excel con salto de línea interno produce dos filas fantasma con errores confusos, y con una columna de más puede corromper la razón social en silencio.
+✅ **Corregido (F.1).** `parsearRegistros(texto)` reemplaza el troceo línea a línea: un salto de línea dentro de un campo entrecomillado ya no parte el registro.
 
 ### [Medio] La primera línea siempre se descarta como cabecera, sin validarla — `ImportCsvTempServiceImpl.kt:44`
-⬜ **Pendiente.** Un archivo exportado sin fila de títulos pierde su primera empresa en silencio.
+✅ **Corregido (F.1).** `esCabecera(fila)` detecta la cabecera por si su primera columna no parece un RUC de 11 dígitos; un archivo sin fila de títulos ya no pierde su primera empresa.
 
 ### [Medio] Los números de fila reportados no coinciden con el archivo si hay líneas en blanco — `ImportCsvTempServiceImpl.kt:37,51`
-⬜ **Pendiente.** El reporte de errores del import —su único entregable útil— queda inutilizable para corregir el origen.
+✅ **Corregido (F.1).** `FilaCsv(linea, campos)` preserva el número de línea física real, contando las líneas en blanco aunque se salten como registro.
 
 ### [Medio] Cambiar el código de un modelo (o nombre de evento) a uno existente da `CONFLICTO_DATOS` genérico — `ModeloServiceImpl.kt:51`, `CatalogoEventoServiceImpl.kt:53`
-⬜ **Pendiente.** Se valida en `crear` pero no en `actualizar`; el frontend recibe un código de error distinto al de creación y sin `field`.
+✅ **Corregido (F.2).** `actualizar` valida ahora igual que `crear`: `409 CODIGO_DUPLICADO`/`NOMBRE_DUPLICADO` con `field`, mismo código que en creación. `ConflictoException` ganó un parámetro `field` opcional.
 
 ### [Medio] Se puede dejar el sistema sin ninguna financiadora default — `FinanciadoraServiceImpl.kt:59`
-⬜ **Pendiente.** El caso "más de una default" está bien cubierto; el caso "pasar de una a cero" no. Rompe la creación de oportunidades sin `id_financiadora` explícito hasta que alguien lo note.
+✅ **Corregido (F.3).** Desmarcar la única default (`es_default: false`) responde `409 FINANCIADORA_DEFAULT_REQUERIDA` en vez de dejar el sistema sin ninguna.
 
 ### [Medio] Cobertura cero en modelos, financiadoras, catalogoeventos (F2)
 ✅ **Corregido.** Tres archivos de test nuevos: `ModeloServiceImplTest.kt` (6 tests: código duplicado → `ConflictoException`, sin aplicaciones/aplicaciones `null` → `ModeloSinAplicacionesException`, happy path, `actualizar` de id inexistente → `NoEncontradoException`, `listar` ordenado por código); `FinanciadoraServiceImplTest.kt` (6 tests: marcar `es_default` con otra ya default → `ConflictoException` en `crear` y en `actualizar`, crear sin marcar default persiste sin validar unicidad, desmarcar la default deja el sistema sin ninguna — documenta el hallazgo abierto de abajo sin corregirlo, `listar`, `porId` inexistente); `CatalogoEventoServiceImplTest.kt` (8 tests: nombre duplicado, evento que dispara cambio de estado sin estado destino → `ValidacionException`, happy path, `hitosProspeccion` filtra y ordena, `todosPorId` indexa, `listar` con/sin `etapaAsociada`, `actualizar` de id inexistente).
@@ -231,13 +231,13 @@ Palanca que más rindió: replicar `ContactoBusquedaSpecificationTest` — compi
 ## Otros hallazgos (encontrados durante los fixes, fuera del alcance original de cada agente)
 
 ### [Medio] `error.field` se devuelve en camelCase, no snake_case — `GlobalExceptionHandler.kt:60` (y otras líneas del mismo patrón)
-⬜ **Pendiente — verificado de nuevo el 2026-08-07, sigue así.** `fieldError.field` es el nombre de la propiedad Kotlin, sin pasar por la estrategia `SNAKE_CASE` de Jackson. Afecta a todo 400 `VALIDACION` con campo compuesto (`id_contacto`, `precio_unitario`, `rol_en_oportunidad`, etc.) — el frontend no puede casar el `field` recibido con el que envió.
+✅ **Corregido (G.1).** Nueva función `String.aCampoSnakeCase()` (`shared/NombresDeCampo.kt`) aplicada en `handleValidation` y `handleConstraintViolation`. Convierte segmento a segmento para conservar los índices de array (`contactos[0].id_contacto`).
 
 ### [Bajo] `EmpresaDriveControllerTest.kt:105` es un falso positivo — usa `standaloneSetup`
-⬜ **Pendiente.** No carga el `ObjectMapper` de la app, así que afirma `driveFolderId` en camelCase cuando el contrato real exige `drive_folder_id`. El test pasaría igual si la serialización real se rompiera.
+✅ **Corregido (G.2).** El test pasó a `@SpringBootTest` (excluyendo BD/JPA/Flyway) con el `ObjectMapper` real inyectado vía `MappingJackson2HttpMessageConverter` en el `standaloneSetup`. Las aserciones se corrigieron a `drive_folder_id`.
 
 ### [Medio] La garantía de que las columnas `TIMESTAMP` contienen UTC depende únicamente de `ENV TZ=UTC` en el Dockerfile
-⬜ **Pendiente.** Cualquier escritura hecha fuera de ese contenedor (`bootRun` local, un script de mantenimiento corrido en Lima) mete hora local en columnas que el código ahora asume UTC sin comprobarlo. Lo robusto sería `TIMESTAMPTZ` en el esquema o `Instant` en las entidades — ambas cosas tocan a Supabase, no se aplicó ninguna.
+✅ **Corregido (G.3, mitigación en código; el fix de esquema sigue fuera de alcance).** Decisión del dueño: guard de arranque que falla rápido. `ZonaHorariaGuard` (`@PostConstruct`) verifica `ZoneId.systemDefault()` y aborta el arranque si no es UTC (`app.exigir-utc`, default `true`). Se descubrió que el default `true` rompía 158 tests en esta máquina (no está en UTC): se añadió `app.exigir-utc=false` a `src/test/resources/application.properties` — en Docker (producción) la JVM sí está en UTC y la guarda pasa igual, con el flag en cualquier valor. El fix robusto de raíz (`TIMESTAMPTZ` o `Instant` en las entidades) sigue tocando el esquema y fuera de alcance.
 
 ---
 

@@ -334,16 +334,23 @@ class TareaServiceImpl(
     }
 
     @Transactional(readOnly = true)
-    override fun pendientesParaRecordatorio(): List<TareaRecordatorioProyeccion> =
-        tareaRepository.findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionIsNotNull(EstadoAccion.pendiente).map {
-            TareaRecordatorioProyeccion(
-                id = requireNotNull(it.id),
-                idAsignado = requireNotNull(it.idAsignado),
-                idEmpresa = it.idEmpresa,
-                idOportunidad = it.idOportunidad,
-                fechaEjecucion = requireNotNull(it.fechaEjecucion),
-            )
-        }
+    override fun pendientesParaRecordatorio(): List<TareaRecordatorioProyeccion> {
+        val ahora = LocalDateTime.now()
+        return tareaRepository
+            .findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionBetween(
+                EstadoAccion.pendiente,
+                ahora.minusDays(DIAS_VENCIDO_NOTIFICABLE),
+                ahora.plusHours(HORAS_VENTANA_PROXIMO),
+            ).map {
+                TareaRecordatorioProyeccion(
+                    id = requireNotNull(it.id),
+                    idAsignado = requireNotNull(it.idAsignado),
+                    idEmpresa = it.idEmpresa,
+                    idOportunidad = it.idOportunidad,
+                    fechaEjecucion = requireNotNull(it.fechaEjecucion),
+                )
+            }
+    }
 
     // ── privados ───────────────────────────────────────────────
 
@@ -437,5 +444,14 @@ class TareaServiceImpl(
         /** Allowlist de `sort` de GET /tareas; el primero es el orden por defecto. */
         val CAMPOS_ORDENABLES =
             CamposOrdenables("fechaEjecucion", "id", "tipoAccion", "estadoAccion", "createdAt", "updatedAt")
+
+        /**
+         * Mas alla de 30 dias vencida, el recordatorio ya se envio hace mucho y el
+         * dedup permanente impide reenviarlo: seguir escaneandola es puro coste.
+         */
+        const val DIAS_VENCIDO_NOTIFICABLE = 30L
+
+        /** Superconjunto del umbral `proximo` de `RecordatorioJob` (24 h). */
+        const val HORAS_VENTANA_PROXIMO = 24L
     }
 }

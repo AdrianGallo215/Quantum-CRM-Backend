@@ -88,4 +88,47 @@ class PaginacionTest {
     fun `los nombres publicos de la allowlist salen en snake_case`() {
         assertThat(campos.nombresPublicos).containsExactly("id", "razon_social", "created_at")
     }
+
+    /**
+     * `Paginacion.meta` fabrica el `total_pages` de toda la API paginada. Un
+     * off-by-one aqui rompe la paginacion de seis modulos a la vez y en silencio: el
+     * cliente deja de pedir la ultima pagina, o pide una que no existe.
+     */
+    @Test
+    fun `sin resultados no hay ninguna pagina`() {
+        assertThat(Paginacion.meta(page = 1, perPage = 20, total = 0).totalPages).isZero()
+    }
+
+    @Test
+    fun `un solo resultado ocupa una pagina`() {
+        assertThat(Paginacion.meta(page = 1, perPage = 20, total = 1).totalPages).isEqualTo(1)
+    }
+
+    /** Borde exacto: 20 de 20 caben en una pagina, no en dos. */
+    @Test
+    fun `un total que llena la pagina justo no abre una pagina de mas`() {
+        assertThat(Paginacion.meta(page = 1, perPage = 20, total = 20).totalPages).isEqualTo(1)
+    }
+
+    /** Borde exacto por el otro lado: uno mas obliga a una segunda pagina. */
+    @Test
+    fun `un resultado por encima del tamano de pagina abre la segunda`() {
+        assertThat(Paginacion.meta(page = 1, perPage = 20, total = 21).totalPages).isEqualTo(2)
+    }
+
+    @Test
+    fun `el maximo de per_page tambien reparte bien`() {
+        assertThat(Paginacion.meta(page = 1, perPage = 100, total = 100).totalPages).isEqualTo(1)
+        assertThat(Paginacion.meta(page = 1, perPage = 100, total = 101).totalPages).isEqualTo(2)
+    }
+
+    @Test
+    fun `page per_page y total se devuelven tal cual se recibieron`() {
+        val meta = Paginacion.meta(page = 3, perPage = 25, total = 57)
+
+        assertThat(meta.page).isEqualTo(3)
+        assertThat(meta.perPage).isEqualTo(25)
+        assertThat(meta.total).isEqualTo(57)
+        assertThat(meta.totalPages).isEqualTo(3)
+    }
 }

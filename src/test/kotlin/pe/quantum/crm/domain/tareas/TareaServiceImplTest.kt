@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.tareas
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -23,6 +24,7 @@ import pe.quantum.crm.shared.enums.EstadoAccion
 import pe.quantum.crm.shared.enums.TipoAccion
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 
@@ -307,7 +309,13 @@ class TareaServiceImplTest {
 
     @Test
     fun `pendientesParaRecordatorio proyecta solo tareas pendientes con asignado y fecha`() {
-        every { tareaRepository.findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionIsNotNull(EstadoAccion.pendiente) } returns
+        every {
+            tareaRepository.findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionBetween(
+                EstadoAccion.pendiente,
+                any(),
+                any(),
+            )
+        } returns
             listOf(
                 Tarea(
                     id = 1,
@@ -328,6 +336,31 @@ class TareaServiceImplTest {
 
         assertThat(resultado).hasSize(1)
         assertThat(resultado.first().idAsignado).isEqualTo(3)
+    }
+
+    /**
+     * El job corre cada hora. Sin cota temporal escaneaba la tabla entera y lanzaba
+     * un `exists` por cada tarea vencida indefinidamente. La ventana es [ahora-30d,
+     * ahora+24h]: superconjunto estricto de lo que `RecordatorioJob.umbralTarea`
+     * puede notificar, asi que no pierde ningun recordatorio real.
+     */
+    @Test
+    fun `pendientesParaRecordatorio acota la consulta a la ventana notificable`() {
+        val desde = slot<LocalDateTime>()
+        val hasta = slot<LocalDateTime>()
+        every {
+            tareaRepository.findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionBetween(
+                EstadoAccion.pendiente,
+                capture(desde),
+                capture(hasta),
+            )
+        } returns emptyList()
+        val ahora = LocalDateTime.now()
+
+        service.pendientesParaRecordatorio()
+
+        assertThat(Duration.between(desde.captured, ahora.minusDays(30)).abs()).isLessThan(Duration.ofMinutes(1))
+        assertThat(Duration.between(hasta.captured, ahora.plusHours(24)).abs()).isLessThan(Duration.ofMinutes(1))
     }
 
     @Test

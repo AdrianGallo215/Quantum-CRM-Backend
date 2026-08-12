@@ -57,7 +57,7 @@ class GlobalExceptionHandler {
             ApiError(
                 code = "VALIDACION",
                 message = fieldError?.defaultMessage ?: "Datos invalidos",
-                field = fieldError?.field,
+                field = fieldError?.field?.aCampoSnakeCase(),
             )
         return ResponseEntity.badRequest().body(ApiResponse.fail(error))
     }
@@ -109,7 +109,7 @@ class GlobalExceptionHandler {
                 code = "VALIDACION",
                 message = violacion?.message ?: "Datos invalidos",
                 // El propertyPath incluye el metodo ("listar.page"); solo interesa el campo.
-                field = violacion?.propertyPath?.toString()?.substringAfterLast('.'),
+                field = violacion?.propertyPath?.toString()?.substringAfterLast('.')?.aCampoSnakeCase(),
             )
         return ResponseEntity.badRequest().body(ApiResponse.fail(error))
     }

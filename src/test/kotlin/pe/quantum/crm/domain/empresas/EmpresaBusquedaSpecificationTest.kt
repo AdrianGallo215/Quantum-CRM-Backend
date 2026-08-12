@@ -132,9 +132,23 @@ class EmpresaBusquedaSpecificationTest {
     }
 
     @Test
-    fun `estado_cartera valido filtra y uno desconocido se ignora sin reventar`() {
+    fun `estado_cartera valido filtra`() {
         assertThat(listar(EmpresaFiltros(estadoCartera = "cliente"), gerencia)).contains("estadoCartera")
-        assertThat(listar(EmpresaFiltros(estadoCartera = "__nope__"), gerencia)).doesNotContain("estadoCartera")
+    }
+
+    /**
+     * Antes un `estado_cartera` desconocido se ignoraba en silencio y devolvia 200
+     * con todo sin filtrar. Mismo criterio que oportunidades: un typo del cliente
+     * es un error (400), no un filtro que desaparece.
+     */
+    @Test
+    fun `estado_cartera desconocido lanza ValidacionException en vez de ignorarse`() {
+        val ex =
+            org.junit.jupiter.api.assertThrows<ValidacionException> {
+                listar(EmpresaFiltros(estadoCartera = "__nope__"), gerencia)
+            }
+
+        assertThat(ex.field).isEqualTo("estado_cartera")
     }
 
     @Test

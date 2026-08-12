@@ -227,7 +227,7 @@ class OportunidadServiceImpl(
         request: CambiarEstadoRequest,
         usuario: UsuarioActual,
     ): CambioEstadoDto {
-        val oportunidad = visible(id, usuario)
+        val oportunidad = visibleBloqueando(id, usuario)
         val nuevo =
             runCatching { EstadoOportunidad.valueOf(request.estado) }.getOrNull()
                 ?: throw EstadoInvalidoException("Estado desconocido: ${request.estado}")
@@ -345,7 +345,8 @@ class OportunidadServiceImpl(
         dir: String?,
     ): Paginado<OportunidadDto> {
         val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
-        val resultado = oportunidadRepository.findAll(especificacion(filtros, usuario), pageRequest)
+        val estado = estadoFiltro(filtros.estado)
+        val resultado = oportunidadRepository.findAll(especificacion(filtros, estado, usuario), pageRequest)
         val items = toDtos(resultado.content)
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(items, meta)
@@ -367,11 +368,18 @@ class OportunidadServiceImpl(
         if (!contactoService.existe(request.idContacto)) {
             throw NoEncontradoException("El contacto no existe")
         }
+        val clave = OportunidadContactoId(idOportunidad = id, idContacto = request.idContacto)
+        // `save` sobre una clave existente es un UPDATE: vincular dos veces
+        // sobreescribia el rol anterior en silencio y devolvia 201 como si fuera un
+        // vinculo nuevo. Cambiar el rol es otra operacion, con su propio endpoint.
+        if (contactoOportunidadRepository.existsById(clave)) {
+            throw ConflictoException(
+                "CONTACTO_YA_VINCULADO",
+                "El contacto ya está vinculado a esta oportunidad; usa PUT para cambiar su rol",
+            )
+        }
         contactoOportunidadRepository.save(
-            OportunidadContacto(
-                id = OportunidadContactoId(idOportunidad = id, idContacto = request.idContacto),
-                rolEnOportunidad = request.rolEnOportunidad,
-            ),
+            OportunidadContacto(id = clave, rolEnOportunidad = request.rolEnOportunidad),
         )
         return request
     }
@@ -614,8 +622,44 @@ class OportunidadServiceImpl(
         return oportunidad
     }
 
+    /**
+     * Igual que [visible] pero tomando el lock de la fila. Cambiar de estado es la
+     * unica operacion que lee el estado actual y escribe una fila de log derivada de
+     * el: necesita serializarse contra otro PATCH simultaneo. La regla de visibilidad
+     * se repite tal cual (IDOR: ajena → 404, no 403).
+     */
+    private fun visibleBloqueando(
+        id: Long,
+        usuario: UsuarioActual,
+    ): Oportunidad {
+        val oportunidad =
+            oportunidadRepository.findByIdBloqueando(id)
+                ?: throw NoEncontradoException("La oportunidad no existe")
+        if (usuario.visibilidadRestringida && oportunidad.idVendedor != usuario.id) {
+            throw NoEncontradoException("La oportunidad no existe")
+        }
+        return oportunidad
+    }
+
+    /**
+     * `?estado=` fuera del enum es un error del cliente (400), no un filtro que se
+     * ignora: responder 200 con TODAS las oportunidades —cerradas incluidas— ante un
+     * typo es peor que fallar. Mismo criterio que `cambiarEstado`, que ya valida
+     * este mismo enum. Un valor en blanco se trata como ausencia de filtro.
+     */
+    private fun estadoFiltro(estado: String?): EstadoOportunidad? {
+        val pedido = estado?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { EstadoOportunidad.valueOf(pedido) }.getOrNull()
+            ?: throw ValidacionException(
+                "El estado '$pedido' no es válido. Estados permitidos: " +
+                    EstadoOportunidad.values().joinToString(", ") { it.name },
+                field = "estado",
+            )
+    }
+
     private fun especificacion(
         filtros: OportunidadFiltros,
+        estado: EstadoOportunidad?,
         usuario: UsuarioActual,
     ): Specification<Oportunidad> =
         Specification { root, _, cb ->
@@ -625,12 +669,8 @@ class OportunidadServiceImpl(
             } else if (filtros.idVendedor != null) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), filtros.idVendedor)
             }
-            filtros.estado?.let { estado ->
-                runCatching { EstadoOportunidad.valueOf(estado) }.getOrNull()?.let {
-                    predicados += cb.equal(root.get<EstadoOportunidad>("estado"), it)
-                }
-            }
-            if (filtros.estado == null && !filtros.incluirCerradas) {
+            estado?.let { predicados += cb.equal(root.get<EstadoOportunidad>("estado"), it) }
+            if (estado == null && !filtros.incluirCerradas) {
                 predicados += cb.notEqual(root.get<EstadoOportunidad>("estado"), EstadoOportunidad.cerrado)
             }
             filtros.idEmpresa?.let { predicados += cb.equal(root.get<Long>("idEmpresa"), it) }

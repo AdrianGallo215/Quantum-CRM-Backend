@@ -7,6 +7,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import pe.quantum.crm.domain.modelos.dto.ActualizarModeloRequest
 import pe.quantum.crm.domain.modelos.dto.CrearModeloRequest
 import pe.quantum.crm.shared.enums.Aplicacion
@@ -92,6 +93,35 @@ class ModeloServiceImplTest {
             .isInstanceOf(NoEncontradoException::class.java)
 
         verify(exactly = 0) { modeloRepository.save(any()) }
+    }
+
+    /**
+     * La unicidad se validaba solo al crear. Al actualizar, el choque llegaba a la
+     * constraint y salia como `CONFLICTO_DATOS` generico: otro codigo de error para
+     * el mismo problema, y sin `field` con el que el frontend pueda marcar el input.
+     */
+    @Test
+    fun `cambiar el codigo a uno que ya existe devuelve CODIGO_DUPLICADO`() {
+        every { modeloRepository.findById(1) } returns
+            Optional.of(Modelo(id = 1, codigo = "KW-8", aplicaciones = mutableSetOf(Aplicacion.urbano)))
+        every { modeloRepository.existsByCodigoAndIdNot("KW-12", 1) } returns true
+
+        val ex = assertThrows<ConflictoException> { service.actualizar(1, ActualizarModeloRequest(codigo = "KW-12")) }
+
+        assertThat(ex.code).isEqualTo("CODIGO_DUPLICADO")
+        assertThat(ex.field).isEqualTo("codigo")
+    }
+
+    /** Reenviar su propio codigo no es un duplicado: es una actualizacion parcial normal. */
+    @Test
+    fun `reenviar el mismo codigo no dispara el conflicto`() {
+        val modelo = Modelo(id = 1, codigo = "KW-8", aplicaciones = mutableSetOf(Aplicacion.urbano))
+        every { modeloRepository.findById(1) } returns Optional.of(modelo)
+        every { modeloRepository.save(any()) } answers { firstArg() }
+
+        service.actualizar(1, ActualizarModeloRequest(codigo = "KW-8"))
+
+        verify(exactly = 0) { modeloRepository.existsByCodigoAndIdNot(any(), any()) }
     }
 
     @Test

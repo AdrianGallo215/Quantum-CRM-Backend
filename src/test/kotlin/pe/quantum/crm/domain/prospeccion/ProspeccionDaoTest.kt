@@ -6,10 +6,12 @@ import io.mockk.slot
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.jdbc.core.RowCallbackHandler
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.core.namedparam.SqlParameterSource
 import java.sql.ResultSet
 import java.sql.Timestamp
+import java.time.Duration
 import java.time.LocalDateTime
 
 /**
@@ -65,5 +67,17 @@ class ProspeccionDaoTest {
     @Test
     fun `sin ids de empresa no consulta la base`() {
         assertThat(dao.hitosOcurridos(emptyList())).isEmpty()
+    }
+
+    /** El parametro `ahora` ES la cota que impide que una fecha futura cuente como actividad. */
+    @Test
+    fun `ultimaActividad acota la consulta al instante actual`() {
+        val params = slot<MapSqlParameterSource>()
+        every { jdbc.query(any<String>(), capture(params), any<RowCallbackHandler>()) } answers { }
+
+        dao.ultimaActividad(listOf(1, 2))
+
+        val ahora = params.captured.getValue("ahora") as LocalDateTime
+        assertThat(Duration.between(ahora, LocalDateTime.now()).abs()).isLessThan(Duration.ofMinutes(1))
     }
 }

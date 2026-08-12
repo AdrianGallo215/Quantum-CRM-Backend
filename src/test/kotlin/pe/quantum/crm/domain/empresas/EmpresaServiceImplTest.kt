@@ -10,6 +10,7 @@ import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
@@ -30,6 +31,7 @@ import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.integracion.drive.DriveException
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
+import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
@@ -154,6 +156,40 @@ class EmpresaServiceImplTest {
         every { empleadoService.esAsignableComoVendedor(99) } returns false
         assertThatThrownBy { service.reasignarVendedor(10, 99, gerencia) }
             .isInstanceOf(ValidacionException::class.java)
+    }
+
+    /**
+     * El CHECK `chk_cartera_maestra_sin_vendedor` de V27 prohibe esta combinacion.
+     * Dejarlo caer en la constraint daba un 409 generico que no decia que hacer:
+     * hay que liberarla primero desde la cartera maestra.
+     */
+    @Test
+    fun `reasignarVendedor sobre una empresa en cartera maestra se rechaza explicando el porque`() {
+        val gerencia = UsuarioActual(id = 1, rol = "gerencia")
+        val entidad = empresa().apply { enCarteraMaestra = true }
+        every { empresaRepository.findById(10) } returns Optional.of(entidad)
+
+        val ex =
+            assertThrows<ConflictoException> {
+                service.reasignarVendedor(10, 2, gerencia)
+            }
+
+        assertThat(ex.code).isEqualTo("EMPRESA_EN_CARTERA_MAESTRA")
+        verify(exactly = 0) { empresaRepository.save(any()) }
+    }
+
+    @Test
+    fun `reasignarVendedor fija updatedBy con el actor`() {
+        val gerencia = UsuarioActual(id = 9, rol = "gerencia")
+        val entidad = empresa()
+        every { empresaRepository.findById(1) } returns Optional.of(entidad)
+        every { empleadoService.esAsignableComoVendedor(2) } returns true
+        every { empresaRepository.save(entidad) } returns entidad
+        every { empleadoService.resumenPorIds(listOf(9)) } returns mapOf(9L to EmpleadoResumen(id = 9, nombres = "Ana", apellidos = "Diaz"))
+
+        service.reasignarVendedor(1, 2, gerencia)
+
+        assertThat(entidad.updatedBy).isEqualTo(9)
     }
 
     @Test

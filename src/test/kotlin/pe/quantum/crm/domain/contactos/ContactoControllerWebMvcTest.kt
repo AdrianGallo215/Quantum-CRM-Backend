@@ -75,7 +75,7 @@ class ContactoControllerWebMvcTest {
             )
         every { contactoService.buscar(null, null, any(), 2, 10, null, null) } returns
             Paginado(listOf(item), PageMeta(page = 2, perPage = 10, total = 11, totalPages = 2))
-        every { oportunidadesDeContacto.contar(5, any()) } returns 3
+        every { oportunidadesDeContacto.contarPorContactos(listOf(5L), any()) } returns mapOf(5L to 3)
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
 
         mockMvc.get("/api/v1/contactos?page=2&per_page=10") {

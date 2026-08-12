@@ -30,7 +30,7 @@ class CatalogoEventoServiceImpl(
     override fun crear(request: CrearCatalogoEventoRequest): CatalogoEventoDto {
         validarDisparo(request.disparaCambioEstado, request.estadoDestino)
         if (repository.existsByNombre(request.nombre)) {
-            throw ConflictoException("NOMBRE_DUPLICADO", "Ya existe un evento del catálogo con ese nombre")
+            throw ConflictoException("NOMBRE_DUPLICADO", "Ya existe un evento del catálogo con ese nombre", field = "nombre")
         }
         val evento =
             CatalogoEvento(
@@ -50,7 +50,12 @@ class CatalogoEventoServiceImpl(
         request: ActualizarCatalogoEventoRequest,
     ): CatalogoEventoDto {
         val evento = entidad(id)
-        request.nombre?.let { evento.nombre = it }
+        request.nombre?.let {
+            if (it != evento.nombre && repository.existsByNombreAndIdNot(it, id)) {
+                throw ConflictoException("NOMBRE_DUPLICADO", "Ya existe un evento del catálogo con ese nombre", field = "nombre")
+            }
+            evento.nombre = it
+        }
         request.etapaAsociada?.let { evento.etapaAsociada = it }
         request.disparaCambioEstado?.let { evento.disparaCambioEstado = it }
         request.estadoDestino?.let { evento.estadoDestino = it }

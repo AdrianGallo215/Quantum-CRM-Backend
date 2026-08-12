@@ -9,6 +9,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -25,6 +26,7 @@ import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
+import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.math.BigDecimal
@@ -116,6 +118,7 @@ class OportunidadContactosTest {
     fun `vincularContacto guarda el vinculo con su rol y devuelve lo pedido`() {
         every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
         every { contactoService.existe(7) } returns true
+        every { contactoOportunidadRepository.existsById(OportunidadContactoId(idOportunidad = 100, idContacto = 7)) } returns false
         val guardado = slot<OportunidadContacto>()
         every { contactoOportunidadRepository.save(capture(guardado)) } answers { guardado.captured }
 
@@ -134,6 +137,28 @@ class OportunidadContactosTest {
         assertThatThrownBy { service.vincularContacto(100, ContactoVinculoRequest(idContacto = 7), vendedor) }
             .isInstanceOf(NoEncontradoException::class.java)
 
+        verify(exactly = 0) { contactoOportunidadRepository.save(any<OportunidadContacto>()) }
+    }
+
+    /**
+     * `save` sobre una clave compuesta que ya existe es un UPDATE: vincular dos veces
+     * sobreescribia el rol anterior sin avisar y respondia 201 como si fuera un
+     * vinculo nuevo. Cambiar el rol tiene su propio endpoint (PUT).
+     */
+    @Test
+    fun `vincular un contacto ya vinculado devuelve 409 sin sobreescribir el rol`() {
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
+        every { contactoService.existe(7) } returns true
+        every {
+            contactoOportunidadRepository.existsById(OportunidadContactoId(idOportunidad = 100, idContacto = 7))
+        } returns true
+
+        val ex =
+            assertThrows<ConflictoException> {
+                service.vincularContacto(100, ContactoVinculoRequest(idContacto = 7, rolEnOportunidad = "Aprobador"), vendedor)
+            }
+
+        assertThat(ex.code).isEqualTo("CONTACTO_YA_VINCULADO")
         verify(exactly = 0) { contactoOportunidadRepository.save(any<OportunidadContacto>()) }
     }
 

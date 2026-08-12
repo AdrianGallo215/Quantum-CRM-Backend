@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.empresas
 
 import jakarta.persistence.criteria.Predicate
+import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.annotation.Lazy
 import org.springframework.data.jpa.domain.Specification
@@ -65,6 +66,8 @@ class EmpresaServiceImpl(
     // escritura entra despues, en una transaccion propia y corta.
     private val transactionTemplate: TransactionTemplate,
 ) : EmpresaService {
+    private val log = LoggerFactory.getLogger(EmpresaServiceImpl::class.java)
+
     @Transactional(readOnly = true)
     override fun listar(
         filtros: EmpresaFiltros,
@@ -75,7 +78,8 @@ class EmpresaServiceImpl(
         dir: String?,
     ): Paginado<EmpresaListaDto> {
         val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
-        val resultado = empresaRepository.findAll(especificacion(filtros, usuario), pageRequest)
+        val estadoCartera = estadoCarteraFiltro(filtros.estadoCartera)
+        val resultado = empresaRepository.findAll(especificacion(filtros, estadoCartera, usuario), pageRequest)
         val vendedores =
             empleadoService.resumenPorIds(resultado.content.mapNotNull { it.idVendedor })
         // Ensamblado por lotes (igual que OportunidadServiceImpl.toDtos): un solo
@@ -361,11 +365,21 @@ class EmpresaServiceImpl(
             throw PermisoInsuficienteException("La reasignación directa es exclusiva de gerencia; envía una solicitud")
         }
         val empresa = entidad(id)
+        // El CHECK de V27 (chk_cartera_maestra_sin_vendedor) prohibe esta combinacion.
+        // Dejarlo caer en la constraint daba un 409 generico que no decia que hacer:
+        // hay que liberarla primero desde la cartera maestra.
+        if (empresa.enCarteraMaestra) {
+            throw ConflictoException(
+                "EMPRESA_EN_CARTERA_MAESTRA",
+                "La empresa está reservada en la cartera maestra; libérala antes de asignarle un vendedor",
+            )
+        }
         if (!empleadoService.esAsignableComoVendedor(idVendedor)) {
             throw ValidacionException("El destino debe ser un vendedor o jdv activo", field = "id_vendedor")
         }
         empresa.idVendedor = idVendedor
         empresa.updatedAt = LocalDateTime.now()
+        empresa.updatedBy = usuario.id
         empresaRepository.save(empresa)
         eventPublisher.publishEvent(VendedorEmpresaReasignadoEvent(idEmpresa = id, idVendedorNuevo = idVendedor, idActor = usuario.id))
         val actor = empleadoService.resumenPorIds(listOf(usuario.id))[usuario.id]
@@ -470,10 +484,21 @@ class EmpresaServiceImpl(
         return CarteraMaestraDto(enCarteraMaestra = empresa.enCarteraMaestra, idVendedor = empresa.idVendedor)
     }
 
+    /**
+     * La carpeta de Drive va a la papelera DESPUES de que la transaccion confirme
+     * el borrado. Un fallo de Drive no debe revertir el borrado de la empresa: se
+     * loguea y sigue (mismo criterio que el resto de operaciones "mejor esfuerzo"
+     * con Drive de este servicio).
+     */
     @Transactional
     override fun eliminar(id: Long) {
         val empresa = entidad(id)
+        val carpeta = empresa.driveFolderId
         empresaRepository.delete(empresa)
+        carpeta?.let {
+            runCatching { driveStorageService.enviarCarpetaAPapelera(it) }
+                .onFailure { ex -> log.warn("No se pudo enviar a la papelera la carpeta {} de la empresa {}", it, id, ex) }
+        }
     }
 
     @Transactional(readOnly = true)
@@ -498,8 +523,23 @@ class EmpresaServiceImpl(
         return empresa
     }
 
+    /**
+     * `?estado_cartera=` fuera del enum es un error del cliente (400), no un filtro
+     * que se ignora: mismo criterio que `OportunidadServiceImpl.estadoFiltro`.
+     */
+    private fun estadoCarteraFiltro(estadoCartera: String?): EstadoCartera? {
+        val pedido = estadoCartera?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { EstadoCartera.valueOf(pedido) }.getOrNull()
+            ?: throw ValidacionException(
+                "El estado_cartera '$pedido' no es válido. Estados permitidos: " +
+                    EstadoCartera.values().joinToString(", ") { it.name },
+                field = "estado_cartera",
+            )
+    }
+
     private fun especificacion(
         filtros: EmpresaFiltros,
+        estadoCartera: EstadoCartera?,
         usuario: UsuarioActual,
     ): Specification<Empresa> =
         Specification { root, query, cb ->
@@ -524,11 +564,7 @@ class EmpresaServiceImpl(
                         cb.like(root.get("ruc"), "${q.trim()}%"),
                     )
             }
-            filtros.estadoCartera?.let { estado ->
-                runCatching { EstadoCartera.valueOf(estado) }.getOrNull()?.let {
-                    predicados += cb.equal(root.get<EstadoCartera>("estadoCartera"), it)
-                }
-            }
+            estadoCartera?.let { predicados += cb.equal(root.get<EstadoCartera>("estadoCartera"), it) }
             filtros.distrito?.takeIf { it.isNotBlank() }?.let {
                 predicados += cb.equal(cb.lower(root.get("distrito")), it.lowercase())
             }

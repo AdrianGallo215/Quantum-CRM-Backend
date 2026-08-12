@@ -56,7 +56,19 @@ class FinanciadoraServiceImpl(
         request.plazoMeses?.let { financiadora.plazoMeses = it }
         request.tea?.let { financiadora.tea = it }
         request.cuotaPorUnidad?.let { financiadora.cuotaPorUnidad = it }
-        request.esDefault?.let { financiadora.esDefault = it }
+        request.esDefault?.let {
+            // Pasar de una default a ninguna no falla aqui: falla despues, al crear
+            // cualquier oportunidad sin `id_financiadora`, y como 500. Se corta donde
+            // todavia se puede explicar el porque.
+            if (!it && financiadora.esDefault && !financiadoraRepository.existsByEsDefaultTrueAndIdNot(id)) {
+                throw ConflictoException(
+                    "FINANCIADORA_DEFAULT_REQUERIDA",
+                    "No se puede dejar el sistema sin financiadora default; marca otra antes de desmarcar esta",
+                    field = "es_default",
+                )
+            }
+            financiadora.esDefault = it
+        }
         request.notas?.let { financiadora.notas = it }
         return financiadoraRepository.save(financiadora).toDto()
     }

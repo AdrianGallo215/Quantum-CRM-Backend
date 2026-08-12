@@ -79,7 +79,7 @@ class EventoControllerWebMvcTest {
         postEvento("""{"es_personalizado":true,"nombre_personalizado":"$nombre"}""").andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("VALIDACION") }
-            jsonPath("$.error.field") { value("nombrePersonalizado") }
+            jsonPath("$.error.field") { value("nombre_personalizado") }
         }
         verify(exactly = 0) { eventoService.crearEnOportunidad(any(), any(), any()) }
     }

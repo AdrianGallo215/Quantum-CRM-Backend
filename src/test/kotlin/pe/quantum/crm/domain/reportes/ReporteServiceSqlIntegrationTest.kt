@@ -34,9 +34,10 @@ import java.time.LocalDate
  *   4. `prospeccion` — el criterio de entrada al embudo exige `estado = 'ocurrido'`
  *      Y `id_oportunidad IS NULL` (reglas_negocio.md §10.3); un hito agendado
  *      (`pendiente`) no cuenta como ingresada.
- *   5. `descuentos` — el promedio sobre un conjunto conocido, documentando el
- *      comportamiento ACTUAL frente a valores NULL (hallazgo [Medio] abierto,
- *      no corregido aqui: ver el comentario en el test 5).
+ *   5. `descuentos` — el promedio sobre un conjunto conocido: un `dcto` NULL cuenta
+ *      como 0% y las oportunidades `cerrado` quedan fuera del universo. Confirmado
+ *      como comportamiento intencional por el dueño del proyecto (hallazgo [Medio]
+ *      E4, no era un bug).
  */
 @Tag("integration")
 @SpringBootTest
@@ -365,21 +366,14 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
         assertThat(itemVendedor.dctoMaximoAplicado).isEqualTo("20.00")
     }
 
+    /**
+     * Comportamiento confirmado como intencional por el dueño del proyecto
+     * (2026-08-12), no es un bug: un `dcto` NULL cuenta como 0% en el promedio, no
+     * se excluye. "Sin descuento" y "0% de descuento explícito" son lo mismo para
+     * este reporte.
+     */
     @Test
-    fun `descuentos trata un dcto NULL como cero para el promedio, no como dato ausente`() {
-        // Documenta el comportamiento ACTUAL (hallazgo [Medio] abierto, NO
-        // corregido por esta tarea): `descuentos()` hace
-        // `promedio(rows.map { it.dcto ?: BigDecimal.ZERO })`, es decir, una
-        // operacion sin dcto registrado (NULL en la columna) entra al promedio
-        // como si tuviera 0% de descuento, en vez de excluirse del calculo. Esto
-        // difiere del criterio usado para "operacionesConDcto/SinDcto", que SI
-        // trata NULL como "sin descuento" (signum() > 0), asi que un NULL no
-        // cuenta como "con descuento" pero SI diluye el promedio hacia abajo como
-        // si el dato existiera y fuera cero. Es la inconsistencia que el hallazgo
-        // deja abierta: un vendedor con ventas sin ese dato registrado y un
-        // vendedor con ventas de 0% de descuento explicito producen exactamente
-        // el mismo promedio, aunque semanticamente son cosas distintas ("no se
-        // sabe" vs "se sabe que fue cero").
+    fun `descuentos trata un dcto NULL como cero para el promedio`() {
         val vendedor = crearVendedor("D2")
         val empresa = crearEmpresa("99999999", vendedor, "2019-05-05 09:00:00")
         val financiadora = crearFinanciadora("D2")
@@ -408,11 +402,36 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
         val reporte = reporteService.descuentos(periodoMayo2019)
         val itemVendedor = reporte.porVendedor.single { it.vendedor.contains("D2") }
 
-        // (20 + 0) / 2 = 10.00: el NULL se trato como 0, no se excluyo del
-        // denominador. Si el criterio fuera "excluir NULL del promedio", el
-        // resultado esperado seria "20.00", no "10.00".
+        // (20 + 0) / 2 = 10.00: el NULL cuenta como cero en el promedio.
         assertThat(itemVendedor.dctoPromedio).isEqualTo("10.00")
         assertThat(itemVendedor.operacionesSinDcto).isEqualTo(1)
         assertThat(itemVendedor.operacionesConDcto).isEqualTo(1)
+    }
+
+    /**
+     * Comportamiento confirmado como intencional por el dueño del proyecto
+     * (2026-08-12), no es un bug: las oportunidades `cerrado` quedan fuera de este
+     * reporte, igual que del resto de calculos de descuentos.
+     */
+    @Test
+    fun `descuentos excluye las oportunidades cerradas`() {
+        val vendedor = crearVendedor("D3")
+        val empresa = crearEmpresa("99999977", vendedor, "2019-05-05 09:00:00")
+        val financiadora = crearFinanciadora("D3")
+        val modelo = crearModelo("D3")
+
+        crearOportunidad(
+            idEmpresa = empresa,
+            idVendedor = vendedor,
+            idFinanciadora = financiadora,
+            idModelo = modelo,
+            creadaEn = "2019-05-05 09:00:00",
+            estado = "cerrado",
+            dcto = "15.00",
+        )
+
+        val reporte = reporteService.descuentos(periodoMayo2019)
+
+        assertThat(reporte.porVendedor.none { it.vendedor.contains("D3") }).isTrue()
     }
 }

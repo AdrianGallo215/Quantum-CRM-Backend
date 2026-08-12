@@ -1,10 +1,17 @@
 package pe.quantum.crm.domain.empresas
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -16,25 +23,47 @@ import pe.quantum.crm.shared.GlobalExceptionHandler
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.security.UsuarioActual
 import pe.quantum.crm.shared.security.UsuarioActualProvider
+import pe.quantum.crm.support.SinBaseDeDatosMocks
 
 /**
  * El parseo multipart real lo cubre `DriveMultipartUploaderTest`; aqui se prueba
  * el enrutamiento del controller: visibilidad, delegacion al servicio correcto y
  * los codigos de estado del contrato.
+ *
+ * `standaloneSetup` por defecto NO carga el `ObjectMapper` de la app: serializaria
+ * `driveFolderId` en camelCase mientras el contrato exige `drive_folder_id`, y el
+ * test pasaria igual aunque la serializacion real estuviera rota. Por eso se le
+ * registra el `MappingJackson2HttpMessageConverter` con el `ObjectMapper` real
+ * (contexto Spring, `spring.jackson.property-naming-strategy=SNAKE_CASE`).
  */
+@SpringBootTest(
+    properties = [
+        "spring.autoconfigure.exclude=" +
+            "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration," +
+            "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration," +
+            "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration",
+    ],
+)
+@Import(SinBaseDeDatosMocks::class)
 class EmpresaDriveControllerTest {
     private val empresaService = mockk<EmpresaService>()
     private val driveMultipartUploader = mockk<DriveMultipartUploader>()
     private val usuarioProvider = mockk<UsuarioActualProvider>()
 
-    private val mockMvc =
-        MockMvcBuilders
-            .standaloneSetup(EmpresaDriveController(empresaService, driveMultipartUploader, usuarioProvider))
-            .setControllerAdvice(GlobalExceptionHandler())
-            .build()
+    @Autowired
+    lateinit var objectMapper: ObjectMapper
 
-    init {
+    private lateinit var mockMvc: MockMvc
+
+    @BeforeEach
+    fun setUp() {
         every { usuarioProvider.actual() } returns UsuarioActual(id = 3, rol = "vendedor")
+        mockMvc =
+            MockMvcBuilders
+                .standaloneSetup(EmpresaDriveController(empresaService, driveMultipartUploader, usuarioProvider))
+                .setControllerAdvice(GlobalExceptionHandler())
+                .setMessageConverters(MappingJackson2HttpMessageConverter(objectMapper))
+                .build()
     }
 
     @Test
@@ -102,7 +131,7 @@ class EmpresaDriveControllerTest {
         mockMvc
             .perform(post("/api/v1/empresas/10/carpeta-drive"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.driveFolderId").value("carpeta-nueva"))
+            .andExpect(jsonPath("$.data.drive_folder_id").value("carpeta-nueva"))
     }
 
     @Test
@@ -112,7 +141,7 @@ class EmpresaDriveControllerTest {
         mockMvc
             .perform(post("/api/v1/empresas/10/carpeta-drive"))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.driveFolderId").value("ya-existe"))
+            .andExpect(jsonPath("$.data.drive_folder_id").value("ya-existe"))
     }
 
     @Test

@@ -81,8 +81,16 @@ class ProspeccionDao(
     }
 
     /**
-     * Ultima actividad por empresa: MAX entre tareas completadas y eventos
-     * ocurridos sin oportunidad (contrato §16).
+     * Ultima actividad por empresa: MAX entre tareas completadas y eventos ocurridos
+     * sin oportunidad (contrato §16).
+     *
+     * Dos cotas que antes no existian:
+     * - Para las tareas, `LEAST(..., updated_at)`: `fecha_ejecucion` es la fecha
+     *   AGENDADA y puede ser futura. La actividad real es, como muy tarde, el momento
+     *   en que la tarea se marco completada (`updated_at`).
+     * - Para todo, `f <= :ahora`: un `fecha_ocurrencia` futuro daba
+     *   `dias_sin_actividad = 0` durante meses y sacaba a empresas abandonadas del
+     *   indicador `requieren_atencion`, que es justo para lo que existe.
      */
     fun ultimaActividad(idsEmpresa: Collection<Long>): Map<Long, LocalDateTime> {
         if (idsEmpresa.isEmpty()) {
@@ -93,7 +101,7 @@ class ProspeccionDao(
             """
             SELECT id_empresa, MAX(f) AS ultima
             FROM (
-                SELECT id_empresa, COALESCE(fecha_ejecucion, updated_at) AS f
+                SELECT id_empresa, LEAST(COALESCE(fecha_ejecucion, updated_at), updated_at) AS f
                 FROM tareas
                 WHERE id_empresa IN (:ids) AND id_oportunidad IS NULL AND estado_accion = 'completada'
                 UNION ALL
@@ -101,9 +109,10 @@ class ProspeccionDao(
                 FROM eventos
                 WHERE id_empresa IN (:ids) AND id_oportunidad IS NULL AND estado = 'ocurrido'
             ) actividad
+            WHERE f IS NOT NULL AND f <= :ahora
             GROUP BY id_empresa
             """.trimIndent(),
-            MapSqlParameterSource("ids", idsEmpresa),
+            MapSqlParameterSource("ids", idsEmpresa).addValue("ahora", LocalDateTime.now()),
         ) { rs ->
             rs.getTimestamp("ultima")?.let { resultado[rs.getLong("id_empresa")] = it.toLocalDateTime() }
         }

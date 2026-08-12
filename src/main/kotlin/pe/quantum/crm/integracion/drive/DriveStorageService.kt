@@ -42,6 +42,13 @@ interface DriveStorageService {
      * elementos en la papelera). Orden alfabetico por nombre.
      */
     fun listarArchivos(parentFolderId: String): List<DriveArchivoSubido>
+
+    /**
+     * Envia una carpeta (y su contenido) a la papelera de Drive. Reversible ~30
+     * dias desde la propia UI de Drive: eliminar una empresa no debe destruir sus
+     * documentos de forma irreversible.
+     */
+    fun enviarCarpetaAPapelera(folderId: String)
 }
 
 /** Documento de Drive, en una subida o en un listado (contrato_api.md §8, §10, §14). */

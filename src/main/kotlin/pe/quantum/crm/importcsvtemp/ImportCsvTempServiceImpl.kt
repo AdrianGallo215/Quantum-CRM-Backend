@@ -42,26 +42,26 @@ class ImportCsvTempServiceImpl(
         if (archivo.isEmpty) {
             throw ValidacionException("El archivo CSV está vacío")
         }
-        val lineas =
+        val texto =
             try {
-                archivo.inputStream.bufferedReader(Charsets.UTF_8).readLines()
-                    .map { it.removeSuffix("\r") }
-                    .filter { it.isNotBlank() }
+                archivo.inputStream.bufferedReader(Charsets.UTF_8).readText()
             } catch (ex: IOException) {
                 throw ValidacionException("No se pudo leer el archivo CSV")
             }
-        if (lineas.size < 2) {
+        val registros = parsearRegistros(texto)
+        if (registros.isEmpty()) {
+            throw ValidacionException("El archivo CSV está vacío")
+        }
+        val filasDatos = if (esCabecera(registros.first())) registros.drop(1) else registros
+        if (filasDatos.isEmpty()) {
             throw ValidacionException("El archivo CSV no tiene filas de datos, solo cabecera")
         }
-        val filasDatos = lineas.drop(1)
         if (filasDatos.size > MAX_FILAS_DATOS) {
             throw ValidacionException("El archivo excede el máximo de $MAX_FILAS_DATOS filas de datos")
         }
 
         val detalle =
-            filasDatos.mapIndexed { indice, linea ->
-                procesarFila(fila = indice + 2, linea = linea, usuario = usuario)
-            }
+            filasDatos.map { procesarFila(fila = it.linea, campos = it.campos, usuario = usuario) }
         val creadas = detalle.count { it.estado == ESTADO_CREADA }
         return ImportEmpresasResultDto(
             totalFilas = detalle.size,
@@ -76,10 +76,9 @@ class ImportCsvTempServiceImpl(
     @Suppress("ReturnCount") // Cadena de validaciones tipo guard clause; dividirla no mejora la legibilidad.
     private fun procesarFila(
         fila: Int,
-        linea: String,
+        campos: List<String>,
         usuario: UsuarioActual,
     ): ImportEmpresaFilaResultado {
-        val campos = parseCsvLine(linea)
         if (campos.size < COLUMNAS_ESPERADAS) {
             return ImportEmpresaFilaResultado(
                 fila = fila,
@@ -112,20 +111,50 @@ class ImportCsvTempServiceImpl(
         }
     }
 
+    /** Un registro CSV con la linea FISICA (1-based) donde empieza: la que el usuario ve en Excel. */
+    private data class FilaCsv(
+        val linea: Int,
+        val campos: List<String>,
+    )
+
     /**
-     * Parser CSV mínimo. El delimitador es `;` (lo que exporta Excel en las
-     * configuraciones regionales del equipo); soporta campos entre comillas dobles
-     * con delimitadores internos y comillas escapadas por duplicación (`""`).
+     * La primera fila es cabecera solo si NO parece un dato. Descartarla siempre
+     * hacia que un archivo exportado sin fila de titulos perdiera su primera empresa
+     * sin decir nada.
      */
-    private fun parseCsvLine(linea: String): List<String> {
+    private fun esCabecera(fila: FilaCsv): Boolean = fila.campos.firstOrNull()?.trim()?.let { !RUC_REGEX.matches(it) } ?: false
+
+    /**
+     * Parte el texto en registros CSV. Delimitador `;`, comillas dobles escapadas por
+     * duplicacion (`""`), y —esto es lo nuevo— un salto de linea DENTRO de un campo
+     * entrecomillado NO separa registros: Excel exporta asi en cuanto una razon
+     * social lleva un salto, y antes eso producia dos filas fantasma. Las lineas en
+     * blanco se saltan pero SI se cuentan, para que los numeros del reporte de
+     * errores casen con el archivo.
+     */
+    @Suppress("NestedBlockDepth", "CyclomaticComplexMethod") // Automata de un solo paso; partirlo dispersaria el estado.
+    private fun parsearRegistros(texto: String): List<FilaCsv> {
+        val filas = mutableListOf<FilaCsv>()
         val campos = mutableListOf<String>()
         val actual = StringBuilder()
         var dentroComillas = false
+        var linea = 1
+        var lineaInicio = 1
         var i = 0
-        while (i < linea.length) {
-            val c = linea[i]
+
+        fun cerrarRegistro() {
+            campos.add(actual.toString())
+            actual.clear()
+            if (campos.any { it.isNotBlank() }) {
+                filas.add(FilaCsv(lineaInicio, campos.toList()))
+            }
+            campos.clear()
+        }
+
+        while (i < texto.length) {
+            val c = texto[i]
             when {
-                c == '"' && dentroComillas && i + 1 < linea.length && linea[i + 1] == '"' -> {
+                c == '"' && dentroComillas && i + 1 < texto.length && texto[i + 1] == '"' -> {
                     actual.append('"')
                     i++
                 }
@@ -134,12 +163,28 @@ class ImportCsvTempServiceImpl(
                     campos.add(actual.toString())
                     actual.clear()
                 }
-                else -> actual.append(c)
+                (c == '\n' || c == '\r') && !dentroComillas -> {
+                    cerrarRegistro()
+                    if (c == '\r' && i + 1 < texto.length && texto[i + 1] == '\n') {
+                        i++
+                    }
+                    linea++
+                    lineaInicio = linea
+                }
+                c == '\r' && dentroComillas -> Unit // `\r\n` interno se normaliza a `\n`
+                else -> {
+                    if (c == '\n') {
+                        linea++
+                    }
+                    actual.append(c)
+                }
             }
             i++
         }
-        campos.add(actual.toString())
-        return campos
+        if (actual.isNotEmpty() || campos.isNotEmpty()) {
+            cerrarRegistro()
+        }
+        return filas
     }
 
     private companion object {

@@ -222,7 +222,7 @@ class OportunidadServiceImplTest {
                 driveStorageService,
             )
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
         every { oportunidadRepository.save(entidad) } returns entidad
         every { logRepository.save(any()) } returns mockk()
         every {
@@ -487,7 +487,7 @@ class OportunidadServiceImplTest {
     @Test
     fun `cambiarEstado a facturado fija facturado_en`() {
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
         every { oportunidadRepository.save(entidad) } returns entidad
         every { logRepository.save(any()) } returns mockk()
         every {
@@ -515,7 +515,7 @@ class OportunidadServiceImplTest {
                 estado = pe.quantum.crm.shared.enums.EstadoOportunidad.facturado
                 facturadoEn = LocalDateTime.now().minusDays(5)
             }
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
         every { oportunidadRepository.save(entidad) } returns entidad
         every { logRepository.save(any()) } returns mockk()
         every {

@@ -271,6 +271,33 @@ class DriveStorageServiceImplTest {
         return uploader
     }
 
+    // ── enviarCarpetaAPapelera (B.3) ──────────────────────────
+
+    @Test
+    fun `enviarCarpetaAPapelera marca la carpeta como trashed`() {
+        val metadatos = slot<File>()
+        val peticion = mockk<Drive.Files.Update>()
+        every { files.update(eq("carpeta-1"), capture(metadatos)) } returns peticion
+        every { peticion.setSupportsAllDrives(any()) } returns peticion
+        every { peticion.execute() } returns File()
+
+        service.enviarCarpetaAPapelera("carpeta-1")
+
+        assertThat(metadatos.captured.trashed).isTrue()
+        verify { peticion.setSupportsAllDrives(true) }
+    }
+
+    @Test
+    fun `enviarCarpetaAPapelera traduce un fallo del SDK a DriveException`() {
+        val peticion = mockk<Drive.Files.Update>()
+        every { files.update(any(), any()) } returns peticion
+        every { peticion.setSupportsAllDrives(any()) } returns peticion
+        every { peticion.execute() } throws IOException("connection reset")
+
+        assertThatThrownBy { service.enviarCarpetaAPapelera("carpeta-1") }
+            .isInstanceOf(DriveException::class.java)
+    }
+
     private fun archivoSubido(): File =
         File()
             .setId("archivo-1")

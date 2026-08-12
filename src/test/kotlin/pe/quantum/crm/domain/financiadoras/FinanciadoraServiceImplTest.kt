@@ -7,6 +7,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import pe.quantum.crm.domain.financiadoras.dto.ActualizarFinanciadoraRequest
 import pe.quantum.crm.domain.financiadoras.dto.CrearFinanciadoraRequest
 import pe.quantum.crm.shared.exception.ConflictoException
@@ -77,21 +78,45 @@ class FinanciadoraServiceImplTest {
     }
 
     /**
-     * Hallazgo [Medio] ABIERTO (docs/plan-ejecucion-subagentes.md, Agente D.2): actualizar la
-     * financiadora que HOY es default poniendo `esDefault = false` no tiene ninguna validacion
-     * que lo impida ni que reasigne otra default. El sistema queda sin ninguna financiadora
-     * default (rompe el invariante que documenta `FinanciadoraDefaultInexistenteException`).
-     * Este test documenta el comportamiento ACTUAL, no lo corrige.
+     * Quedarse sin default no da error en el momento: rompe DESPUES, en la creacion
+     * de cualquier oportunidad sin `id_financiadora` explicito, y como un 500. Se
+     * corta aqui, donde todavia se puede explicar.
      */
     @Test
-    fun `actualizar la financiadora default desmarcandola deja el sistema sin default - hallazgo abierto`() {
-        val financiadora = Financiadora(id = 5, nombre = "Calidda", esDefault = true)
-        every { financiadoraRepository.findById(5) } returns Optional.of(financiadora)
-        every { financiadoraRepository.save(financiadora) } returns financiadora
+    fun `desmarcar la unica default se rechaza`() {
+        val financiadora = Financiadora(id = 1, nombre = "Calidda", esDefault = true)
+        every { financiadoraRepository.findById(1) } returns Optional.of(financiadora)
+        every { financiadoraRepository.existsByEsDefaultTrueAndIdNot(1) } returns false
 
-        val dto = service.actualizar(5, ActualizarFinanciadoraRequest(esDefault = false))
+        val ex = assertThrows<ConflictoException> { service.actualizar(1, ActualizarFinanciadoraRequest(esDefault = false)) }
+
+        assertThat(ex.code).isEqualTo("FINANCIADORA_DEFAULT_REQUERIDA")
+        assertThat(ex.field).isEqualTo("es_default")
+        verify(exactly = 0) { financiadoraRepository.save(any()) }
+    }
+
+    /** Con otra ya marcada, desmarcar esta es legitimo: el sistema no se queda huerfano. */
+    @Test
+    fun `desmarcar la default cuando ya hay otra si se permite`() {
+        val financiadora = Financiadora(id = 1, nombre = "Calidda", esDefault = true)
+        every { financiadoraRepository.findById(1) } returns Optional.of(financiadora)
+        every { financiadoraRepository.existsByEsDefaultTrueAndIdNot(1) } returns true
+        every { financiadoraRepository.save(any()) } answers { firstArg() }
+
+        val dto = service.actualizar(1, ActualizarFinanciadoraRequest(esDefault = false))
 
         assertThat(dto.esDefault).isFalse()
+    }
+
+    /** Desmarcar una que ya NO era default no puede dejar al sistema sin ninguna. */
+    @Test
+    fun `desmarcar una financiadora que no era default no comprueba nada`() {
+        val financiadora = Financiadora(id = 2, nombre = "Otra", esDefault = false)
+        every { financiadoraRepository.findById(2) } returns Optional.of(financiadora)
+        every { financiadoraRepository.save(any()) } answers { firstArg() }
+
+        service.actualizar(2, ActualizarFinanciadoraRequest(esDefault = false))
+
         verify(exactly = 0) { financiadoraRepository.existsByEsDefaultTrueAndIdNot(any()) }
     }
 

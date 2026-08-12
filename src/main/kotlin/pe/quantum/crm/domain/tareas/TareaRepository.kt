@@ -4,11 +4,21 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.data.jpa.repository.Query
 import pe.quantum.crm.shared.enums.EstadoAccion
+import java.time.LocalDateTime
 
 interface TareaRepository :
     JpaRepository<Tarea, Long>,
     JpaSpecificationExecutor<Tarea> {
-    fun findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionIsNotNull(estadoAccion: EstadoAccion): List<Tarea>
+    /**
+     * Tareas pendientes cuya fecha cae dentro de la ventana que el job puede
+     * notificar. `Between` ya excluye los nulos, asi que sustituye tambien al
+     * `FechaEjecucionIsNotNull` anterior.
+     */
+    fun findByEstadoAccionAndIdAsignadoIsNotNullAndFechaEjecucionBetween(
+        estadoAccion: EstadoAccion,
+        desde: LocalDateTime,
+        hasta: LocalDateTime,
+    ): List<Tarea>
 
     @Query(
         """

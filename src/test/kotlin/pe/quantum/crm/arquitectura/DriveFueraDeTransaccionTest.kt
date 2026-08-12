@@ -85,14 +85,21 @@ class DriveFueraDeTransaccionTest {
 
     @Test
     fun `ningun repositorio bloquea la fila con SELECT FOR UPDATE para crear carpetas`() {
-        // El bloqueo pesimista cumplia su funcion (una sola carpeta por registro),
+        // El bloqueo pesimista cumplia esa funcion (una sola carpeta por registro),
         // pero mantenia la fila Y la conexion retenidas durante la llamada a Drive.
         // La exclusion la da ahora un UPDATE condicional (`... WHERE drive_folder_id
         // IS NULL`), que es atomico y no abarca la red.
+        //
+        // EXCEPCION deliberada: `OportunidadRepository.findByIdBloqueando`. Su
+        // bloqueo pesimista es de `cambiarEstado` (serializa dos PATCH concurrentes
+        // sobre el mismo log de estados) y esa transaccion NUNCA habla con Drive, asi
+        // que no reproduce el problema que este test vigila.
+        val excepcionesDeliberadas = setOf("findByIdBloqueando")
         val conBloqueo =
             listOf(EmpresaRepository::class.java, OportunidadRepository::class.java).flatMap { repositorio ->
                 repositorio.methods
                     .filter { it.getAnnotation(Lock::class.java)?.value == LockModeType.PESSIMISTIC_WRITE }
+                    .filterNot { it.name in excepcionesDeliberadas }
                     .map { "${repositorio.simpleName}.${it.name}" }
             }
         assertThat(conBloqueo)

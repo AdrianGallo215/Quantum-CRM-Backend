@@ -106,4 +106,42 @@ class LoginRateLimiterTest {
 
         assertThat(acotado.isBlocked("victima@quantum.pe")).isTrue()
     }
+
+    /**
+     * El LRU puro desalojaba por antiguedad de acceso sin mirar si la clave estaba
+     * bloqueada: un flood de emails inventados expulsaba a la victima real y le
+     * levantaba el bloqueo antes de que expirara su ventana. A diferencia del test de
+     * arriba, aqui la victima NO se vuelve a consultar durante el flood: es el caso
+     * real de un atacante que solo escribe, sin refrescar el acceso de la victima.
+     */
+    @Test
+    fun `un flood de claves nuevas no levanta el bloqueo de la clave atacada aunque no se le vuelva a consultar`() {
+        val limiter = LoginRateLimiter(clock = clock, maxEntries = 10)
+        repeat(5) { limiter.recordFailure("victima@quantum.pe") }
+        assertThat(limiter.isBlocked("victima@quantum.pe")).isTrue()
+
+        repeat(200) { i -> limiter.recordFailure("relleno-$i@quantum.pe") }
+
+        assertThat(limiter.isBlocked("victima@quantum.pe")).isTrue()
+    }
+
+    /** La cota de memoria sigue siendo dura: proteger a las bloqueadas no puede volver el mapa ilimitado. */
+    @Test
+    fun `el mapa sigue acotado durante el flood`() {
+        val limiter = LoginRateLimiter(clock = clock, maxEntries = 10)
+
+        repeat(200) { i -> limiter.recordFailure("relleno-$i@quantum.pe") }
+
+        assertThat(limiter.clavesEnSeguimiento()).isLessThanOrEqualTo(10)
+    }
+
+    /** Caso patologico: si TODAS las claves vigentes estan bloqueadas, la cota manda igual. */
+    @Test
+    fun `con todas las claves bloqueadas la cota de memoria sigue mandando`() {
+        val limiter = LoginRateLimiter(clock = clock, maxEntries = 10)
+
+        repeat(50) { i -> repeat(5) { limiter.recordFailure("atacada-$i@quantum.pe") } }
+
+        assertThat(limiter.clavesEnSeguimiento()).isLessThanOrEqualTo(10)
+    }
 }

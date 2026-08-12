@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import jakarta.persistence.LockModeType
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -26,7 +27,6 @@ import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import java.util.Optional
 
 /**
  * A1 (docs/plan-ejecucion-subagentes.md, tarea C.2): un test por invariante de
@@ -100,7 +100,7 @@ class OportunidadCambiarEstadoInvariantesTest {
         estadoDesde: EstadoOportunidad = entidad.estado,
     ) {
         val id = requireNotNull(entidad.id)
-        every { oportunidadRepository.findById(id) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(id) } returns entidad
         every { oportunidadRepository.save(entidad) } returns entidad
         every { logRepository.save(any()) } returns mockk()
         every { consultas.eventosRecomendadosSinRegistrar(id, estadoDesde) } returns emptyList()
@@ -115,7 +115,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     @Test
     fun `cerrar sin motivo_cierre lanza MOTIVO_CIERRE_REQUERIDO`() {
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
 
         assertThatThrownBy {
             service.cambiarEstado(100, CambiarEstadoRequest(estado = "cerrado"), UsuarioActual(id = 1, rol = "admin"))
@@ -159,7 +159,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     @Test
     fun `un vendedor no puede pasar a facturado`() {
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
 
         assertThatThrownBy {
             service.cambiarEstado(100, CambiarEstadoRequest(estado = "facturado"), UsuarioActual(id = 1, rol = "vendedor"))
@@ -171,7 +171,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     @Test
     fun `un jdv tampoco puede pasar a facturado`() {
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
 
         assertThatThrownBy {
             service.cambiarEstado(100, CambiarEstadoRequest(estado = "facturado"), UsuarioActual(id = 1, rol = "jdv"))
@@ -225,7 +225,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     @Test
     fun `cambiar al mismo estado lanza ESTADO_INVALIDO`() {
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
 
         assertThatThrownBy {
             service.cambiarEstado(
@@ -239,7 +239,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     @Test
     fun `un estado desconocido lanza ESTADO_INVALIDO`() {
         val entidad = oportunidad(idVendedor = 1)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
 
         assertThatThrownBy {
             service.cambiarEstado(100, CambiarEstadoRequest(estado = "perdido"), UsuarioActual(id = 1, rol = "admin"))
@@ -277,5 +277,42 @@ class OportunidadCambiarEstadoInvariantesTest {
         }.isInstanceOf(MontoNoEditableException::class.java)
 
         verify(exactly = 0) { oportunidadRepository.save(any()) }
+    }
+
+    /**
+     * El bloqueo es lo que impide que dos PATCH simultaneos lean el mismo
+     * `estado_anterior` y escriban dos filas de log con el mismo origen. No se puede
+     * demostrar la concurrencia sin base de datos, pero si se puede fijar que el
+     * camino de escritura pasa por el finder que bloquea y no por el que no.
+     */
+    @Test
+    fun `cambiarEstado lee la oportunidad con el finder que bloquea la fila`() {
+        val entidad = oportunidad(idVendedor = 1)
+        every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
+        every { oportunidadRepository.save(entidad) } returns entidad
+        every { logRepository.save(any()) } returns mockk()
+        every { consultas.eventosRecomendadosSinRegistrar(100, entidad.estado) } returns emptyList()
+        every { estadoCarteraService.actualizar(entidad.idEmpresa) } returns null
+        every { empresaService.resumenPorIds(listOf(entidad.idEmpresa)) } returns
+            mapOf(entidad.idEmpresa to EmpresaResumen(id = entidad.idEmpresa, razonSocial = "Kincar S.A.C.", distrito = null))
+        every { empleadoService.resumenPorIds(any()) } returns
+            mapOf(entidad.idVendedor to EmpleadoResumen(id = entidad.idVendedor, nombres = "Ana", apellidos = "Diaz"))
+        every { empleadoService.idsSupervisoresActivos() } returns listOf(1)
+
+        service.cambiarEstado(100, CambiarEstadoRequest(estado = "documentos_legales"), UsuarioActual(id = 1, rol = "admin"))
+
+        verify(exactly = 1) { oportunidadRepository.findByIdBloqueando(100) }
+        verify(exactly = 0) { oportunidadRepository.findById(any()) }
+    }
+
+    /** La anotacion ES el fix: sin ella la query no bloquea nada aunque el nombre lo sugiera. */
+    @Test
+    fun `el finder de cambiarEstado declara bloqueo pesimista de escritura`() {
+        val metodo = OportunidadRepository::class.java.getMethod("findByIdBloqueando", Long::class.java)
+
+        val lock = metodo.getAnnotation(org.springframework.data.jpa.repository.Lock::class.java)
+
+        assertThat(lock).isNotNull
+        assertThat(lock.value).isEqualTo(LockModeType.PESSIMISTIC_WRITE)
     }
 }

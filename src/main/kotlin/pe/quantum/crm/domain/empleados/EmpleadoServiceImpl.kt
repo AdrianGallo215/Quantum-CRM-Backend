@@ -204,7 +204,21 @@ class EmpleadoServiceImpl(
         }
     }
 
-    /** Regla B1.4: el sistema nunca se queda sin un admin activo. */
+    /**
+     * Regla B1.4: el sistema nunca se queda sin un admin activo.
+     *
+     * HOY ESTA GUARDA NO PUEDE SALTAR, y es a proposito: `verificarSolicitanteVigente`
+     * corre antes en las tres operaciones que la invocan y ya exige que el solicitante
+     * sea un admin activo distinto del objetivo (`actualizar` y `cambiarActivo`
+     * prohiben ademas operar sobre uno mismo). Al contar admins activos con id
+     * distinto del objetivo, el propio solicitante siempre cuenta: el contador nunca
+     * llega a 0.
+     *
+     * No se retira porque es la ultima linea de la regla B1.4: si algun dia se relaja
+     * la revalidacion del solicitante —o aparece una cuarta via de degradar admins—
+     * esta guarda es lo unico que impide dejar el CRM sin administrador. Ver
+     * `EmpleadoServiceTest`, que fija por que hoy no salta.
+     */
     private fun verificarNoUltimoAdmin(id: Long) {
         if (empleadoRepository.countByRolAndActivoTrueAndIdNot(RolEmpleado.admin, id) == 0L) {
             throw ConflictoException("ULTIMO_ADMIN", "No se puede dejar el sistema sin un administrador activo")

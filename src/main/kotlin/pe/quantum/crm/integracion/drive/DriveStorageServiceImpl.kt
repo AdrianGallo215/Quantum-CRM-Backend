@@ -139,6 +139,18 @@ class DriveStorageServiceImpl(
         }
     }
 
+    override fun enviarCarpetaAPapelera(folderId: String) {
+        val metadatos = File().apply { trashed = true }
+        ejecutar("enviar la carpeta '$folderId' a la papelera") {
+            drive
+                .files()
+                .update(folderId, metadatos)
+                .setSupportsAllDrives(true)
+                .execute()
+        }
+        log.info("Carpeta enviada a la papelera de Drive: id={}", folderId)
+    }
+
     /** Escapa comillas simples: sintaxis de consulta de Drive, no SQL, pero mismo riesgo de inyeccion. */
     private fun consultaHijosNoCarpeta(parentFolderId: String): String {
         val padreEscapado = parentFolderId.replace("'", "\\'")

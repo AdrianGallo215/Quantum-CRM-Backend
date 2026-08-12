@@ -22,6 +22,7 @@ import pe.quantum.crm.domain.empleados.dto.toDto
 import pe.quantum.crm.shared.ApiResponse
 import pe.quantum.crm.shared.exception.CredencialesInvalidasException
 import pe.quantum.crm.shared.exception.DemasiadosIntentosException
+import pe.quantum.crm.shared.exception.NoEncontradoException
 
 /**
  * Endpoints de autenticacion (contrato_api.md §6, SECURITY §2).
@@ -79,10 +80,7 @@ class AuthController(
         val principal =
             refreshToken?.let { jwtService.validate(it, TipoToken.REFRESH) }
                 ?: throw CredencialesInvalidasException()
-        val empleado = empleadoService.porId(principal.empleadoId)
-        if (!empleado.activo) {
-            throw CredencialesInvalidasException()
-        }
+        val empleado = empleadoActivoDe(principal.empleadoId)
 
         emitAuthCookies(empleado, response)
         return ApiResponse.ok(RefreshResponse(expiresIn = jwtProperties.accessExpirationMs / MILLIS_PER_SECOND))
@@ -104,6 +102,25 @@ class AuthController(
             request.passwordNueva,
         )
         return ApiResponse.ok(Unit)
+    }
+
+    /**
+     * Token valido apuntando a un empleado que ya no existe es una credencial
+     * muerta (401), no un recurso ausente (404): el 404 filtraba ademas que ese id
+     * existio alguna vez.
+     */
+    @Suppress("SwallowedException") // Traduce NoEncontradoException a la excepcion correcta a proposito.
+    private fun empleadoActivoDe(idEmpleado: Long): Empleado {
+        val empleado =
+            try {
+                empleadoService.porId(idEmpleado)
+            } catch (ex: NoEncontradoException) {
+                throw CredencialesInvalidasException()
+            }
+        if (!empleado.activo) {
+            throw CredencialesInvalidasException()
+        }
+        return empleado
     }
 
     private fun emitAuthCookies(

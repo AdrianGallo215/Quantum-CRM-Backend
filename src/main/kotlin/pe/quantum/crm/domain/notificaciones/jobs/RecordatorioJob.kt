@@ -11,6 +11,8 @@ import pe.quantum.crm.domain.notificaciones.OrigenRecordatorio
 import pe.quantum.crm.domain.notificaciones.UmbralRecordatorio
 import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.tareas.TareaService
+import pe.quantum.crm.shared.ZONA_PERU
+import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -34,6 +36,7 @@ class RecordatorioJob(
     private val oportunidadService: OportunidadService,
     private val empresaService: EmpresaService,
     private val envioRecordatorio: EnvioRecordatorio,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val log = LoggerFactory.getLogger(RecordatorioJob::class.java)
 
@@ -44,7 +47,7 @@ class RecordatorioJob(
     }
 
     private fun procesarTareas() {
-        val ahora = LocalDateTime.now()
+        val ahora = LocalDateTime.now(clock)
         tareaService.pendientesParaRecordatorio().forEach { tarea ->
             val umbral = umbralTarea(tarea.fechaEjecucion, ahora) ?: return@forEach
             enviarAislado(OrigenRecordatorio.tarea, tarea.id) {
@@ -62,7 +65,8 @@ class RecordatorioJob(
     }
 
     private fun procesarEventos() {
-        val hoy = LocalDate.now()
+        // Dia del calendario del vendedor, no del servidor (ver ZONA_PERU).
+        val hoy = LocalDate.now(clock.withZone(ZONA_PERU))
         eventoService.pendientesParaRecordatorio().forEach { evento ->
             val umbral = umbralEvento(evento.fechaEstimada, hoy) ?: return@forEach
             enviarAislado(OrigenRecordatorio.evento, evento.id) {

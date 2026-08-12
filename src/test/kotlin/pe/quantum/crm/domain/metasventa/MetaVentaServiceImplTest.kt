@@ -9,6 +9,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.RolEmpleado
+import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import pe.quantum.crm.domain.metasventa.dto.CrearMetaVentaRequest
 import pe.quantum.crm.domain.metasventa.dto.EditarMetaVentaRequest
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
@@ -106,9 +107,66 @@ class MetaVentaServiceImplTest {
             notificacionService.notificar(
                 destinatarios = setOf(1L, 5L),
                 idActor = 1,
-                tipo = TipoNotificacion.meta_modificada,
+                tipo = TipoNotificacion.meta_aprobada,
                 mensaje = any(),
                 entidadTipo = EntidadNotificacion.meta_venta,
+                entidadId = any(),
+            )
+        }
+    }
+
+    /**
+     * Gerencia creando una meta que no existia no "modifico" nada. El mensaje llega
+     * al vendedor y a quien la propuso: tiene que decir lo que de verdad paso.
+     */
+    @Test
+    fun `gerencia creando una meta nueva notifica que la establecio, no que la modifico`() {
+        every { metaVentaRepository.findByIdEmpleadoAndAnio(5, 2026) } returns null
+        every { empleadoService.esAsignableComoVendedor(5) } returns true
+        every { metaVentaRepository.save(any()) } answers { firstArg<MetaVenta>().conId(1) }
+        every { empleadoService.resumenPorIds(any()) } returns
+            mapOf(
+                9L to EmpleadoResumen(id = 9, nombres = "Ana", apellidos = "Torres"),
+                5L to EmpleadoResumen(id = 5, nombres = "Luis", apellidos = "Paz"),
+            )
+
+        service.crear(requestAnioCompleto(idEmpleado = 5, anio = 2026), UsuarioActual(id = 9, rol = "gerencia"))
+
+        verify {
+            notificacionService.notificar(
+                destinatarios = any(),
+                idActor = 9L,
+                tipo = TipoNotificacion.meta_aprobada,
+                mensaje = match { it.contains("estableció") && !it.contains("modificó") },
+                entidadTipo = any(),
+                entidadId = any(),
+            )
+        }
+    }
+
+    /** Sobre una meta que ya existia, "modificó" sigue siendo la palabra correcta. */
+    @Test
+    fun `gerencia sobre una meta existente sigue notificando que la modifico`() {
+        val existente =
+            MetaVenta(id = 20, idEmpleado = 5, anio = 2026, idPropuestoPor = 2).apply { establecerMeses(List(12) { 10 }) }
+        every { metaVentaRepository.findByIdEmpleadoAndAnio(5, 2026) } returns existente
+        every { empleadoService.esAsignableComoVendedor(5) } returns true
+        every { metaVentaRepository.save(any()) } answers { firstArg() }
+        every { empleadoService.resumenPorIds(any()) } returns
+            mapOf(
+                9L to EmpleadoResumen(id = 9, nombres = "Ana", apellidos = "Torres"),
+                5L to EmpleadoResumen(id = 5, nombres = "Luis", apellidos = "Paz"),
+            )
+
+        service.crear(requestAnioCompleto(idEmpleado = 5, anio = 2026), UsuarioActual(id = 9, rol = "gerencia"))
+
+        verify {
+            notificacionService.notificar(
+                destinatarios = any(),
+                idActor = 9L,
+                tipo = TipoNotificacion.meta_modificada,
+                mensaje = match { it.contains("modificó") },
+                entidadTipo = any(),
                 entidadId = any(),
             )
         }
