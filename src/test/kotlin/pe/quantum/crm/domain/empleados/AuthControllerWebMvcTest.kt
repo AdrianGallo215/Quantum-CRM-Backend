@@ -45,17 +45,20 @@ class AuthControllerWebMvcTest {
     @MockkBean
     lateinit var empleadoService: EmpleadoService
 
-    private fun empleado(email: String) =
-        Empleado(
-            id = 1,
-            nombres = "Ana",
-            apellidos = "Diaz",
-            email = email,
-            rol = RolEmpleado.jdv,
-            activo = true,
-            passwordHash = "\$2a\$12\$hash",
-            requiereCambioContrasena = false,
-        )
+    private fun empleado(
+        email: String,
+        tokenVersion: Int = 0,
+    ) = Empleado(
+        id = 1,
+        nombres = "Ana",
+        apellidos = "Diaz",
+        email = email,
+        rol = RolEmpleado.jdv,
+        activo = true,
+        passwordHash = "\$2a\$12\$hash",
+        requiereCambioContrasena = false,
+        tokenVersion = tokenVersion,
+    )
 
     private fun loginBody(
         email: String,
@@ -211,6 +214,71 @@ class AuthControllerWebMvcTest {
         }
     }
 
+    /**
+     * Un refresh token con una token_version anterior a la actual del empleado
+     * fue revocado (logout o cambio de contraseña en otra sesion, ver B0.9).
+     * Debe rechazarse igual que un empleado inactivo: 401 generico.
+     */
+    @Test
+    fun `refresh con token_version desactualizada responde 401`() {
+        every { empleadoService.porId(1) } returns empleado("ana@quantum.pe", tokenVersion = 1)
+        val refreshToken = jwtService.generateRefreshToken(empleadoId = 1, tokenVersion = 0)
+
+        mockMvc.post("/api/v1/auth/refresh") {
+            cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))
+        }.andExpect {
+            status { isUnauthorized() }
+            jsonPath("$.error.code") { value("CREDENCIALES_INVALIDAS") }
+        }
+    }
+
+    // ── Logout (B0.9) ─────────────────────────────────────────────────────────
+    // Debe ser idempotente (siempre 204, nunca 401) y limpiar ambas cookies con
+    // los mismos atributos con los que se emitieron, para que el navegador las
+    // borre. Si trae un refresh token vigente, revoca la sesion en servidor.
+
+    @Test
+    fun `logout sin cookie responde 204 y limpia ambas cookies`() {
+        val result =
+            mockMvc.post("/api/v1/auth/logout").andExpect {
+                status { isNoContent() }
+            }.andReturn()
+
+        val setCookies = result.response.getHeaders("Set-Cookie")
+        assertThat(setCookies).anyMatch {
+            it.startsWith("access_token=") && it.contains("Max-Age=0") && it.contains("HttpOnly") && it.contains("SameSite=Strict")
+        }
+        assertThat(setCookies).anyMatch {
+            it.startsWith("refresh_token=") && it.contains("Max-Age=0") && it.contains("HttpOnly") && it.contains("SameSite=Strict")
+        }
+        verify(exactly = 0) { empleadoService.revocarSesiones(any()) }
+    }
+
+    @Test
+    fun `logout con refresh token vigente revoca la sesion y responde 204`() {
+        val refreshToken = jwtService.generateRefreshToken(empleadoId = 1, tokenVersion = 0)
+        every { empleadoService.revocarSesiones(1) } returns Unit
+
+        mockMvc.post("/api/v1/auth/logout") {
+            cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, refreshToken))
+        }.andExpect {
+            status { isNoContent() }
+        }
+
+        verify(exactly = 1) { empleadoService.revocarSesiones(1) }
+    }
+
+    @Test
+    fun `logout con cookie invalida igual responde 204 y no toca el servicio`() {
+        mockMvc.post("/api/v1/auth/logout") {
+            cookie(Cookie(AuthCookieFactory.REFRESH_TOKEN_COOKIE, "esto-no-es-un-jwt"))
+        }.andExpect {
+            status { isNoContent() }
+        }
+
+        verify(exactly = 0) { empleadoService.revocarSesiones(any()) }
+    }
+
     // ── Cambio de contraseña (D1) ────────────────────────────────────────────
     // Este endpoint vive bajo /auth/**, que en SecurityConfig es permitAll(). Es el
     // UNICO de la familia que exige sesion: el test 1 es la prueba de que el matcher
@@ -237,6 +305,7 @@ class AuthControllerWebMvcTest {
     fun `cambiar contrasena autenticado con body valido responde 200 y llama al servicio`() {
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "vendedor")
         every { empleadoService.cambiarContrasena(1, "vieja", "NuevaSegura123") } returns Unit
+        every { empleadoService.porId(1) } returns empleado("ana@quantum.pe", tokenVersion = 1)
 
         mockMvc.post("/api/v1/auth/cambiar-contrasena") {
             header(HttpHeaders.AUTHORIZATION, "Bearer $token")
@@ -247,6 +316,32 @@ class AuthControllerWebMvcTest {
         }
 
         verify(exactly = 1) { empleadoService.cambiarContrasena(1, "vieja", "NuevaSegura123") }
+    }
+
+    /**
+     * cambiarContrasena incrementa token_version en servidor (invalida otras
+     * sesiones), pero la sesion que hizo el cambio no debe quedar rota en su
+     * proximo refresh: el controller reemite cookies frescas con la nueva
+     * version tras aplicar el cambio.
+     */
+    @Test
+    fun `cambiar contrasena reemite cookies frescas para no cerrar la sesion actual`() {
+        val token = jwtService.generateAccessToken(empleadoId = 1, rol = "vendedor")
+        every { empleadoService.cambiarContrasena(1, "vieja", "NuevaSegura123") } returns Unit
+        every { empleadoService.porId(1) } returns empleado("ana@quantum.pe", tokenVersion = 1)
+
+        val result =
+            mockMvc.post("/api/v1/auth/cambiar-contrasena") {
+                header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+                contentType = MediaType.APPLICATION_JSON
+                content = cambiarContrasenaBody("vieja", "NuevaSegura123")
+            }.andExpect {
+                status { isOk() }
+            }.andReturn()
+
+        val setCookies = result.response.getHeaders("Set-Cookie")
+        assertThat(setCookies).anyMatch { it.startsWith("access_token=") && it.contains("HttpOnly") }
+        assertThat(setCookies).anyMatch { it.startsWith("refresh_token=") && it.contains("HttpOnly") }
     }
 
     @Test

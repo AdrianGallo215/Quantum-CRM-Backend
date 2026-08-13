@@ -36,14 +36,25 @@
 ```
 Base URL:      /api/v1
 Content-Type:  application/json
-Auth header:   Authorization: Bearer {jwt_token}
+Auth:          cookies httpOnly, ver abajo — NUNCA Authorization: Bearer
 Fechas:        ISO 8601 — "2026-06-19T14:30:00Z" para timestamps, "2026-06-19" para fechas
 Montos:        NUMERIC como string en JSON para evitar pérdida de precisión — "45000.00"
 Enums:         snake_case — "evaluacion_calidda", "no_contactado"
 IDs:           Long (número entero)
 ```
 
-Todo endpoint salvo `/auth/login` y `/auth/refresh` requiere token JWT válido.
+**Autenticación real (SECURITY-backend.md §2.1):** el JWT viaja en dos cookies `httpOnly`, nunca en el body ni en un header. El frontend no las lee ni las setea — el navegador las adjunta solo. `credentials: 'include'` (o equivalente) es obligatorio en cada fetch.
+
+```
+Set-Cookie: access_token=<jwt>;  HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600
+Set-Cookie: refresh_token=<jwt>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=604800
+```
+
+- `Secure` exige HTTPS (en local sobre HTTP se desactiva vía `COOKIE_SECURE=false`, nunca en un despliegue real).
+- `SameSite=Strict` es la mitigación de CSRF; no hay token CSRF adicional.
+- Ambas cookies se reemiten en cada `/auth/login`, `/auth/refresh` y `/auth/cambiar-contrasena` exitoso.
+
+Todo endpoint salvo `/auth/login`, `/auth/refresh` y `/auth/logout` requiere sesión válida (cookie `access_token`).
 
 ---
 
@@ -154,8 +165,10 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 ## 6. Auth
 
+Los tokens **nunca** viajan en el body ni se leen de un header `Authorization`: van en las cookies `httpOnly` descritas en §1. Todas las respuestas de esta sección solo llevan lo que no está ya en la cookie.
+
 ### POST /auth/login
-> Autentica al usuario y devuelve un par de tokens.
+> Autentica al usuario y setea las cookies de sesión.
 
 **Body:**
 ```json
@@ -169,9 +182,8 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 ```json
 {
   "data": {
-    "access_token": "eyJ...",
-    "refresh_token": "eyJ...",
     "expires_in": 3600,
+    "requiere_cambio_contrasena": false,
     "empleado": {
       "id": 1,
       "nombres": "Aldo",
@@ -179,30 +191,48 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
       "email": "aldo.martinez@quantum.pe",
       "rol": "jdv",
       "area": "Comercial",
-      "puesto": "Jefe de Ventas"
+      "puesto": "Jefe de Ventas",
+      "activo": true
     }
   }
 }
 ```
 
 **Notas:**
-- `access_token` expira en 1 hora. `refresh_token` expira en 7 días.
+- Setea `access_token` (expira en 1 hora) y `refresh_token` (expira en 7 días) — ver §1.
 - Responde `401` si las credenciales son inválidas, sin indicar si el error es en email o contraseña.
+- Rate limiting por email: 5 intentos fallidos → `429` con header `Retry-After` (segundos) y `error.code = "DEMASIADOS_INTENTOS"`.
 
 ---
 
 ### POST /auth/refresh
-> Renueva el access token usando el refresh token.
+> Renueva el access token. El refresh token se lee de su propia cookie — **no** del body.
 
-**Body:**
+**Body:** ninguno (`POST` sin contenido).
+
+**Respuesta 200:**
 ```json
-{ "refresh_token": "eyJ..." }
+{ "data": { "expires_in": 3600 } }
 ```
 
-**Respuesta 200:** misma estructura que `/auth/login` pero sin `empleado`.
+Reemite ambas cookies.
 
 **Errores:**
-- `401 CREDENCIALES_INVALIDAS` — el refresh token no es válido, expiró, el empleado está inactivo, **o el empleado ya no existe** (una credencial muerta no es un recurso ausente: nunca `404`).
+- `401 CREDENCIALES_INVALIDAS` — la cookie `refresh_token` falta, no es válida, expiró, es de tipo `access`, el empleado está inactivo, la sesión fue revocada (logout o cambio de contraseña en otro momento — ver `/auth/logout`), **o el empleado ya no existe** (una credencial muerta no es un recurso ausente: nunca `404`).
+
+---
+
+### POST /auth/logout
+> Cierra sesión: revoca el refresh token en servidor y limpia ambas cookies.
+
+**Body:** ninguno. **No requiere sesión válida.**
+
+**Respuesta:** `204 No Content`, sin body.
+
+**Notas:**
+- Idempotente y a prueba de fallos: responde `204` con o sin cookie de sesión, con cookie expirada, o sin sesión — **nunca** `401`.
+- Si la cookie `refresh_token` es válida, invalida esa sesión en servidor (no solo en el navegador): un refresh token copiado antes del logout deja de servir en el siguiente `/auth/refresh`.
+- Limpia `access_token` y `refresh_token` con `Max-Age=0`, mismos `Path`/`HttpOnly`/`Secure`/`SameSite` que al emitirlas.
 
 ---
 
@@ -221,7 +251,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 `password_nueva`: 8–72 caracteres.
 
-**Respuesta 200:** sin datos (`{ "data": null }`).
+**Respuesta 200:** sin datos (`{ "data": null }`). Reemite ambas cookies.
 
 **Errores:**
 
@@ -232,6 +262,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 **Notas:**
 - Al completarse con éxito, `requiere_cambio_contrasena` pasa a `false`. El siguiente `/auth/login` ya lo refleja en el `empleado` devuelto.
+- Invalida el refresh token de cualquier **otra** sesión abierta con la cuenta (mismo mecanismo que `/auth/logout`); la sesión que hizo el cambio sigue viva porque el backend reemite sus cookies con la versión ya vigente.
 
 ---
 

@@ -10,7 +10,7 @@ import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 
 /**
- * Empleado / usuario del sistema (tabla `empleados`, migraciones V2 + V20).
+ * Empleado / usuario del sistema (tabla `empleados`, migraciones V2 + V20 + V39).
  *
  * Entidad JPA — nunca se expone en controllers (se mapea a DTOs). `ddl-auto=validate`:
  * esta clase debe reflejar exactamente el schema. `passwordHash` es nullable: un
@@ -40,4 +40,6 @@ class Empleado(
     var passwordHash: String? = null,
     @Column(name = "requiere_cambio_contrasena", nullable = false)
     var requiereCambioContrasena: Boolean = true,
+    @Column(name = "token_version", nullable = false)
+    var tokenVersion: Int = 0,
 )

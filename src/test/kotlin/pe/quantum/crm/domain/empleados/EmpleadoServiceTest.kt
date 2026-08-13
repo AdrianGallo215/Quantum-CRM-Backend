@@ -41,6 +41,7 @@ class EmpleadoServiceTest {
         passwordHash: String? = "\$2a\$12\$hashValido",
         id: Long = 1,
         rol: RolEmpleado = RolEmpleado.vendedor,
+        tokenVersion: Int = 0,
     ) = Empleado(
         id = id,
         nombres = "Ana",
@@ -49,6 +50,7 @@ class EmpleadoServiceTest {
         rol = rol,
         activo = activo,
         passwordHash = passwordHash,
+        tokenVersion = tokenVersion,
     )
 
     @Test
@@ -272,6 +274,7 @@ class EmpleadoServiceTest {
         id: Long = 1,
         passwordPlano: String = "vieja",
         requiereCambio: Boolean = true,
+        tokenVersion: Int = 0,
     ) = Empleado(
         id = id,
         nombres = "Ana",
@@ -281,6 +284,7 @@ class EmpleadoServiceTest {
         activo = true,
         passwordHash = encoderReal.encode(passwordPlano),
         requiereCambioContrasena = requiereCambio,
+        tokenVersion = tokenVersion,
     )
 
     @Test
@@ -295,6 +299,23 @@ class EmpleadoServiceTest {
         assertThat(empleado.passwordHash).isNotEqualTo(hashAnterior)
         assertThat(encoderReal.matches("NuevaSegura123", empleado.passwordHash!!)).isTrue()
         assertThat(empleado.requiereCambioContrasena).isFalse()
+    }
+
+    /**
+     * Cambiar la contraseña debe invalidar el refresh token de cualquier otra
+     * sesion abierta (ver AuthController.refresh, que compara esta version
+     * contra la del token). Sin esto, robar la contraseña actual no bastaba
+     * para expulsar a un atacante que ya tuviera una sesion viva.
+     */
+    @Test
+    fun `cambiar contrasena incrementa token_version para invalidar otras sesiones`() {
+        val empleado = empleadoConPassword(tokenVersion = 0)
+        every { repositoryCambio.findById(1) } returns Optional.of(empleado)
+        every { repositoryCambio.save(any()) } returnsArgument 0
+
+        serviceCambio.cambiarContrasena(1, "vieja", "NuevaSegura123")
+
+        assertThat(empleado.tokenVersion).isEqualTo(1)
     }
 
     @Test
@@ -351,5 +372,32 @@ class EmpleadoServiceTest {
         val dto = service.cambiarActivo(id = 2, activo = false, idSolicitante = 1)
 
         assertThat(dto.activo).isFalse()
+    }
+
+    // ── Logout (revocacion de sesiones) ──────────────────────────────────────
+    // `revocarSesiones` es lo que invoca POST /auth/logout. Incrementa
+    // token_version para que el refresh token vigente deje de servir (ver
+    // AuthController.refresh). Debe ser un no-op silencioso si el empleado ya
+    // no existe: logout tiene que responder 204 siempre, nunca fallar.
+
+    @Test
+    fun `revocarSesiones incrementa token_version y persiste`() {
+        val empleado = empleado(tokenVersion = 5)
+        every { repository.findById(1) } returns Optional.of(empleado)
+        every { repository.save(any()) } returnsArgument 0
+
+        service.revocarSesiones(1)
+
+        assertThat(empleado.tokenVersion).isEqualTo(6)
+        verify(exactly = 1) { repository.save(empleado) }
+    }
+
+    @Test
+    fun `revocarSesiones de un empleado inexistente no lanza excepcion`() {
+        every { repository.findById(99) } returns Optional.empty()
+
+        service.revocarSesiones(99)
+
+        verify(exactly = 0) { repository.save(any()) }
     }
 }

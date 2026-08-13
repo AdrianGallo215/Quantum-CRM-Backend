@@ -3,11 +3,13 @@ package pe.quantum.crm.domain.empleados
 import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.CookieValue
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import pe.quantum.crm.config.security.AuthCookieFactory
 import pe.quantum.crm.config.security.JwtProperties
@@ -81,26 +83,56 @@ class AuthController(
             refreshToken?.let { jwtService.validate(it, TipoToken.REFRESH) }
                 ?: throw CredencialesInvalidasException()
         val empleado = empleadoActivoDe(principal.empleadoId)
+        // token_version desactualizada = sesion revocada por logout o cambio de
+        // contraseña (B0.9): misma credencial muerta que un empleado inactivo.
+        if (principal.tokenVersion != empleado.tokenVersion) {
+            throw CredencialesInvalidasException()
+        }
 
         emitAuthCookies(empleado, response)
         return ApiResponse.ok(RefreshResponse(expiresIn = jwtProperties.accessExpirationMs / MILLIS_PER_SECOND))
     }
 
     /**
+     * Cierra sesion (B0.9). Idempotente a proposito: responde 204 siempre, con o
+     * sin sesion valida, para que el cierre de sesion nunca pueda fallar. Si trae
+     * un refresh token vigente, revoca la sesion en servidor (incrementa
+     * `token_version`) ademas de limpiar las cookies; si no, solo limpia cookies.
+     */
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun logout(
+        @CookieValue(name = AuthCookieFactory.REFRESH_TOKEN_COOKIE, required = false) refreshToken: String?,
+        response: HttpServletResponse,
+    ) {
+        refreshToken
+            ?.let { jwtService.validate(it, TipoToken.REFRESH) }
+            ?.let { empleadoService.revocarSesiones(it.empleadoId) }
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieFactory.expiredAccessTokenCookie().toString())
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieFactory.expiredRefreshTokenCookie().toString())
+    }
+
+    /**
      * Cambio de contraseña del usuario autenticado. Vive bajo `/auth` por afinidad
      * de dominio, pero a diferencia del resto de las rutas de auth EXIGE
      * autenticacion: ver el matcher explicito en SecurityConfig.
+     *
+     * `cambiarContrasena` incrementa `token_version` para invalidar el refresh
+     * token de cualquier OTRA sesion abierta (B0.9). Sin reemitir cookies aqui,
+     * esa misma revocacion tumbaria tambien la sesion que acaba de hacer el
+     * cambio en su proximo refresh — se reemiten con la version ya actualizada
+     * para que la sesion actual siga viva.
      */
     @PostMapping("/cambiar-contrasena")
     fun cambiarContrasena(
         @Valid @RequestBody request: CambiarContrasenaRequest,
         authentication: Authentication,
+        response: HttpServletResponse,
     ): ApiResponse<Unit> {
-        empleadoService.cambiarContrasena(
-            authentication.principal as Long,
-            request.passwordActual,
-            request.passwordNueva,
-        )
+        val id = authentication.principal as Long
+        empleadoService.cambiarContrasena(id, request.passwordActual, request.passwordNueva)
+        emitAuthCookies(empleadoService.porId(id), response)
         return ApiResponse.ok(Unit)
     }
 
@@ -129,7 +161,7 @@ class AuthController(
     ) {
         val id = requireNotNull(empleado.id)
         val access = jwtService.generateAccessToken(id, empleado.rol.name)
-        val refresh = jwtService.generateRefreshToken(id)
+        val refresh = jwtService.generateRefreshToken(id, empleado.tokenVersion)
         response.addHeader(
             HttpHeaders.SET_COOKIE,
             cookieFactory.accessTokenCookie(access, jwtProperties.accessExpirationMs).toString(),

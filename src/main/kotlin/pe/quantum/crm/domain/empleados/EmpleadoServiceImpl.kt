@@ -174,7 +174,16 @@ class EmpleadoServiceImpl(
         }
         empleado.passwordHash = passwordEncoder.encode(nueva)
         empleado.requiereCambioContrasena = false
+        empleado.tokenVersion += 1
         empleadoRepository.save(empleado)
+    }
+
+    @Transactional
+    override fun revocarSesiones(id: Long) {
+        empleadoRepository.findById(id).ifPresent {
+            it.tokenVersion += 1
+            empleadoRepository.save(it)
+        }
     }
 
     /**

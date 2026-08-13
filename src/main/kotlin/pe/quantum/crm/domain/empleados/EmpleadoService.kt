@@ -87,4 +87,12 @@ interface EmpleadoService {
         actual: String,
         nueva: String,
     )
+
+    /**
+     * Invalida cualquier refresh token vigente del empleado (logout, B0.9):
+     * incrementa `token_version`, que `/auth/refresh` compara contra la del
+     * token. No-op silencioso si el empleado ya no existe — logout debe poder
+     * responder 204 siempre, nunca fallar.
+     */
+    fun revocarSesiones(id: Long)
 }

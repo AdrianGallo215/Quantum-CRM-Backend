@@ -9,10 +9,16 @@ import java.time.Instant
 import java.util.Date
 import javax.crypto.SecretKey
 
-/** Identidad extraida de un JWT valido. El refresh token no lleva rol. */
+/**
+ * Identidad extraida de un JWT valido. El refresh token no lleva rol; en cambio
+ * lleva `tokenVersion` (0 si el token es previo a este claim), que
+ * AuthController.refresh compara contra `empleado.tokenVersion` para detectar
+ * sesiones revocadas por logout o cambio de contraseña.
+ */
 data class JwtPrincipal(
     val empleadoId: Long,
     val rol: String?,
+    val tokenVersion: Int = 0,
 )
 
 /**
@@ -47,19 +53,24 @@ class JwtService(
         rol: String,
     ): String = buildToken(empleadoId, rol, TipoToken.ACCESS, props.accessExpirationMs)
 
-    fun generateRefreshToken(empleadoId: Long): String = buildToken(empleadoId, null, TipoToken.REFRESH, props.refreshExpirationMs)
+    fun generateRefreshToken(
+        empleadoId: Long,
+        tokenVersion: Int = 0,
+    ): String = buildToken(empleadoId, null, TipoToken.REFRESH, props.refreshExpirationMs, tokenVersion)
 
     private fun buildToken(
         empleadoId: Long,
         rol: String?,
         tipo: TipoToken,
         expirationMs: Long,
+        tokenVersion: Int = 0,
     ): String {
         val now = clock.instant()
         return Jwts.builder()
             .subject(empleadoId.toString())
             .claim(TYPE_CLAIM, tipo.claim)
             .apply { if (rol != null) claim(ROLE_CLAIM, rol) }
+            .apply { if (tipo == TipoToken.REFRESH) claim(TOKEN_VERSION_CLAIM, tokenVersion) }
             .issuedAt(Date.from(now))
             .expiration(Date.from(now.plusMillis(expirationMs)))
             .signWith(key)
@@ -85,7 +96,11 @@ class JwtService(
             if (claims[TYPE_CLAIM] != tipoEsperado.claim) {
                 null
             } else {
-                JwtPrincipal(empleadoId = claims.subject.toLong(), rol = claims[ROLE_CLAIM] as String?)
+                JwtPrincipal(
+                    empleadoId = claims.subject.toLong(),
+                    rol = claims[ROLE_CLAIM] as String?,
+                    tokenVersion = (claims[TOKEN_VERSION_CLAIM] as? Number)?.toInt() ?: 0,
+                )
             }
         } catch (_: JwtException) {
             null
@@ -100,5 +115,6 @@ class JwtService(
     private companion object {
         const val TYPE_CLAIM = "typ"
         const val ROLE_CLAIM = "rol"
+        const val TOKEN_VERSION_CLAIM = "tv"
     }
 }

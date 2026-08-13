@@ -111,6 +111,25 @@ class JwtServiceTest {
     }
 
     @Test
+    fun `un refresh token lleva la token_version en el principal`() {
+        val token = service.generateRefreshToken(empleadoId = 7, tokenVersion = 3)
+
+        val principal = service.validate(token, TipoToken.REFRESH)
+
+        assertThat(principal).isNotNull
+        assertThat(principal!!.tokenVersion).isEqualTo(3)
+    }
+
+    @Test
+    fun `un refresh token sin token_version explicita usa 0 por defecto`() {
+        val token = service.generateRefreshToken(empleadoId = 7)
+
+        val principal = service.validate(token, TipoToken.REFRESH)
+
+        assertThat(principal!!.tokenVersion).isEqualTo(0)
+    }
+
+    @Test
     fun `el access token expira segun la configuracion`() {
         val antes = Instant.now()
         val token = service.generateAccessToken(empleadoId = 1, rol = "jdv")

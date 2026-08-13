@@ -57,6 +57,15 @@ Ante credenciales inválidas, mensaje genérico sin indicar qué falló: `"Email
 
 Aplicar el mismo tiempo de respuesta ante usuario inexistente y contraseña incorrecta (evitar timing attacks).
 
+### 2.5 Logout y revocación de sesiones
+
+El sistema es JWT stateless: no hay sesión en servidor, así que "revocar" significa invalidar el refresh token, no borrar un registro.
+
+- `empleados.token_version` (V39) es un contador por empleado. Cada refresh token lleva la versión vigente al emitirse (claim `tv`). `POST /auth/refresh` compara la versión del token contra la de la base; si no coincide, `401 CREDENCIALES_INVALIDAS`, igual que un empleado inactivo.
+- Se incrementa en `POST /auth/logout` (revoca esa sesión) y en `POST /auth/cambiar-contrasena` (revoca cualquier otra sesión abierta con la cuenta; la sesión que hizo el cambio recibe cookies nuevas con la versión ya vigente, así que no se corta a sí misma).
+- **Alcance de la revocación:** solo se revisa en `/auth/refresh`, no en cada request autenticado — mismo compromiso que la desactivación de cuenta (`activo`, ver `EmpleadoServiceImpl`). Evita una lectura a base de datos en cada endpoint a cambio de que la revocación tarde como máximo lo que dure el access token vigente (1h por defecto): tras un logout, un access token ya emitido sigue siendo válido hasta que expira; lo que deja de funcionar de inmediato es el refresh, así que la sesión no puede renovarse más allá de esa hora.
+- `POST /auth/logout` es público (no exige sesión) e idempotente: limpia las cookies con los mismos flags de §2.1 y responde `204` siempre, exista o no una sesión válida. Nunca debe poder fallar — un cierre de sesión que devuelve error dejaría al usuario sin saber si sigue autenticado.
+
 ---
 
 ## 3. Autorización
