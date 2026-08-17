@@ -70,6 +70,18 @@ class ConflictoException(
     field: String? = null,
 ) : ApiException(code = code, message = message, status = HttpStatus.CONFLICT, field = field)
 
+/**
+ * El empleado arrastra el cambio de contraseña inicial pendiente (B1.4) e intento
+ * usar la API antes de cumplirlo. Es 403 y no 401: la credencial es valida, lo que
+ * falta es cumplir un requisito de la cuenta.
+ */
+class CambioContrasenaRequeridoException :
+    ApiException(
+        code = "CAMBIO_CONTRASENA_REQUERIDO",
+        message = "Debes cambiar tu contraseña antes de continuar",
+        status = HttpStatus.FORBIDDEN,
+    )
+
 /** El rol del usuario no tiene acceso a la operacion (matriz_permisos.md). */
 class PermisoInsuficienteException(
     message: String = "El rol no tiene acceso a esta operación",

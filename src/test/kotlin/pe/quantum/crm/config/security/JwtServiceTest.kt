@@ -130,6 +130,24 @@ class JwtServiceTest {
     }
 
     @Test
+    fun `el access token lleva si el empleado tiene el cambio de contrasena pendiente`() {
+        val token = service.generateAccessToken(empleadoId = 7, rol = "jdv", requiereCambioContrasena = true)
+
+        val principal = service.validate(token, TipoToken.ACCESS)
+
+        assertThat(principal!!.requiereCambioContrasena).isTrue()
+    }
+
+    @Test
+    fun `un access token sin el claim de cambio pendiente no lo exige`() {
+        val token = service.generateAccessToken(empleadoId = 7, rol = "jdv")
+
+        val principal = service.validate(token, TipoToken.ACCESS)
+
+        assertThat(principal!!.requiereCambioContrasena).isFalse()
+    }
+
+    @Test
     fun `el access token expira segun la configuracion`() {
         val antes = Instant.now()
         val token = service.generateAccessToken(empleadoId = 1, rol = "jdv")

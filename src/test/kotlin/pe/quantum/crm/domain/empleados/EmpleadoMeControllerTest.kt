@@ -68,4 +68,33 @@ class EmpleadoMeControllerTest {
             jsonPath("$.error") { isEmpty() }
         }
     }
+
+    /**
+     * El frontend restaura la sesion llamando a `/me` en cada carga de pagina. Sin
+     * este campo pierde el flag al recargar y deja pasar al usuario sin forzar el
+     * cambio. Va solo en `/me` (perfil propio), no en el `EmpleadoDto` que
+     * `GET /empleados` expone a admin/gerencia/jdv sobre OTROS empleados.
+     */
+    @Test
+    fun `me expone requiere_cambio_contrasena para sobrevivir a un refresh de pagina`() {
+        val empleado =
+            Empleado(
+                id = 7,
+                nombres = "Aldo",
+                apellidos = "Martinez",
+                email = "aldo@quantum.pe",
+                rol = RolEmpleado.jdv,
+                activo = true,
+                requiereCambioContrasena = true,
+            )
+        every { empleadoService.porId(7) } returns empleado
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "jdv", requiereCambioContrasena = true)
+
+        mockMvc.get("/api/v1/empleados/me") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.requiere_cambio_contrasena") { value(true) }
+        }
+    }
 }

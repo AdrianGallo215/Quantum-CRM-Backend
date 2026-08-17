@@ -19,6 +19,7 @@ data class JwtPrincipal(
     val empleadoId: Long,
     val rol: String?,
     val tokenVersion: Int = 0,
+    val requiereCambioContrasena: Boolean = false,
 )
 
 /**
@@ -51,26 +52,46 @@ class JwtService(
     fun generateAccessToken(
         empleadoId: Long,
         rol: String,
-    ): String = buildToken(empleadoId, rol, TipoToken.ACCESS, props.accessExpirationMs)
+        requiereCambioContrasena: Boolean = false,
+    ): String =
+        buildToken(
+            empleadoId,
+            TipoToken.ACCESS,
+            props.accessExpirationMs,
+            buildMap {
+                put(ROLE_CLAIM, rol)
+                if (requiereCambioContrasena) put(PWD_CHANGE_CLAIM, true)
+            },
+        )
 
     fun generateRefreshToken(
         empleadoId: Long,
         tokenVersion: Int = 0,
-    ): String = buildToken(empleadoId, null, TipoToken.REFRESH, props.refreshExpirationMs, tokenVersion)
+    ): String =
+        buildToken(
+            empleadoId,
+            TipoToken.REFRESH,
+            props.refreshExpirationMs,
+            mapOf(TOKEN_VERSION_CLAIM to tokenVersion),
+        )
 
+    /**
+     * Los claims propios de cada tipo llegan ya resueltos en [claimsDeTipo]: `rol`
+     * (+ `pwd` si aplica) para el access token, `tv` para el refresh. Mantenerlos
+     * fuera de la firma evita que este metodo crezca un parametro por cada claim
+     * nuevo, y que un claim de un tipo se cuele en el otro.
+     */
     private fun buildToken(
         empleadoId: Long,
-        rol: String?,
         tipo: TipoToken,
         expirationMs: Long,
-        tokenVersion: Int = 0,
+        claimsDeTipo: Map<String, Any>,
     ): String {
         val now = clock.instant()
         return Jwts.builder()
             .subject(empleadoId.toString())
             .claim(TYPE_CLAIM, tipo.claim)
-            .apply { if (rol != null) claim(ROLE_CLAIM, rol) }
-            .apply { if (tipo == TipoToken.REFRESH) claim(TOKEN_VERSION_CLAIM, tokenVersion) }
+            .apply { claimsDeTipo.forEach { (nombre, valor) -> claim(nombre, valor) } }
             .issuedAt(Date.from(now))
             .expiration(Date.from(now.plusMillis(expirationMs)))
             .signWith(key)
@@ -100,6 +121,7 @@ class JwtService(
                     empleadoId = claims.subject.toLong(),
                     rol = claims[ROLE_CLAIM] as String?,
                     tokenVersion = (claims[TOKEN_VERSION_CLAIM] as? Number)?.toInt() ?: 0,
+                    requiereCambioContrasena = claims[PWD_CHANGE_CLAIM] as? Boolean ?: false,
                 )
             }
         } catch (_: JwtException) {
@@ -116,5 +138,13 @@ class JwtService(
         const val TYPE_CLAIM = "typ"
         const val ROLE_CLAIM = "rol"
         const val TOKEN_VERSION_CLAIM = "tv"
+
+        /**
+         * Solo se emite cuando es `true`: un access token sin este claim es el caso
+         * normal (sin cambio pendiente). Fail-safe al reves que `typ` a proposito —
+         * aqui la ausencia significa "no bloquear", y el bloqueo lo respalda ademas
+         * el flag en base de datos cada vez que se reemiten cookies.
+         */
+        const val PWD_CHANGE_CLAIM = "pwd"
     }
 }

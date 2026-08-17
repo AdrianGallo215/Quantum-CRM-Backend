@@ -30,6 +30,26 @@ data class EmpleadoDto(
 )
 
 /**
+ * Perfil propio (`GET /empleados/me`). Es [EmpleadoDto] mas
+ * `requiereCambioContrasena`: el frontend restaura la sesion llamando a este
+ * endpoint en cada carga de pagina, y sin el flag perdia el estado del cambio
+ * obligatorio al recargar. Deliberadamente NO se agrega a [EmpleadoDto], que
+ * `GET /empleados` expone a admin/gerencia/jdv sobre OTROS empleados: si un
+ * colega tiene el cambio pendiente, eso no es asunto de quien lista.
+ */
+data class PerfilPropioDto(
+    val id: Long,
+    val nombres: String,
+    val apellidos: String,
+    val email: String,
+    val rol: String,
+    val area: String?,
+    val puesto: String?,
+    val activo: Boolean,
+    val requiereCambioContrasena: Boolean,
+)
+
+/**
  * Respuesta de login. Los tokens NO viajan en el body: van en cookies httpOnly
  * (SECURITY §2.1), inaccesibles a JavaScript. El body lleva el perfil, la duracion
  * de la sesion y si se debe forzar el cambio de contraseña.
@@ -64,4 +84,17 @@ fun Empleado.toDto(): EmpleadoDto =
         area = area,
         puesto = puesto,
         activo = activo,
+    )
+
+fun Empleado.toPerfilPropio(): PerfilPropioDto =
+    PerfilPropioDto(
+        id = requireNotNull(id) { "El empleado persistido debe tener id" },
+        nombres = nombres,
+        apellidos = apellidos,
+        email = email,
+        rol = rol.name,
+        area = area,
+        puesto = puesto,
+        activo = activo,
+        requiereCambioContrasena = requiereCambioContrasena,
     )

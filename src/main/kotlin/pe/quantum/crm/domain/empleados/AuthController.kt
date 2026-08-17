@@ -160,7 +160,7 @@ class AuthController(
         response: HttpServletResponse,
     ) {
         val id = requireNotNull(empleado.id)
-        val access = jwtService.generateAccessToken(id, empleado.rol.name)
+        val access = jwtService.generateAccessToken(id, empleado.rol.name, empleado.requiereCambioContrasena)
         val refresh = jwtService.generateRefreshToken(id, empleado.tokenVersion)
         response.addHeader(
             HttpHeaders.SET_COOKIE,

@@ -9,6 +9,12 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.filter.OncePerRequestFilter
 
 /**
+ * Autoridad que marca una sesion con el cambio de contraseña inicial pendiente
+ * (B1.4). Sin prefijo `ROLE_` a proposito: no debe participar en `hasRole`.
+ */
+const val CAMBIO_CONTRASENA_PENDIENTE_AUTHORITY = "CAMBIO_CONTRASENA_PENDIENTE"
+
+/**
  * Filtro que autentica cada request a partir del JWT (SECURITY-backend.md §2, §3).
  *
  * Lee el access token de la cookie httpOnly `access_token` (o del header
@@ -35,7 +41,16 @@ class JwtAuthenticationFilter(
             val principal = jwtService.validate(token, TipoToken.ACCESS)
             val rol = principal?.rol?.takeIf { it.isNotBlank() }
             if (principal != null && rol != null) {
-                val authorities = listOf(SimpleGrantedAuthority("ROLE_$rol"))
+                // La autoridad extra (sin prefijo ROLE_, no participa en hasRole) es
+                // como CambioContrasenaPendienteFilter sabe que hay un cambio de
+                // contraseña pendiente sin volver a parsear el token.
+                val authorities =
+                    buildList {
+                        add(SimpleGrantedAuthority("ROLE_$rol"))
+                        if (principal.requiereCambioContrasena) {
+                            add(SimpleGrantedAuthority(CAMBIO_CONTRASENA_PENDIENTE_AUTHORITY))
+                        }
+                    }
                 val authentication =
                     UsernamePasswordAuthenticationToken(principal.empleadoId, null, authorities)
                 SecurityContextHolder.getContext().authentication = authentication

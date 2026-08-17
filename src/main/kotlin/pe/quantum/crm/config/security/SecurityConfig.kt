@@ -1,5 +1,6 @@
 package pe.quantum.crm.config.security
 
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -16,6 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
+import org.springframework.web.servlet.HandlerExceptionResolver
 
 /**
  * Configuracion de seguridad base (SECURITY-backend.md §2, §3, §6, §7).
@@ -34,6 +36,8 @@ import org.springframework.web.cors.CorsConfigurationSource
 class SecurityConfig(
     private val jwtService: JwtService,
     private val corsProperties: CorsProperties,
+    @param:Qualifier("handlerExceptionResolver")
+    private val handlerExceptionResolver: HandlerExceptionResolver,
 ) {
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(BCRYPT_STRENGTH)
@@ -66,6 +70,12 @@ class SecurityConfig(
             .addFilterAfter(
                 MdcLoggingFilter(),
                 JwtAuthenticationFilter::class.java,
+            )
+            // Despues del filtro JWT: necesita el SecurityContext ya poblado para
+            // saber si la sesion arrastra el cambio de contraseña pendiente (B1.4).
+            .addFilterAfter(
+                CambioContrasenaPendienteFilter(handlerExceptionResolver),
+                MdcLoggingFilter::class.java,
             )
         return http.build()
     }

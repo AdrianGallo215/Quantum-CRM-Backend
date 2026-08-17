@@ -18,7 +18,8 @@ import pe.quantum.crm.domain.empleados.dto.ActualizarEmpleadoRequest
 import pe.quantum.crm.domain.empleados.dto.CambiarActivoRequest
 import pe.quantum.crm.domain.empleados.dto.CrearEmpleadoRequest
 import pe.quantum.crm.domain.empleados.dto.EmpleadoDto
-import pe.quantum.crm.domain.empleados.dto.toDto
+import pe.quantum.crm.domain.empleados.dto.PerfilPropioDto
+import pe.quantum.crm.domain.empleados.dto.toPerfilPropio
 import pe.quantum.crm.shared.ApiResponse
 
 /** Endpoints de empleados (contrato_api.md §7). */
@@ -27,11 +28,17 @@ import pe.quantum.crm.shared.ApiResponse
 class EmpleadoController(
     private val empleadoService: EmpleadoService,
 ) {
-    /** Perfil del usuario autenticado. El id sale del JWT (principal del filtro). */
+    /**
+     * Perfil del usuario autenticado. El id sale del JWT (principal del filtro).
+     *
+     * Devuelve [PerfilPropioDto], no [EmpleadoDto]: incluye ademas
+     * `requiere_cambio_contrasena`, que el frontend necesita en cada restauracion
+     * de sesion para re-forzar el cambio obligatorio tras recargar la pagina.
+     */
     @GetMapping("/me")
-    fun me(authentication: Authentication): ApiResponse<EmpleadoDto> {
+    fun me(authentication: Authentication): ApiResponse<PerfilPropioDto> {
         val empleadoId = authentication.principal as Long
-        return ApiResponse.ok(empleadoService.porId(empleadoId).toDto())
+        return ApiResponse.ok(empleadoService.porId(empleadoId).toPerfilPropio())
     }
 
     @GetMapping

@@ -49,6 +49,7 @@ NUNCA incluir: contraseña, datos sensibles, PII innecesaria.
 - Nunca texto plano ni hashes débiles (MD5, SHA1).
 - Política mínima: 10 caracteres, una mayúscula, una minúscula, un número. Validada en backend.
 - Reseteo por admin: generar contraseña temporal aleatoria criptográficamente segura, forzar cambio en el primer login (`requiere_cambio_contrasena = true`).
+- **El cambio obligatorio lo hace cumplir el backend, no el cliente.** Mientras `requiere_cambio_contrasena` siga en `true`, `CambioContrasenaPendienteFilter` rechaza toda request autenticada con `403 CAMBIO_CONTRASENA_REQUERIDO`, salvo `POST /auth/cambiar-contrasena`, `POST /auth/logout` y `GET /empleados/me`. El flag viaja como claim `pwd` en el access token (lo pone `JwtAuthenticationFilter` como autoridad `CAMBIO_CONTRASENA_PENDIENTE`), así que no cuesta una lectura a base de datos por request; se refresca contra la base cada vez que se reemiten cookies (login, refresh, cambio de contraseña). Confiar solo en la redirección del frontend dejaba la API abierta a quien ignorara la redirección o recargara la página.
 - Nunca loguear contraseñas.
 
 ### 2.4 Mensajes de login

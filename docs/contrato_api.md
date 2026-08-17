@@ -111,6 +111,7 @@ En caso de error, `data` es `null` y `error` contiene:
 | `FINANCIADORA_DEFAULT_INEXISTENTE` | 500 | No hay financiadora con `es_default = true` |
 | `ESTADO_INVALIDO` | 400 | Transición de estado no permitida |
 | `PERMISO_INSUFICIENTE` | 403 | El rol no tiene acceso a esta operación |
+| `CAMBIO_CONTRASENA_REQUERIDO` | 403 | La cuenta arrastra el cambio de contraseña inicial pendiente (ver abajo) |
 | `NO_ENCONTRADO` | 404 | El recurso no existe |
 | `CONTACTO_VINCULADO` | 409 | No se puede eliminar un contacto vinculado a una empresa |
 | `MONTO_NO_EDITABLE` | 400 | Se intentó enviar `monto_total` en el body |
@@ -123,6 +124,20 @@ En caso de error, `data` es `null` y `error` contiene:
 | `ARCHIVO_DEMASIADO_GRANDE` | 413 | El archivo supera `DRIVE_MAX_FILE_SIZE_BYTES` |
 | `DRIVE_NO_DISPONIBLE` | 502 | Google Drive no respondió |
 | `DRIVE_SIN_CUOTA` | 502 | `ROOT_DRIVE_FOLDER_ID` no apunta a una unidad compartida |
+
+### Cambio de contraseña obligatorio (`CAMBIO_CONTRASENA_REQUERIDO`)
+
+Todo empleado creado por un admin nace con `requiere_cambio_contrasena = true`. Mientras el flag siga en `true`, **el backend rechaza con `403 CAMBIO_CONTRASENA_REQUERIDO` cualquier request autenticada**, con estas únicas excepciones:
+
+| Endpoint | Por qué está exento |
+|---|---|
+| `POST /auth/cambiar-contrasena` | Es la única forma de apagar el flag |
+| `POST /auth/logout` | Cerrar sesión nunca debe poder fallar |
+| `GET /empleados/me` | El frontend lee el flag aquí para redirigir al restaurar la sesión |
+
+`POST /auth/login` y `POST /auth/refresh` son públicos y no se ven afectados: siguen funcionando y reemiten las cookies con el estado actualizado del flag.
+
+**No es solo UX del cliente:** aunque el frontend no redirija (por un bug, o porque el usuario recargó la página), la API queda cerrada hasta que se cambie la contraseña. El frontend debe igualmente redirigir al formulario de cambio en cuanto vea el flag en `true`, para que el usuario no se tope con 403 sueltos.
 
 ---
 
@@ -301,7 +316,27 @@ Reemite ambas cookies.
 
 **Roles:** todos
 
-**Respuesta 200:** un objeto `empleado` como el de arriba.
+**Respuesta 200:** el objeto `empleado` de arriba **más** `requiere_cambio_contrasena`:
+
+```json
+{
+  "data": {
+    "id": 1,
+    "nombres": "Aldo",
+    "apellidos": "Martínez",
+    "email": "aldo.martinez@quantum.pe",
+    "rol": "jdv",
+    "area": "Comercial",
+    "puesto": "Jefe de Ventas",
+    "activo": true,
+    "requiere_cambio_contrasena": false
+  }
+}
+```
+
+**Notas:**
+- `requiere_cambio_contrasena` aparece **solo aquí y en `/auth/login`**, nunca en `GET /empleados` (que lista a *otros* empleados): el estado de la contraseña de un colega no es asunto de quien lista.
+- Este endpoint está exento del bloqueo por cambio de contraseña pendiente (ver §3), justamente para que el frontend pueda leer el flag y redirigir al restaurar la sesión en cada carga de página.
 
 ---
 
