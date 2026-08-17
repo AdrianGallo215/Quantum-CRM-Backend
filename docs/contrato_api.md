@@ -28,6 +28,7 @@
 20. [Solicitudes](#20-solicitudes)
 21. [Metas de venta](#21-metas-de-venta)
 22. [Mantenimiento](#22-mantenimiento)
+23. [Enums](#23-enums)
 
 ---
 
@@ -2206,6 +2207,35 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 - Cada carpeta se persiste en su propia transacción: si la llamada se corta a la mitad, lo ya procesado queda guardado y repetir el endpoint retoma donde quedó.
 - Un registro que falle no aborta el resto: se lista en `errores` y sigue pendiente. Repetir el endpoint lo reintenta.
 - `pendientes_restantes > 0` significa que hace falta volver a llamarlo (por `tamano_lote` o por errores).
+
+---
+
+## 23. Enums
+
+> Valores exactos que viajan en `campos` de tipo enum, en minúscula, tal cual los define PostgreSQL (migración V1 y siguientes) y los enums Kotlin del backend. Un valor fuera de esta lista responde `400 VALIDACION`. Verificado contra el schema real de producción (Supabase) el 2026-08-17 — sin deriva respecto a las migraciones locales (V1–V39).
+>
+> Si agregas o renombras un valor (migración nueva), actualiza esta tabla en el mismo commit.
+
+| Enum | Usado en | Valores |
+|---|---|---|
+| `rol_empleado` | `Empleado.rol` | `admin`, `gerencia`, `jdv`, `vendedor`, `analista`, `otro` |
+| `estado_cartera_enum` | `Empresa.estado_cartera` | `no_contactado`, `no_aplica`, `no_interesado`, `prospeccion`, `oportunidad_activa`, `cliente` |
+| `segmento_enum` | `Empresa.segmento` (`empresa_segmentos`) | `urbano`, `personal`, `turismo`, `interprovincial`, `otro` |
+| `origen_lead_enum` | `Empresa.origen_lead` | `cartera`, `visita_fria`, `referido_calidda`, `red_contactos`, `otro` |
+| `estado_op_enum` | `Oportunidad.estado` | `evaluacion_calidda`, `documentos_legales`, `facturado`, `cerrado` |
+| `aplicacion_enum` | `Modelo.aplicaciones` (`modelo_aplicaciones`) | `urbano`, `interprovincial`, `turismo`, `personal` |
+| `estado_evento_enum` | `Evento.estado` | `pendiente`, `ocurrido`, `descartado` |
+| `tipo_accion_enum` | `Tarea.tipo_accion` | `llamada`, `correo`, `reunion`, `whatsapp`, `otro` |
+| `estado_accion_enum` | `Tarea.estado_accion` | `pendiente`, `completada`, `cancelada` |
+| `tipo_solicitud_enum` | `Solicitud.tipo_solicitud` | `descuento`, `reasignacion_cliente` |
+| `estado_solicitud_enum` | `Solicitud.estado` | `pendiente`, `aprobada`, `denegada` |
+| `aprobador_solicitud_enum` | `Solicitud.aprobador_rol` | `jdv`, `gerencia` |
+| `entidad_solicitud_enum` | `Solicitud.entidad_tipo` | `oportunidad`, `empresa` |
+| `estado_meta_enum` | `MetaVenta.estado` | `propuesta`, `aprobada`, `rechazada` |
+| `tipo_notificacion_enum` | `Notificacion.tipo` | `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`, `solicitud_creada`, `solicitud_aprobada`, `solicitud_denegada`, `meta_propuesta`, `meta_aprobada`, `meta_rechazada`, `meta_modificada` |
+| `entidad_notificacion_enum` | `Notificacion.entidad_tipo` | `oportunidad`, `empresa`, `solicitud`, `meta_venta` |
+
+**No expuestos por la API** (uso interno, dedup del job de recordatorios — no aparecen en ningún request/response): `origen_recordatorio_enum` (`tarea`, `evento`), `umbral_recordatorio_enum` (`proximo`, `vencido`).
 
 ---
 
