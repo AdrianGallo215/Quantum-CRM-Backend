@@ -29,6 +29,7 @@
 21. [Metas de venta](#21-metas-de-venta)
 22. [Mantenimiento](#22-mantenimiento)
 23. [Enums](#23-enums)
+24. [Notas operativas — Drive](#24-notas-operativas--drive)
 
 ---
 
@@ -2236,6 +2237,16 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 | `entidad_notificacion_enum` | `Notificacion.entidad_tipo` | `oportunidad`, `empresa`, `solicitud`, `meta_venta` |
 
 **No expuestos por la API** (uso interno, dedup del job de recordatorios — no aparecen en ningún request/response): `origen_recordatorio_enum` (`tarea`, `evento`), `umbral_recordatorio_enum` (`proximo`, `vencido`).
+
+---
+
+## 24. Notas operativas — Drive
+
+> Aclaraciones sobre el flujo de archivos de Drive (§8 Empresas, §10 Oportunidades, §22 Mantenimiento) que no se desprenden de la firma de los endpoints. El equipo de frontend las traía documentadas por separado, confirmadas de palabra con backend el 2026-07-31; quedan incorporadas aquí, en el contrato oficial, el 2026-08-17 tras verificarlas contra el código actual (`EmpresaDriveController.kt`, `OportunidadDriveController.kt`, `DriveMultipartUploader.kt`, `DriveProperties.kt`, `GlobalExceptionHandler.kt`).
+
+- **Creación de carpeta al subir sobre `drive_folder_id: null`:** `POST /empresas/:id/archivos` y `POST /oportunidades/:id/archivos` llaman primero a `asegurarCarpetaDrive`, que crea la carpeta en ese momento si `drive_folder_id` es `null` y la persiste antes de subir el archivo — no devuelve 404. El 404 solo ocurre si la entidad no existe o es ajena al usuario (chequeo de visibilidad corre antes de tocar Drive, por diseño de IDOR). Consecuencia para el cliente: tras esa primera subida, el detalle de la entidad debe refrescarse, porque `drive_folder_id` ya dejó de ser `null` en el servidor.
+- **Unidad del límite de tamaño:** el límite de archivo es `app.drive.max-file-size-bytes`, por defecto **`104_857_600` bytes exactos** (100 × 1024 × 1024 = MiB, no MB decimales — ver `DriveProperties.DEFAULT_MAX_FILE_SIZE_BYTES`). El límite se aplica sobre el stream ya desenmarcado del multipart (`StreamAcotado` envuelve `parte.inputStream`, después de que `commons-fileupload2` separa boundary/headers/CRLFs): el framing nunca cuenta contra el tope. Validar contra `file.size` en el cliente es exacto y no requiere reservar margen.
+- **Errores sin envelope:** el deploy (Render/Railway, ver `DEVOPS-backend.md` §6.1) no tiene nginx propio — corre detrás del proxy de borde de la plataforma, que puede cortar una petición antes de que llegue a la API Spring. En ese caso la respuesta **no trae el envelope** `{ data, meta, error }` ni `error.code`. El cliente nunca debe leer `error.code` a ciegas: si el body no parsea como el envelope esperado, cae al mensaje genérico. Cuando la petición sí llega a la API, un 413 por archivo grande **siempre** trae el envelope con `code: "ARCHIVO_DEMASIADO_GRANDE"` (`GlobalExceptionHandler.handleUploadTooLarge`). Excepción razonada para el cliente: un 413 sin envelope se puede tratar igual que `ARCHIVO_DEMASIADO_GRANDE`, porque ese status solo puede significar eso.
 
 ---
 
