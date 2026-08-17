@@ -146,6 +146,37 @@ class AuthControllerWebMvcTest {
         }
     }
 
+    /**
+     * `Retry-After` llega en la respuesta, pero sin `Access-Control-Expose-Headers`
+     * el navegador la bloquea para JS en un origen cross-site (crm.* vs api.*): el
+     * frontend no puede mostrar una cuenta atrás real. CORS lo agrega solo cuando
+     * la request trae `Origin`, por eso el test lo simula.
+     */
+    @Test
+    fun `la respuesta 429 de login expone Retry-After via CORS`() {
+        val email = "bloqueo-cors@quantum.pe"
+        every { empleadoService.autenticar(email, "mala") } throws CredencialesInvalidasException()
+
+        repeat(5) {
+            mockMvc.post("/api/v1/auth/login") {
+                header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                contentType = MediaType.APPLICATION_JSON
+                content = loginBody(email, "mala")
+            }.andExpect { status { isUnauthorized() } }
+        }
+
+        val result =
+            mockMvc.post("/api/v1/auth/login") {
+                header(HttpHeaders.ORIGIN, "http://localhost:5173")
+                contentType = MediaType.APPLICATION_JSON
+                content = loginBody(email, "mala")
+            }.andExpect {
+                status { isTooManyRequests() }
+            }.andReturn()
+
+        assertThat(result.response.getHeader("Access-Control-Expose-Headers")).contains("Retry-After")
+    }
+
     @Test
     fun `refresh sin cookie devuelve 401`() {
         mockMvc.post("/api/v1/auth/refresh").andExpect {

@@ -75,6 +75,10 @@ class SecurityConfig(
         configuration.allowedOrigins = corsProperties.allowedOrigins
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         configuration.allowedHeaders = listOf("*")
+        // Sin esto el navegador bloquea la lectura de Retry-After desde JS en un
+        // origen distinto (crm.* vs api.*), aunque el servidor lo mande (429 de
+        // /auth/login, SECURITY §8).
+        configuration.exposedHeaders = listOf("Retry-After")
         configuration.allowCredentials = true
         // Misma politica para todas las rutas.
         return CorsConfigurationSource { configuration }

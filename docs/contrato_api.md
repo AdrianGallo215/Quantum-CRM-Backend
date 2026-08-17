@@ -201,7 +201,8 @@ Los tokens **nunca** viajan en el body ni se leen de un header `Authorization`: 
 **Notas:**
 - Setea `access_token` (expira en 1 hora) y `refresh_token` (expira en 7 días) — ver §1.
 - Responde `401` si las credenciales son inválidas, sin indicar si el error es en email o contraseña.
-- Rate limiting por email: 5 intentos fallidos → `429` con header `Retry-After` (segundos) y `error.code = "DEMASIADOS_INTENTOS"`.
+- Rate limiting por email: 5 intentos fallidos → `429` con header `Retry-After` (segundos) y `error.code = "DEMASIADOS_INTENTOS"`. `Retry-After` está en `Access-Control-Expose-Headers`, así que es legible desde JS aunque `crm.*` y `api.*` sean orígenes distintos.
+- `requiere_cambio_contrasena` vive **únicamente** en `data.requiere_cambio_contrasena` (nivel raíz de la respuesta). El objeto `empleado` nunca lo incluye — no lo busquen ahí.
 
 ---
 
