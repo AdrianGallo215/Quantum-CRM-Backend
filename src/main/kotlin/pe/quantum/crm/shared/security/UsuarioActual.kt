@@ -19,7 +19,16 @@ data class UsuarioActual(
 
     /** Roles que pueden confirmar el paso a `facturado` (matriz_permisos.md). */
     val puedeValidarFacturado: Boolean
-        get() = rol == "admin" || rol == "gerencia" || rol == "analista"
+        get() = rol == "admin" || rol == "gerencia"
+
+    /**
+     * Roles de apoyo: sin cartera propia, solo lectura sobre empresas y
+     * oportunidades. Solo ven aquello en lo que colaboran via una tarea
+     * (matriz_permisos.md). Unica fuente de verdad de esta condicion: el resto
+     * de modulos consulta este predicado, nunca compara el string del rol.
+     */
+    val esRolApoyo: Boolean
+        get() = rol == "analista" || rol == "otro"
 
     /** vendedor/analista solo ven sus propios registros (contrato_api.md §5). */
     val visibilidadRestringida: Boolean
