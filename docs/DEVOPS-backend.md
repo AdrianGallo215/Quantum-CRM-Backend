@@ -27,6 +27,8 @@ fix/xxx       → bugfixes (desde develop o main si es hotfix).
 - Un PR no se mergea si el CI falla.
 - `main` requiere que el PR venga de `develop` o un `hotfix/`.
 
+**Quién trabaja aquí:** el único desarrollador humano es el dueño del repo, así que `enforce_admins` está apagado a propósito y sus commits directos a `main` son válidos — no son un hueco de proceso. Esta disciplina de rama propia + PR + CI en verde aplica en particular a **Claude Code**: cualquier funcionalidad, fix o cambio de esquema que implemente Claude Code va en su propia `feature/xxx` o `fix/xxx`, nunca commiteado directo a `main`.
+
 **Commits — Conventional Commits:**
 ```
 feat(empresas): agregar endpoint de búsqueda por RUC
@@ -208,7 +210,12 @@ SPRING_PROFILES_ACTIVE=production
 | **local** | Desarrollo | PostgreSQL en docker-compose | Manual (`bootRun`) |
 | **production** | Usuarios reales | PostgreSQL gestionado | Automático al merge a `main` |
 
-Dos entornos bastan para el MVP. `staging` se puede agregar después si se necesita QA previo a producción.
+No hay un tercer entorno desplegado (`staging`) y no se va a agregar solo por tener un ambiente intermedio — significaría un segundo deploy remoto que mantener sincronizado, sin beneficio real para un equipo de un desarrollador. En su lugar, **"staging" es levantar la rama en cuestión en local** (`git checkout feature/xxx && ./gradlew bootRun`) contra el docker-compose de siempre. Para cambios que solo agregan comportamiento, eso basta.
+
+Para cambios que tocan datos existentes — una migración que altera o borra filas, no solo agrega columnas — levantar la rama en local no es suficiente porque el docker-compose parte de una DB vacía. En ese caso, antes de mergear a `main`:
+1. Restaurar un dump reciente de producción en el PostgreSQL local (ver §9 para cómo sacarlo).
+2. Correr la rama contra ese dump y verificar que la migración y el código nuevo dejan los datos en el estado esperado.
+3. Recién entonces abrir el PR.
 
 ---
 
@@ -250,9 +257,25 @@ Se configuran manualmente en el panel de Render/Railway al desplegar — igual q
 
 ## 9. Estrategia de rollback
 
+### 9.1 Rollback de código
+
 - **Deploy fallido (health check no pasa):** rollback automático al deploy anterior.
-- **Bug en producción tras deploy exitoso:** revertir el commit en `main`, lo que dispara un nuevo deploy con el código anterior. Si el bug involucró un cambio de schema, crear una nueva migración correctiva (nunca revertir una migración aplicada).
+- **Bug en producción tras deploy exitoso, sin datos afectados:** revertir el commit en `main`, lo que dispara un nuevo deploy con el código anterior. Si el bug involucró un cambio de schema, crear una nueva migración correctiva (nunca revertir una migración aplicada).
 - Mantener el deploy anterior disponible para rollback inmediato durante las primeras horas tras cada release.
+
+### 9.2 Rollback de datos
+
+Revertir el código no revierte lo que ya se escribió en la base de datos. Con la app en producción, un bug puede haber quedado guardado (montos mal calculados, `estado_cartera` inconsistente, filas de más o de menos) antes de detectarse. **Restaurar un backup completo a un punto anterior no es la respuesta por defecto:** entre el bug y su detección hubo transacciones legítimas de otros registros que ese restore también borraría. Un restore ciego cambia un bug conocido y acotado por pérdida de datos real de usuarios.
+
+Procedimiento:
+
+1. **Backups automáticos** del PostgreSQL gestionado (Render/Railway) son la red de seguridad para un desastre total (corrupción, borrado masivo por error operativo), no la herramienta para corregir un bug de negocio puntual. Verificar en el panel la retención vigente al menos una vez por trimestre — no asumir que "automático" significa "suficiente".
+2. **Antes de cualquier migración que altere o borre datos existentes** (no las que solo agregan columnas/tablas), tomar además un backup manual on-demand desde el panel, aparte del automático. Es el punto de restore si la migración sale mal a mitad de aplicarse.
+3. **Corregir datos ya corrompidos en producción se hace con un fix dirigido, no con un restore:**
+   - Diagnosticar primero en modo solo-lectura contra la DB de producción (nunca escribir directo sin confirmar el diagnóstico).
+   - Si el fix es puntual y no se repetirá, un script ad-hoc documentado (qué filas, por qué, qué UPDATE) basta — no requiere ser una migración de Flyway.
+   - Si el bug es de un tipo que puede volver a ocurrir (ej. una migración que se re-ejecutará en otro ambiente, o un backfill que debe quedar registrado), sí va como migración Flyway forward-only nueva, igual que una corrección de schema.
+   - Cualquier UPDATE/DELETE contra producción se corre manualmente y con confirmación explícita antes de ejecutar — nunca automatizado sin revisión previa del diagnóstico.
 
 ---
 

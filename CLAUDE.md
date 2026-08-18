@@ -123,5 +123,6 @@ Módulo financiero (comisiones, cuotas, balloon) · endpoints de `buses_entregad
 ## Coordinación con el frontend (repo separado)
 
 - Este repo es dueño de `contrato_api.md` y `matriz_permisos.md`. Si cambian, se comunica al equipo de frontend.
+- Todo cambio a un endpoint documentado (breaking o no) se registra en `contrato_api.md §25 Changelog del contrato`, en el mismo PR que lo hace. Sin esa entrada, el cambio de contrato no está terminado.
 - El backend debe tener el dominio del frontend en `CORS_ALLOWED_ORIGINS`.
 - API versionada en `/api/v1`.
