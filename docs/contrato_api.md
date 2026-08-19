@@ -2072,9 +2072,7 @@ Capa intermedia de aprobación: cuando `vendedor`/`jdv` intentan una acción por
 ---
 
 ### GET /solicitudes
-> Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista` solo las propias.
->
-> **⚠️ Hallazgo de seguridad preexistente, no introducido por el cambio del 2026-08-18:** el rol `otro` no está contemplado en el filtro de visibilidad — hoy ve *todas* las solicitudes de la empresa sin restricción (incluye montos de descuento y motivos de reasignación ajenos). Fuera del alcance del cambio de roles de apoyo; requiere un fix propio. Ver `matriz_permisos.md §2.12`.
+> Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista`/`otro` solo las propias.
 
 **Query params:** `estado` (`pendiente|aprobada|denegada`), `tipo`, `mias=true` (fuerza "solo las que yo creé").
 
@@ -2267,6 +2265,7 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 |---|---|---|---|---|
 | 2026-08-18 | — | — | Se crea este changelog. Sin entradas retroactivas. | Ninguna |
 | 2026-08-18 | `GET /oportunidades`, `GET /oportunidades/:id`, `GET /empresas`, `GET /empresas/:id`, `PATCH /oportunidades/:id/estado`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /empresas`, `PUT /empresas/:id`, `PATCH /empresas/:id/estado-cartera`, `PATCH /empresas/:id/vendedor`, `PATCH /empresas/:id/cartera-maestra`, `POST /oportunidades/:id/archivos`, `POST /oportunidades/:id/carpeta-drive`, `POST /empresas/:id/archivos`, `POST /empresas/:id/carpeta-drive`, `POST /solicitudes` | **Breaking** | `analista` y `otro` pasan a roles de apoyo de solo lectura, sin cartera propia: los listados y el detalle solo devuelven las entidades donde el usuario colabora vía tarea (`ids_colaboradores`); toda escritura (incluida la subida de archivos/creación de carpeta en Drive) responde `403 PERMISO_INSUFICIENTE` con mensaje específico; `analista` deja de poder confirmar `facturado`; ninguno de los dos aplica descuentos por ninguna vía ni crea solicitudes de aprobación. Ver `matriz_permisos.md` para el detalle completo por operación. | Ocultar en el cliente las acciones de escritura y de subida de Drive para estos roles, y no asumir que "lo que veo, lo puedo editar". El 403 trae un mensaje específico que se puede mostrar tal cual. Las solicitudes históricas que estos roles ya tenían siguen siendo visibles (no hay regresión de lectura ahí). |
+| 2026-08-19 | `GET /solicitudes` | Non-breaking (fix de seguridad) | El filtro de visibilidad del listado no tenía ninguna rama para el rol `otro` y devolvía todas las solicitudes de la empresa sin restricción, incluidos montos de descuento y motivos de reasignación ajenos. Corregido: `otro` ahora solo ve las solicitudes que él mismo creó, igual que `analista`. | Ninguna — el comportamiento correcto ya era el documentado; ningún cliente debía depender de la fuga. |
 
 ---
 

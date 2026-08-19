@@ -37,11 +37,11 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 **Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente la escritura y visibilidad de `oportunidades` y `empresas`, y el guard de creación de `solicitudes` (más el filtro de colaboración expuesto por `tareas`). Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
 - **Contactos:** el permiso de vinculación de `analista`/`otro` a **empresas** sigue existiendo en código y no es inerte — al resolver visibilidad vía `EmpresaService.vinculoVisible`, hereda automáticamente la regla de colaboración (igual que Eventos, §2.5): un rol de apoyo puede vincular/desvincular contactos en toda empresa donde colabora. La vinculación a **oportunidades** sí está bloqueada con 403 (`rechazarSiEsApoyo` en `OportunidadServiceImpl`) — ver la asimetría detallada en §2.3.
-- **Solicitudes de aprobación (`SolicitudServiceImpl`):** el rol `otro` no está contemplado en el filtro de bandeja (`filtros.mias || rol == "vendedor" || rol == "analista"`) — ve *todas* las solicitudes de la empresa sin restricción. **Fuga de seguridad preexistente**, no introducida por este cambio; ver nota de §2.12.
+- **Solicitudes de aprobación (`SolicitudServiceImpl`):** ~~el rol `otro` no está contemplado en el filtro de bandeja~~ — **corregido 2026-08-19**: el filtro ahora usa `usuario.esRolApoyo`, que cubre `analista` y `otro` por igual; ver nota de §2.12.
 - **Metas de venta (`MetaVentaServiceImpl`):** el rol `otro` tampoco está contemplado en su filtro de visibilidad del *listado* (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — ve todas las metas del listado sin restricción (el detalle sí está cerrado). **Fuga de seguridad preexistente**, no introducida por este cambio; ver nota de §2.13.
 - **Prospección (`ProspeccionServiceImpl`) e Inicio (`InicioService`):** siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración vía tarea — en la práctica devuelven vacío para un rol de apoyo (fallan cerrado), no una fuga, pero tampoco reflejan el nuevo modelo de visibilidad.
 
-Las fugas de **Solicitudes** y **Metas de venta** son explotables por el rol `otro` hoy mismo y ameritan un fix propio con prioridad — la de Solicitudes es la más sensible por el tipo de dato que expone (descuentos, motivos de reasignación). Los cuatro puntos quedan fuera de este cambio — candidatos a un ticket aparte vía `redactar-requerimiento`.
+La fuga de **Metas de venta** sigue explotable por el rol `otro` hoy mismo y amerita un fix propio con prioridad. La de Solicitudes ya se corrigió (2026-08-19). Los puntos restantes quedan fuera de este cambio — candidatos a un ticket aparte vía `redactar-requerimiento`.
 
 ---
 
@@ -204,7 +204,7 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 | Prospección (`GET /prospeccion`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Sin cambios de código — `ProspeccionServiceImpl` sigue filtrando por `id_vendedor = usuario.id`, no por colaboración; vacío en la práctica | Igual que analista |
 | Pipeline (vista sobre `GET /oportunidades`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
 | Cartera (`GET /empresas`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
-| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — | ⚠️ Ve todo por el hallazgo de §2.12, no por diseño — no es un "—" real |
+| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — | — |
 | Cartera Maestra | ✓ | ✓ | — | — | — | — |
 
 ---
@@ -216,7 +216,7 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 | Crear solicitud de descuento (sobre su límite) | — (aplica directo) | — (aplica directo) | ✓ (>7%) | ✓ (>3%) | — | — |
 | Crear solicitud de reasignación de cliente | — (reasigna directo) | — (reasigna directo) | ✓ | — | — | — |
 | Ver bandeja de aprobación | ✓ Todas | ✓ Las dirigidas a gerencia | ✓ Las dirigidas a jdv | — | — | — |
-| Ver solicitudes propias (históricas) | ✓ | ✓ | ✓ | ✓ | ✓ (no genera nuevas, conserva las que ya tenía) | ⚠️ Sin restricción explícita en código (ver nota) |
+| Ver solicitudes propias (históricas) | ✓ | ✓ | ✓ | ✓ | ✓ (no genera nuevas, conserva las que ya tenía) | ✓ Solo las propias, igual que analista |
 | Aprobar / denegar | ✓ Cualquiera | ✓ Su bandeja | ✓ Su bandeja | — | — | — |
 | Ver / gestionar cartera maestra | ✓ | ✓ | — | — | — | — |
 
@@ -224,8 +224,8 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 - El aprobador lo deriva el backend al crear la solicitud; nunca lo elige el solicitante (`gerencia_solicitudes_modelo_datos.md §3.4`).
 - Al aprobar, el cambio se aplica en la misma transacción que resuelve la solicitud (descuento: recalcula `monto_total`; reasignación: reutiliza `reasignarVendedor` con su cascada existente).
 - `gerencia` y `admin` nunca son destino de asignación de vendedor (no tienen cartera propia).
-- **Roles de apoyo (2026-08-18):** `analista`/`otro` ya no pueden crear ninguna solicitud — no tienen margen de descuento por ninguna vía (§2.4) y no reasignan clientes. `analista` conserva la visibilidad de lectura sobre solicitudes que haya creado antes de este cambio (filtro `usuario.rol == "analista"` intacto, sin tocar a propósito).
-- **⚠️ Hallazgo de seguridad preexistente, no introducido por este cambio, y más severo que el de metas de venta (2026-08-18):** el filtro de bandeja de `SolicitudServiceImpl.especificacion()` no tiene ninguna rama para el rol `otro` — cae fuera de `admin`, `gerencia`, `jdv` y de la condición `filtros.mias || rol == "vendedor" || rol == "analista"`, así que **no se le agrega ningún predicado de alcance**: `GET /solicitudes` le devuelve *todas* las solicitudes de la empresa, incluidos montos de descuento y motivos de reasignación de otros vendedores. El detalle (`GET /solicitudes/:id`) sí está cerrado. No se corrige en este cambio (el módulo de solicitudes está fuera de su alcance más allá del guard de creación de Task 8) — requiere un fix propio, con prioridad alta por la sensibilidad de los datos que expone.
+- **Roles de apoyo (2026-08-18):** `analista`/`otro` ya no pueden crear ninguna solicitud — no tienen margen de descuento por ninguna vía (§2.4) y no reasignan clientes. Ambos conservan la visibilidad de lectura solo sobre las solicitudes que ellos mismos crearon (filtro por `esRolApoyo` en `SolicitudServiceImpl.especificacion()`, corregido 2026-08-19 — ver nota siguiente).
+- **Corregido (2026-08-19):** el filtro de bandeja de `SolicitudServiceImpl.especificacion()` no tenía ninguna rama para el rol `otro` — caía fuera de `admin`, `gerencia`, `jdv` y de la condición `filtros.mias || rol == "vendedor" || rol == "analista"`, así que no se le agregaba ningún predicado de alcance y `GET /solicitudes` le devolvía *todas* las solicitudes de la empresa, incluidos montos de descuento y motivos de reasignación de otros vendedores. Se corrigió reemplazando la comparación de string por `usuario.esRolApoyo`, que cubre `analista` y `otro` por igual. El detalle (`GET /solicitudes/:id`) ya estaba cerrado desde antes.
 
 ---
 
