@@ -226,9 +226,10 @@ class EmpresaServiceImpl(
      * `id_vendedor` en el alta. Asignar la empresa a otro empleado es la misma
      * decision que reasignarla, y matriz_permisos.md §2.2 ("Reasignar vendedor
      * directo") la reserva a admin y gerencia: el jdv necesita solicitud aprobada
-     * y vendedor/analista no pueden. Quedarse la empresa uno mismo (o no enviar
-     * el campo) sigue permitido para todos, que es como vendedor y analista
-     * conservan visibilidad sobre lo que registran.
+     * y vendedor no puede. Quedarse la empresa uno mismo (o no enviar el campo)
+     * sigue permitido, que es como vendedor conserva visibilidad sobre lo que
+     * registra. Los roles de apoyo nunca llegan hasta aca: `rechazarSiEsApoyo`
+     * los bloquea antes en `crear()`.
      */
     private fun vendedorAlCrear(
         solicitado: Long?,

@@ -38,10 +38,12 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 **Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente la escritura y visibilidad de `oportunidades` y `empresas`, y el guard de creación de `solicitudes` (más el filtro de colaboración expuesto por `tareas`). Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
 - **Contactos:** el permiso de vinculación de `analista`/`otro` a **empresas** sigue existiendo en código y no es inerte — al resolver visibilidad vía `EmpresaService.vinculoVisible`, hereda automáticamente la regla de colaboración (igual que Eventos, §2.5): un rol de apoyo puede vincular/desvincular contactos en toda empresa donde colabora. La vinculación a **oportunidades** sí está bloqueada con 403 (`rechazarSiEsApoyo` en `OportunidadServiceImpl`) — ver la asimetría detallada en §2.3.
 - **Solicitudes de aprobación (`SolicitudServiceImpl`):** ~~el rol `otro` no está contemplado en el filtro de bandeja~~ — **corregido 2026-08-19**: el filtro ahora usa `usuario.esRolApoyo`, que cubre `analista` y `otro` por igual; ver nota de §2.12.
-- **Metas de venta (`MetaVentaServiceImpl`):** el rol `otro` tampoco está contemplado en su filtro de visibilidad del *listado* (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — ve todas las metas del listado sin restricción (el detalle sí está cerrado). **Fuga de seguridad preexistente**, no introducida por este cambio; ver nota de §2.13.
+- **Metas de venta (`MetaVentaServiceImpl`):** ~~el rol `otro` tampoco está contemplado en su filtro de visibilidad del *listado* (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — ve todas las metas del listado sin restricción (el detalle sí está cerrado)~~ — **corregido**: el filtro ahora usa `usuario.esRolApoyo`, mismo criterio que Solicitudes; ver nota de §2.13.
 - **Prospección (`ProspeccionServiceImpl`) e Inicio (`InicioService`):** siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración vía tarea — en la práctica devuelven vacío para un rol de apoyo (fallan cerrado), no una fuga, pero tampoco reflejan el nuevo modelo de visibilidad.
 
-La fuga de **Metas de venta** sigue explotable por el rol `otro` hoy mismo y amerita un fix propio con prioridad. La de Solicitudes ya se corrigió (2026-08-19). Los puntos restantes quedan fuera de este cambio — candidatos a un ticket aparte vía `redactar-requerimiento`.
+Las fugas de **Solicitudes** y **Metas de venta** ya se corrigieron. Los puntos restantes (Prospección, Inicio, Contactos) quedan fuera de este cambio — candidatos a un ticket aparte vía `redactar-requerimiento`.
+
+**Asignación como dueño vs. colaborador de una tarea:** la visibilidad de un rol de apoyo sobre la empresa/oportunidad vinculada a una tarea depende únicamente de `ids_colaboradores`. Si un supervisor asigna la tarea como **dueño** (`id_asignado`) a un `analista`/`otro` sin agregarlo también como colaborador, ese usuario ve la tarea en `GET /tareas` pero no gana visibilidad de la empresa/oportunidad vinculada (`GET /empresas/:id` u `GET /oportunidades/:id` le siguen devolviendo 404). Esto es intencional, decidido durante este plan — no es un caso sin cubrir.
 
 ---
 
@@ -237,13 +239,13 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 | Crear/modificar meta directo (queda aprobada) | ✓ | ✓ | — | — | — | — |
 | Aprobar / rechazar propuesta | ✓ | ✓ | — | — | — | — |
 | Ver metas propias | ✓ | ✓ | ✓ | ✓ | — (no aplica, no tiene meta) | — (no aplica) |
-| Ver metas del equipo (todos los vendedores) | ✓ | ✓ | ✓ | — | — | ⚠️ Sin restricción explícita en código (ver nota) |
+| Ver metas del equipo (todos los vendedores) | ✓ | ✓ | ✓ | — | — | — |
 | Ver medidor de cumplimiento en Inicio | — (no vende) | — (no vende) | ✓ (propio + equipo) | ✓ (propio) | — | — |
 
 **Notas:**
 - La meta es en unidades vendidas, no en monto. Un vendedor solo aparece en la tabla como `id_empleado`, nunca `gerencia`/`admin` (no tienen cartera propia, igual que en reasignación de vendedor).
 - Las unidades de una oportunidad cuentan para el cumplimiento del vendedor únicamente mientras esté en estado `facturado` (`oportunidades.facturado_en`); al cancelarse (retroceder de estado) o eliminarse estando facturada, dejan de contar sin acción manual.
-- **⚠️ Hallazgo de seguridad preexistente, no introducido por este cambio (2026-08-18):** el filtro de `MetaVentaServiceImpl.especificacion()` (el que usa el **listado**, `GET /metas-venta`) restringe por `idEmpleado = usuario.id` solo si `usuario.rol == "vendedor" || usuario.rol == "analista"`. El rol `otro` no cae en esa condición, así que hoy **el listado le devuelve todas las metas sin restricción**, como si fuera supervisor. El detalle (`GET /metas-venta/:id`) sí está cerrado (`visible()`, `else -> meta.idEmpleado == usuario.id`) — la fuga es solo del listado. No se corrige en este cambio (el módulo de metas de venta está fuera de su alcance) — requiere un fix propio.
+- **Corregido:** el filtro de `MetaVentaServiceImpl.especificacion()` (el que usa el **listado**, `GET /metas-venta`) restringía por `idEmpleado = usuario.id` solo si `usuario.rol == "vendedor" || usuario.rol == "analista"`. El rol `otro` no caía en esa condición, así que el listado le devolvía todas las metas sin restricción, como si fuera supervisor. El detalle (`GET /metas-venta/:id`) ya estaba cerrado (`visible()`, `else -> meta.idEmpleado == usuario.id`) — la fuga era solo del listado. Se corrigió reemplazando la comparación de string por `usuario.esRolApoyo`, mismo criterio que Solicitudes (§2.12).
 
 ---
 
@@ -307,6 +309,9 @@ Para los endpoints de listado, el filtro por visibilidad debe aplicarse en la qu
 public Page<Oportunidad> findAll(Specification<Oportunidad> spec, Pageable pageable);
 
 // En el servicio, construir el Specification según el rol
+// (esVendedorOAnalista es ilustrativo de una epoca donde ANALISTA/OTRO tenian
+// ownership por cartera propia; hoy es esRolApoyo + colaboracion via tarea,
+// no cb.equal(idVendedor) — ver nota de §3.1)
 if (esVendedorOAnalista(rol)) {
     spec = spec.and((root, query, cb) ->
         cb.equal(root.get("idVendedor"), empleadoId));
