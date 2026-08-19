@@ -72,12 +72,14 @@ class EmpresaRolApoyoTest {
     fun `un rol de apoyo no puede reasignar el vendedor`() {
         assertThatThrownBy { service.reasignarVendedor(1L, 2L, analista) }
             .isInstanceOf(PermisoInsuficienteException::class.java)
+            .hasMessageContaining("apoyo")
     }
 
     @Test
     fun `un rol de apoyo no puede mover una empresa a la cartera maestra`() {
         assertThatThrownBy { service.cambiarCarteraMaestra(1L, true, null, analista) }
             .isInstanceOf(PermisoInsuficienteException::class.java)
+            .hasMessageContaining("apoyo")
     }
 
     @Test
