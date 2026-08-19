@@ -35,6 +35,7 @@ class MetaVentaBusquedaSpecificationTest {
     private val jdv = UsuarioActual(id = 2, rol = "jdv")
     private val vendedor = UsuarioActual(id = 5, rol = "vendedor")
     private val analista = UsuarioActual(id = 6, rol = "analista")
+    private val otro = UsuarioActual(id = 9, rol = "otro")
 
     @Test
     fun `todos los filtros a la vez arman una Specification que el metamodelo resuelve`() {
@@ -47,6 +48,11 @@ class MetaVentaBusquedaSpecificationTest {
     fun `vendedor y analista solo ven su propia meta`() {
         assertThat(listar(MetaVentaFiltros(), vendedor)).contains("idEmpleado")
         assertThat(listar(MetaVentaFiltros(), analista)).contains("idEmpleado")
+    }
+
+    @Test
+    fun `el rol de apoyo otro solo ve su propia meta`() {
+        assertThat(listar(MetaVentaFiltros(), otro)).contains("idEmpleado")
     }
 
     @Test
