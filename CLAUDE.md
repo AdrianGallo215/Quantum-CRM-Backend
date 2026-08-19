@@ -84,7 +84,7 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 3. **`estado_cartera` solo se modifica vía `actualizarEstadoCartera()`**, dentro de la transacción del evento que lo dispara. Ningún otro código lo toca.
 4. **Los eventos no cambian el estado automáticamente.** Devuelven una sugerencia; el cambio es una segunda llamada confirmada.
 5. **`motivo_cierre` obligatorio cuando `estado = 'cerrado'`.** Validar en backend + CHECK constraint.
-6. **El paso a `facturado` solo para admin, gerencia, analista.** Verificar en el servicio. (El rol se llama `gerencia`, no `gerente`: lo renombró V25.)
+6. **El paso a `facturado` solo para admin, gerencia.** Verificar en el servicio. (El rol se llama `gerencia`, no `gerente`: lo renombró V25. `analista` perdió este privilegio el 2026-08-18 al pasar a rol de apoyo de solo lectura — ver `docs/matriz_permisos.md`.)
 7. **No existe estado `perdido`.** El enum tiene 4 valores. ¿Necesitas otro? Pregunta.
 8. **Inyección por constructor** (`private val`), nunca `@Autowired` en campos.
 9. **Relaciones JPA siempre `LAZY`.** Nunca exponer entidades en controllers — siempre DTOs.
