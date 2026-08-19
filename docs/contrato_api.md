@@ -508,7 +508,7 @@ Reemite ambas cookies.
 ### POST /empresas
 > Crea una nueva empresa.
 
-**Roles:** todos
+**Roles:** `admin` `gerencia` `jdv` `vendedor` — **los roles de apoyo (`analista`, `otro`) no pueden crear empresas: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:**
 ```json
@@ -670,7 +670,7 @@ Reemite ambas cookies.
 ### POST /empresas/:id/carpeta-drive
 > Crea la carpeta de Google Drive de la empresa. Idempotente.
 
-**Roles:** los mismos que ven la empresa (un vendedor solo las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden crear la carpeta: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque escribe `drive_folder_id` en la empresa.
 
 **Body:** vacío.
 
@@ -686,7 +686,7 @@ Reemite ambas cookies.
 ### GET /empresas/:id/archivos
 > Lista los documentos de la carpeta de Google Drive de la empresa.
 
-**Roles:** los mismos que ven la empresa (un vendedor solo ve las suyas).
+**Roles:** los mismos que ven la empresa (`vendedor`: solo las suyas; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — lectura, no bloqueada).
 
 **Respuesta 200:**
 
@@ -714,7 +714,7 @@ Reemite ambas cookies.
 ### POST /empresas/:id/archivos
 > Sube un documento a la carpeta de Google Drive de la empresa.
 
-**Roles:** los mismos que ven la empresa (un vendedor solo sube a las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden subir archivos: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque este endpoint asegura la carpeta primero (`asegurarCarpetaDrive`, ver nota arriba).
 
 **Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
 
@@ -1020,7 +1020,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /oportunidades/:id/carpeta-drive
 > Crea la carpeta de Google Drive de la oportunidad, dentro de la de su empresa. Idempotente.
 
-**Roles:** los mismos que ven la oportunidad (un vendedor solo las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden crear la carpeta: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque escribe `drive_folder_id` en la oportunidad.
 
 **Body:** vacío.
 
@@ -1037,7 +1037,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### GET /oportunidades/:id/archivos
 > Lista los documentos de la carpeta de Google Drive de la oportunidad.
 
-**Roles:** los mismos que ven la oportunidad (un vendedor solo ve las suyas).
+**Roles:** los mismos que ven la oportunidad (`vendedor`: solo las suyas; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — lectura, no bloqueada).
 
 **Respuesta 200:**
 
@@ -1065,7 +1065,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /oportunidades/:id/archivos
 > Sube un documento a la carpeta de Google Drive de la oportunidad.
 
-**Roles:** los mismos que ven la oportunidad (un vendedor solo sube a las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden subir archivos: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque este endpoint asegura la carpeta primero.
 
 **Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
 
@@ -2036,7 +2036,7 @@ Notifica a un usuario cuando ocurre una acción relacionada con él pero no acci
 
 ## 20. Solicitudes
 
-Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una acción por encima de su permiso (hoy: descuentos sobre su límite y reasignación de clientes por el `jdv`), envían una Solicitud en vez de aplicar el cambio directo. El aprobador (`jdv` o `gerencia`, según el caso) la aprueba o deniega; `admin` puede resolver ambas bandejas. Ver `gerencia_solicitudes_modelo_datos.md` y `gerencia_contrato_frontend.md` para el detalle completo.
+Capa intermedia de aprobación: cuando `vendedor`/`jdv` intentan una acción por encima de su permiso (hoy: descuentos sobre su límite y reasignación de clientes por el `jdv`), envían una Solicitud en vez de aplicar el cambio directo. El aprobador (`jdv` o `gerencia`, según el caso) la aprueba o deniega; `admin` puede resolver ambas bandejas. **Los roles de apoyo (`analista`, `otro`) no crean solicitudes** (2026-08-18) — no tienen margen de descuento por ninguna vía ni reasignan clientes; ver `POST /solicitudes` abajo. Ver `gerencia_solicitudes_modelo_datos.md` y `gerencia_contrato_frontend.md` para el detalle completo.
 
 ### POST /solicitudes
 > Crea una solicitud de aprobación.
