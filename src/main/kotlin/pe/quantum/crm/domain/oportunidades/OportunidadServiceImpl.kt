@@ -76,6 +76,7 @@ class OportunidadServiceImpl(
         request: CrearOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
+        rechazarSiEsApoyo(usuario)
         val empresa = empresaService.vinculoVisible(request.idEmpresa, usuario)
         validarLimiteDescuento(request.dcto, usuario)
         // Snapshot del vendedor de la empresa (reglas §8.4). Una empresa sin vendedor
@@ -175,6 +176,7 @@ class OportunidadServiceImpl(
         request: ActualizarOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
+        rechazarSiEsApoyo(usuario)
         if (request.montoTotal != null) {
             throw MontoNoEditableException()
         }
@@ -227,6 +229,7 @@ class OportunidadServiceImpl(
         request: CambiarEstadoRequest,
         usuario: UsuarioActual,
     ): CambioEstadoDto {
+        rechazarSiEsApoyo(usuario)
         val oportunidad = visibleBloqueando(id, usuario)
         val nuevo =
             runCatching { EstadoOportunidad.valueOf(request.estado) }.getOrNull()
@@ -364,6 +367,7 @@ class OportunidadServiceImpl(
         request: ContactoVinculoRequest,
         usuario: UsuarioActual,
     ): ContactoVinculoRequest {
+        rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         if (!contactoService.existe(request.idContacto)) {
             throw NoEncontradoException("El contacto no existe")
@@ -391,6 +395,7 @@ class OportunidadServiceImpl(
         rolEnOportunidad: String?,
         usuario: UsuarioActual,
     ): ContactoVinculoRequest {
+        rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         val vinculo =
             contactoOportunidadRepository
@@ -407,6 +412,7 @@ class OportunidadServiceImpl(
         idContacto: Long,
         usuario: UsuarioActual,
     ) {
+        rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         val vinculo =
             contactoOportunidadRepository
@@ -610,6 +616,20 @@ class OportunidadServiceImpl(
         idOportunidad: Long,
         codigoModelo: String?,
     ): String = listOfNotNull("OP-$idOportunidad", codigoModelo).joinToString(" - ")
+
+    /**
+     * Roles de apoyo: solo lectura sobre oportunidades (matriz_permisos.md).
+     * 403 y no 404 a proposito: la entidad puede ser perfectamente visible para
+     * el (colabora en una tarea suya); lo que no tiene es permiso de escritura, y
+     * el mensaje debe decirlo para que el cliente no lo confunda con "no existe".
+     */
+    private fun rechazarSiEsApoyo(usuario: UsuarioActual) {
+        if (usuario.esRolApoyo) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: puedes consultar esta oportunidad, pero no modificarla",
+            )
+        }
+    }
 
     private fun visible(
         id: Long,

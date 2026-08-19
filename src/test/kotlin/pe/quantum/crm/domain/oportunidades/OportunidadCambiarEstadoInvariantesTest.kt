@@ -181,8 +181,8 @@ class OportunidadCambiarEstadoInvariantesTest {
     }
 
     @Test
-    fun `admin, gerencia y analista si pueden pasar a facturado`() {
-        listOf("admin", "gerencia", "analista").forEach { rol ->
+    fun `admin y gerencia si pueden pasar a facturado`() {
+        listOf("admin", "gerencia").forEach { rol ->
             val entidad = oportunidad(idVendedor = 1)
             stubsDeCambioEstado(entidad)
 
