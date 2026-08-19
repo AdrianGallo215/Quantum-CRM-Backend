@@ -1082,7 +1082,66 @@ git commit -m "docs: refleja el fix de visibilidad de solicitudes para el rol ot
 
 ---
 
-## Task 11: Verificación final y PR
+## Task 11: Dividir `OportunidadServiceImpl` — falla `detekt` LargeClass (agregada 2026-08-19)
+
+**Por qué existe:** al correr los gates finales, `./gradlew detekt` falla: `OportunidadServiceImpl is too large. Consider splitting it into smaller pieces. [LargeClass]`. El archivo creció de sus ~700 líneas originales a 827 por las Tasks 4 y 5 de este plan (el guard `rechazarSiEsApoyo` y la lógica de visibilidad por colaboración). El umbral de `LargeClass` es 600 líneas (default de detekt, sin override en `config/detekt/detekt.yml`), así que hay que sacar más de 227 líneas del archivo.
+
+**Patrón ya establecido en el proyecto, replicar exactamente:** `OportunidadConsultas.kt` ya existe como un `@Component` separado al que `OportunidadServiceImpl` delega consultas de solo lectura — es la extracción de responsabilidad que el proyecto ya usa quandeo un service crece. Este task hace lo mismo con la lógica de visibilidad/autorización.
+
+**Files:**
+- Create: `src/main/kotlin/pe/quantum/crm/domain/oportunidades/OportunidadVisibilidad.kt`
+- Modify: `src/main/kotlin/pe/quantum/crm/domain/oportunidades/OportunidadServiceImpl.kt`
+- Test: mover (no reescribir) los tests que ejercitan visibilidad si quedan más claros en un archivo propio; si `OportunidadRolApoyoTest.kt` y `OportunidadListadoSpecificationTest.kt` siguen construyendo `OportunidadServiceImpl` completo (no la clase nueva por separado), no hace falta moverlos — verificar cuál es más simple.
+
+**Interfaces:**
+- Produces: `OportunidadVisibilidad` — un `@Component` con los métodos `alcanza(oportunidad, usuario): Boolean`, `especificacionVisibilidad(usuario): (predicados: MutableList<Predicate>, root, cb) -> Unit` o firma equivalente que `especificacion()` pueda seguir usando sin duplicar lógica. La firma exacta queda a criterio del implementador — lo que importa es que `alcanza()` sea la única fuente de verdad reutilizada tanto por `visible()`/`visibleBloqueando()` como por la Specification del listado, exactamente como hoy.
+- Consumes: `TareaService` (ya inyectado con `@Lazy` en `OportunidadServiceImpl` por Task 5 — mover esa dependencia a la clase nueva, ya no hace falta en `OportunidadServiceImpl` si toda la lógica de visibilidad se delega).
+
+- [ ] **Step 1: Confirmar el umbral y medir el archivo actual**
+
+```bash
+wc -l src/main/kotlin/pe/quantum/crm/domain/oportunidades/OportunidadServiceImpl.kt
+./gradlew detekt
+```
+
+Confirmar que el único issue es `LargeClass` en este archivo (no otro nuevo). Anotar la línea exacta del mensaje.
+
+- [ ] **Step 2: Extraer la lógica de visibilidad**
+
+Mover a `OportunidadVisibilidad.kt` (nuevo `@Component`, inyección por constructor con `private val tareaService: TareaService`):
+- `rechazarSiEsApoyo(usuario)` (línea ~636 del archivo original)
+- `alcanza(oportunidad, usuario)` (línea ~660)
+- La construcción del predicado de visibilidad que hoy vive dentro de `especificacion()` (líneas ~706-722): extraer a un método que devuelva el/los `Predicate` para que `especificacion()` en `OportunidadServiceImpl` siga orquestando el resto de sus filtros (estado, empresa, financiadora) sin duplicar la regla de colaboración.
+
+`OportunidadServiceImpl` pasa a **inyectar `OportunidadVisibilidad`** (constructor) y llamarla donde antes llamaba a sus propios métodos privados: `visibilidad.rechazarSiEsApoyo(usuario)`, `visibilidad.alcanza(oportunidad, usuario)`, etc. `visible()` y `visibleBloqueando()` se quedan en `OportunidadServiceImpl` (son cortos y specíficos de esos dos flujos) pero llaman a `visibilidad.alcanza(...)` en vez de a un método propio.
+
+**No cambiar comportamiento.** Este es un refactor puro — mismos guards, mismo orden, mismos mensajes de excepción, misma regla de `cb.disjunction()` para conjunto vacío. Si algún test cambia su resultado, es una señal de que el refactor alteró comportamiento por accidente — parar y revisar.
+
+- [ ] **Step 3: Ajustar los constructores en los tests**
+
+Todos los tests que construyen `OportunidadServiceImpl(...)` directamente (grep `OportunidadServiceImpl(` en `src/test`) necesitan agregar un `mockk<OportunidadVisibilidad>()` (o construir la clase real, según convenga al test) y quitar el mock de `TareaService` del constructor de `OportunidadServiceImpl` si ya no lo recibe. Los tests que hoy hacen `every { tareaService.idsOportunidadesDondeColabora(...) }` pasan a mockear `OportunidadVisibilidad` en su lugar, o mantienen el mock de `TareaService` pero inyectado en `OportunidadVisibilidad` — elegir el que requiera menos cambios en los asserts existentes.
+
+- [ ] **Step 4: Correr los gates**
+
+```bash
+./gradlew ktlintCheck
+./gradlew detekt
+./gradlew test
+```
+
+Los tres deben pasar. `detekt` en particular: confirmar que `LargeClass` ya no aparece para `OportunidadServiceImpl` ni aparece para el archivo nuevo (si `OportunidadVisibilidad.kt` también creciera por encima de 600 líneas, cosa improbable dado el tamaño de lo movido, dividir de nuevo).
+
+- [ ] **Step 5: Commit**
+
+```bash
+./gradlew ktlintFormat
+git add src/main/kotlin/pe/quantum/crm/domain/oportunidades/ src/test/kotlin/pe/quantum/crm/domain/oportunidades/
+git commit -m "refactor(oportunidades): extrae OportunidadVisibilidad para bajar OportunidadServiceImpl del umbral de LargeClass"
+```
+
+---
+
+## Task 12: Verificación final y PR
 
 - [ ] **Step 1: Gates locales completos**
 
