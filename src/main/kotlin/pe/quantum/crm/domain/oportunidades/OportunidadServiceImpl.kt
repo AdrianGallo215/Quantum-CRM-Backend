@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.oportunidades
 
 import jakarta.persistence.criteria.Predicate
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.event.EventListener
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
@@ -28,6 +29,7 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.CamposOrdenables
@@ -64,6 +66,11 @@ class OportunidadServiceImpl(
     private val consultas: OportunidadConsultas,
     private val notificacionService: NotificacionService,
     private val driveStorageService: DriveStorageService,
+    // Solo la interfaz publica de tareas (regla 12). `@Lazy` porque tareas ya
+    // depende de OportunidadService (vinculoVisible) y Spring Boot 3 rechaza los
+    // ciclos de constructor; el proxy corta el ciclo al arrancar (mismo patron
+    // que `EmpresaServiceImpl.contactoService`).
+    @Lazy private val tareaService: TareaService,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -639,11 +646,27 @@ class OportunidadServiceImpl(
         usuario: UsuarioActual,
     ): Oportunidad {
         val oportunidad = entidad(id)
-        if (usuario.visibilidadRestringida && oportunidad.idVendedor != usuario.id) {
+        if (!alcanza(oportunidad, usuario)) {
             throw NoEncontradoException("La oportunidad no existe")
         }
         return oportunidad
     }
+
+    /**
+     * Visibilidad unificada para detalle y listado. Rol de apoyo: solo donde
+     * colabora via tarea (no tiene cartera propia). Vendedor: solo lo suyo.
+     * Supervisor: todo.
+     */
+    private fun alcanza(
+        oportunidad: Oportunidad,
+        usuario: UsuarioActual,
+    ): Boolean =
+        when {
+            usuario.esRolApoyo ->
+                oportunidad.id in tareaService.idsOportunidadesDondeColabora(usuario.id)
+            usuario.visibilidadRestringida -> oportunidad.idVendedor == usuario.id
+            else -> true
+        }
 
     /**
      * Igual que [visible] pero tomando el lock de la fila. Cambiar de estado es la
@@ -658,7 +681,7 @@ class OportunidadServiceImpl(
         val oportunidad =
             oportunidadRepository.findByIdBloqueando(id)
                 ?: throw NoEncontradoException("La oportunidad no existe")
-        if (usuario.visibilidadRestringida && oportunidad.idVendedor != usuario.id) {
+        if (!alcanza(oportunidad, usuario)) {
             throw NoEncontradoException("La oportunidad no existe")
         }
         return oportunidad
@@ -684,10 +707,20 @@ class OportunidadServiceImpl(
         filtros: OportunidadFiltros,
         estado: EstadoOportunidad?,
         usuario: UsuarioActual,
-    ): Specification<Oportunidad> =
-        Specification { root, _, cb ->
+    ): Specification<Oportunidad> {
+        // Resuelto ANTES de construir la Specification, no dentro de su lambda:
+        // Spring Data JPA evalua `toPredicate` dos veces por pagina (contenido y
+        // conteo), y `idsOportunidadesDondeColabora` es una consulta, no un `equal`
+        // gratis como el resto de predicados.
+        val idsColaboracion = if (usuario.esRolApoyo) tareaService.idsOportunidadesDondeColabora(usuario.id) else null
+        return Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
-            if (usuario.visibilidadRestringida) {
+            if (idsColaboracion != null) {
+                // Conjunto vacio: `in(emptySet())` es SQL invalido o, peor, un
+                // predicado que no filtra nada. Falso explicito.
+                predicados +=
+                    if (idsColaboracion.isEmpty()) cb.disjunction() else root.get<Long>("id").`in`(idsColaboracion)
+            } else if (usuario.visibilidadRestringida) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), usuario.id)
             } else if (filtros.idVendedor != null) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), filtros.idVendedor)
@@ -700,6 +733,7 @@ class OportunidadServiceImpl(
             filtros.idFinanciadora?.let { predicados += cb.equal(root.get<Long>("idFinanciadora"), it) }
             cb.and(*predicados.toTypedArray())
         }
+    }
 
     private fun toDto(
         oportunidad: Oportunidad,

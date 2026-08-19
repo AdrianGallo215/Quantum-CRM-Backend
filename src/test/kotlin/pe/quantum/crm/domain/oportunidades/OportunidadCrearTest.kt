@@ -20,6 +20,7 @@ import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.ValidacionException
@@ -47,6 +48,7 @@ class OportunidadCrearTest {
     private val consultas = mockk<OportunidadConsultas>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
+    private val tareaService = mockk<TareaService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -61,6 +63,7 @@ class OportunidadCrearTest {
             consultas,
             notificacionService,
             driveStorageService,
+            tareaService,
         )
 
     private val busX = ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal("92000.00"))

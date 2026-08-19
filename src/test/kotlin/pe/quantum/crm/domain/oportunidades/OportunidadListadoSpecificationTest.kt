@@ -21,6 +21,7 @@ import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
@@ -53,6 +54,7 @@ class OportunidadListadoSpecificationTest {
     private val consultas = mockk<OportunidadConsultas>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
+    private val tareaService = mockk<TareaService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -67,6 +69,7 @@ class OportunidadListadoSpecificationTest {
             consultas,
             notificacionService,
             driveStorageService,
+            tareaService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
