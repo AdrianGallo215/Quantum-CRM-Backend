@@ -567,7 +567,10 @@ class OportunidadServiceImpl(
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+    ): String {
+        rechazarSiEsApoyo(usuario)
+        return asegurarCarpetaDriveDe(visible(id, usuario))
+    }
 
     override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
 

@@ -72,4 +72,11 @@ class OportunidadRolApoyoTest {
             service.cambiarEstado(1L, CambiarEstadoRequest(estado = "documentos_legales"), analista)
         }.isInstanceOf(PermisoInsuficienteException::class.java)
     }
+
+    @Test
+    fun `un rol de apoyo no puede asegurar la carpeta de drive de una oportunidad`() {
+        assertThatThrownBy { service.asegurarCarpetaDrive(1L, analista) }
+            .isInstanceOf(PermisoInsuficienteException::class.java)
+            .hasMessageContaining("apoyo")
+    }
 }
