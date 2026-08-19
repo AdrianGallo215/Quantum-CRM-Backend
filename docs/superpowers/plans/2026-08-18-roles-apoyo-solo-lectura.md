@@ -67,7 +67,9 @@ Anotar el conteo obtenido en `docs/requerimientos/2026-08-18-permisos-analista-o
 
 **Files:**
 - Modify: `src/main/kotlin/pe/quantum/crm/shared/security/UsuarioActual.kt`
-- Test: `src/test/kotlin/pe/quantum/crm/shared/security/UsuarioActualTest.kt` (crear si no existe)
+- Modify: `src/test/kotlin/pe/quantum/crm/shared/security/UsuarioActualTest.kt` (YA EXISTE — agregar una clase de tests nueva al archivo, no sobreescribirlo)
+
+**Ruling de preflight:** el archivo ya existe con 4 tests sobre `esSupervisor`/`puedeAprobar`/el `gerente` viejo. Ninguno de ellos asume que `analista.puedeValidarFacturado` sea `true`, así que no hay conflicto que corregir — agregar los tests nuevos del Step 1 al final del `class UsuarioActualTest { ... }` existente, respetando su estilo (nombres de test entre backticks, `assertThat`).
 
 **Interfaces:**
 - Produces: `UsuarioActual.esRolApoyo: Boolean` — `true` para `analista` y `otro`. Lo consumen las Tasks 2, 4, 5, 6, 7, 8.
@@ -160,7 +162,21 @@ git commit -m "feat(security): agrega esRolApoyo y retira analista de puedeValid
 
 **Files:**
 - Modify: `src/main/kotlin/pe/quantum/crm/shared/PoliticaDescuento.kt`
-- Test: `src/test/kotlin/pe/quantum/crm/shared/PoliticaDescuentoTest.kt` (crear si no existe; si existe, agregar los tests)
+- Modify: `src/test/kotlin/pe/quantum/crm/shared/PoliticaDescuentoTest.kt` (YA EXISTE — ver ruling de preflight abajo, no es un archivo nuevo)
+
+**Ruling de preflight:** el archivo ya existe y tiene assertions que codifican el comportamiento VIEJO de `analista`/`otro` (limite de 3%). Este cambio de comportamiento es exactamente lo que Task 2 implementa, así que estas assertions no son casos aparte a preservar — son el mismo comportamiento que se está reemplazando, y hay que actualizarlas en el mismo Step 3, no dejarlas rotas. Las 6 líneas exactas a corregir, con su valor nuevo:
+
+| Línea aprox. | Assertion vieja | Corrección |
+|---|---|---|
+| 12 | `limitePara("analista")` == `BigDecimal(3)` | == `BigDecimal.ZERO` |
+| 32 | `limitePara("otro")` == `BigDecimal(3)` | **Eliminar esta línea.** Ya no aplica: `otro` deja de caer en "rol desconocido → límite más bajo" porque ahora tiene su propia regla explícita (`ROLES_SIN_DESCUENTO`). El resto del test (`"gerente"`, `""`, `"rol_que_no_existe"`) sigue intacto — esos SÍ siguen cayendo en el límite más bajo (3%), que es el comportamiento fail-closed que el comentario del código describe y que este plan no toca. |
+| 40 | `excedeLimite("otro", BigDecimal("90"))` es `true` | Sigue siendo `true` (0 < 90 igual excede) — sin cambio, pero ahora por la regla nueva, no la de fallback |
+| 44 | `excedeLimite("otro", BigDecimal("3.00"))` es `false` | → `true` (con límite 0, hasta 3.00 excede) |
+| 50-51 | `aprobadorPara("otro", "90")` y `("otro", "5")` → `gerencia` | Sin cambio en el valor esperado, pero ahora la razón es la regla explícita, no el fallback |
+| 53 | `aprobadorPara("otro", BigDecimal("2"))` es `null` | → `AprobadorSolicitud.gerencia` (con límite 0, hasta 2% ya excede) |
+| 61 | `aprobadorPara("analista", BigDecimal("5"))` == `AprobadorSolicitud.jdv` | → `AprobadorSolicitud.gerencia` (analista ya no cae en la rama `rol == "vendedor"` de `aprobadorPara`) |
+
+No lo trates como una lista opcional: correr `./gradlew test` sin aplicar estas correcciones deja el Step 4 en rojo por razones ajenas a lo que se acaba de implementar, y un implementador sin este contexto puede interpretarlo como que su cambio está mal cuando en realidad es el test viejo el que quedó desactualizado.
 
 **Interfaces:**
 - Consumes: nada de tareas anteriores.
@@ -507,11 +523,16 @@ class OportunidadRolApoyoTest {
 
     @Test
     fun `un rol de apoyo no puede cambiar el estado de una oportunidad`() {
-        assertThatThrownBy { service.cambiarEstado(1L, "documentos_legales", null, analista) }
-            .isInstanceOf(PermisoInsuficienteException::class.java)
+        assertThatThrownBy {
+            service.cambiarEstado(1L, CambiarEstadoRequest(estado = "documentos_legales"), analista)
+        }.isInstanceOf(PermisoInsuficienteException::class.java)
     }
 }
 ```
+
+Agregar `import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest`.
+
+**Verificado contra el código real (`OportunidadService.kt:35-39`, `OportunidadDtos.kt:199-204`):** `cambiarEstado(id, request: CambiarEstadoRequest, usuario)` — no toma el estado como string suelto. `eliminar(id: Long)` **no tiene parámetro `usuario`** — ya está restringido a admin en el controller, así que no necesita (ni puede recibir) el guard de rol de apoyo. No agregar `rechazarSiEsApoyo` a `eliminar`.
 
 **Antes de escribir el test, verificar la firma real de `actualizar` y `cambiarEstado` en `OportunidadService.kt` y ajustar los argumentos a la firma exacta.** Si `ActualizarOportunidadRequest` no tiene constructor sin argumentos, pasar todos los campos como `null`.
 
@@ -745,12 +766,12 @@ Crear `EmpresaRolApoyoTest.kt` copiando el patrón de mocks de un test existente
 
     @Test
     fun `un rol de apoyo no puede cambiar el estado de cartera`() {
-        assertThatThrownBy { service.cambiarEstadoCartera(1L, "prospeccion", analista) }
+        assertThatThrownBy { service.cambiarEstadoCarteraManual(1L, "prospeccion", analista) }
             .isInstanceOf(PermisoInsuficienteException::class.java)
     }
 ```
 
-Ajustar nombres de método y construcción de requests a las firmas reales de `EmpresaService.kt`.
+**Verificado contra el código real (`EmpresaService.kt:75-79, 165`):** el método se llama `cambiarEstadoCarteraManual(id, estadoCartera: String, usuario)`, no `cambiarEstadoCartera`. `eliminar(id: Long)` **no tiene parámetro `usuario`** — igual que en oportunidades, ya restringido a admin en el controller; no agregar el guard ahí. `reasignarVendedor` ya está fuera del alcance de `analista`/`otro` hoy (admin/gerencia únicamente, verificado en controller) — no requiere el guard nuevo, pero no hace daño agregarlo si el implementador ya está ahí.
 
 - [ ] **Step 2: Correr y verificar que falla**
 
@@ -900,7 +921,7 @@ En `SolicitudServiceImpl.crear`, como primera línea del cuerpo:
         }
 ```
 
-Además, en el filtro de la bandeja (línea ~241), quitar `|| usuario.rol == "analista"` de la rama de "solicitudes propias": un rol de apoyo ya no genera solicitudes, pero debe poder seguir viendo las históricas suyas si las hubiera. **Verificar antes de tocar:** si quitarlo deja a un analista con solicitudes viejas sin poder verlas, dejar la condición como está y anotarlo. En caso de duda, DETENERSE y preguntar.
+**Ruling de preflight (no requiere confirmación, ya decidido):** el filtro de la bandeja (línea ~241, `filtros.mias || usuario.rol == "vendedor" || usuario.rol == "analista"`) **NO se toca**. R7 retira la capacidad de *crear* solicitudes, no la de *ver* las que ya existen — dejar a un analista sin poder consultar una solicitud histórica suya sería una regresión no pedida por nadie. El guard de creación del Step 3 es suficiente y es la única modificación de este archivo fuera de imports.
 
 - [ ] **Step 4: Correr los tests**
 
@@ -975,7 +996,93 @@ git commit -m "docs: roles de apoyo en matriz de permisos y changelog del contra
 
 ---
 
-## Task 10: Verificación final y PR
+## Task 10: Solicitudes — visibilidad para el rol `otro` (agregada 2026-08-19)
+
+**Por qué existe:** al documentar Task 9 se encontró que `SolicitudServiceImpl.especificacion()` (el filtro del **listado**, `GET /solicitudes`) nunca tuvo una rama de visibilidad para el rol `otro` — solo para `admin`, `gerencia`, `jdv`, y `vendedor`/`analista` (línea `filtros.mias || usuario.rol == "vendedor" || usuario.rol == "analista"`). `otro` cae fuera de todas las ramas del `when`, igual que `admin`, y por lo tanto **no recibe ningún predicado de alcance**: ve todas las solicitudes de la empresa, incluidos montos de descuento y motivos de reasignación ajenos. Es un hallazgo preexistente (no introducido por este plan), pero el usuario decidió corregirlo ahora en vez de diferirlo a un ticket aparte. El **detalle** (`visible()`, `GET /solicitudes/:id`) ya está bien — su `else -> solicitud.idSolicitante == usuario.id` cubre a `otro` correctamente por ser el fallback por defecto.
+
+**Files:**
+- Modify: `src/main/kotlin/pe/quantum/crm/domain/solicitudes/SolicitudServiceImpl.kt`
+- Test: `src/test/kotlin/pe/quantum/crm/domain/solicitudes/SolicitudRolApoyoTest.kt` (agregar)
+
+**Interfaces:**
+- Consumes: `UsuarioActual.esRolApoyo` (Task 1) — reemplaza la comparación de string `usuario.rol == "analista"` por el predicado ya establecido en el resto del plan, lo cual además cierra el hueco de `otro` de forma consistente con Tasks 4/5/6/7.
+
+- [ ] **Step 1: Escribir el test que falla**
+
+Agregar a `SolicitudRolApoyoTest.kt`:
+
+```kotlin
+    @Test
+    fun `un rol de apoyo solo ve sus propias solicitudes en el listado`() {
+        val otro = UsuarioActual(id = 9L, rol = "otro")
+        val solicitudAjena = solicitudDe(id = 1L, idSolicitante = 99L)
+        every {
+            solicitudRepository.findAll(any<Specification<Solicitud>>(), any<PageRequest>())
+        } answers {
+            val spec = firstArg<Specification<Solicitud>>()
+            val incluye = compilarYEvaluar(spec, solicitudAjena)
+            PageImpl(if (incluye) listOf(solicitudAjena) else emptyList())
+        }
+
+        val resultado = service.listar(SolicitudFiltros(), otro, null, null, null, null)
+
+        assertThat(resultado.items).isEmpty()
+    }
+```
+
+**Antes de escribir el test:** revisar si el módulo `solicitudes` ya tiene un test que compile la `Specification` contra un metamodelo real de Hibernate, del mismo tipo que `OportunidadListadoSpecificationTest.kt`/`EmpresaBusquedaSpecificationTest.kt` (buscar `SolicitudBusquedaSpecificationTest.kt` o similar en `src/test/kotlin/pe/quantum/crm/domain/solicitudes/`). **Si existe, usar ESE archivo y ESE mecanismo, no un mock.** La lección de Tasks 5 y 7 de este mismo plan: un test que mockea `findAll` sin evaluar la `Specification` real no protege contra el bug de seguridad que se está corrigiendo — puede pasar en verde con el bug presente. El snippet de arriba es un placeholder de la intención (verificar que `otro` NO ve una solicitud ajena en el listado); adaptalo al mecanismo real que ya exista en el módulo.
+
+- [ ] **Step 2: Correr el test y verificar que falla**
+
+Run: `./gradlew test --tests "pe.quantum.crm.domain.solicitudes.*"`
+Expected: FAIL — el test nuevo detecta que `otro` ve la solicitud ajena.
+
+- [ ] **Step 3: Implementar**
+
+En `SolicitudServiceImpl.kt`, línea 246, reemplazar:
+
+```kotlin
+                filtros.mias || usuario.rol == "vendedor" || usuario.rol == "analista" ->
+```
+
+por:
+
+```kotlin
+                filtros.mias || usuario.rol == "vendedor" || usuario.esRolApoyo ->
+```
+
+`esRolApoyo` ya cubre `analista` y `otro` (Task 1), así que este único cambio cierra el hueco para los dos sin duplicar la condición.
+
+- [ ] **Step 4: Correr el test y verificar que pasa**
+
+Run: `./gradlew test --tests "pe.quantum.crm.domain.solicitudes.*"`
+Expected: PASS
+
+- [ ] **Step 5: Correr la suite completa**
+
+Run: `./gradlew test`
+Expected: PASS, sin nuevas fallas.
+
+- [ ] **Step 6: Commit**
+
+```bash
+./gradlew ktlintFormat
+git add src/main/kotlin/pe/quantum/crm/domain/solicitudes/SolicitudServiceImpl.kt src/test/kotlin/pe/quantum/crm/domain/solicitudes/SolicitudRolApoyoTest.kt
+git commit -m "fix(solicitudes): el rol otro ya no ve solicitudes ajenas en el listado"
+```
+
+- [ ] **Step 7: Actualizar la documentación que este mismo plan dejó marcada como hallazgo pendiente**
+
+En `docs/matriz_permisos.md` §2.12 y la nota de §1: cambiar la celda `otro` de "⚠️ Sin restricción explícita en código" a "✓ Solo las propias, igual que analista", y quitar/actualizar la nota del hallazgo de seguridad (ya no aplica — se corrigió acá). Mismo ajuste en `docs/contrato_api.md` (`GET /solicitudes`, el bloque de advertencia agregado en Task 9).
+
+```bash
+git add docs/matriz_permisos.md docs/contrato_api.md
+git commit -m "docs: refleja el fix de visibilidad de solicitudes para el rol otro"
+```
+
+---
+
+## Task 11: Verificación final y PR
 
 - [ ] **Step 1: Gates locales completos**
 
