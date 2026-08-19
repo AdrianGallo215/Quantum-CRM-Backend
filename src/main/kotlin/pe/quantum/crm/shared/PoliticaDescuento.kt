@@ -5,9 +5,9 @@ import java.math.BigDecimal
 
 /**
  * Limites de descuento por rol y derivacion del aprobador
- * (docs/gerencia_contrato_frontend.md §2): vendedor/analista hasta 3%, jdv
- * hasta 7%, gerencia/admin sin limite. Por encima del limite propio el cambio
- * requiere una solicitud aprobada.
+ * (docs/gerencia_contrato_frontend.md §2): vendedor hasta 3%, jdv hasta 7%,
+ * analista/otro sin margen (roles de apoyo), gerencia/admin sin limite. Por
+ * encima del limite propio el cambio requiere una solicitud aprobada.
  */
 @Suppress("MagicNumber") // 3% y 7% son los limites de negocio, no numeros arbitrarios.
 object PoliticaDescuento {
