@@ -177,7 +177,7 @@ La visibilidad de datos varía según el rol del usuario autenticado. El backend
 
 `vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
 
-**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §19): `vendedor`/`analista` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite.
+**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §19): `vendedor` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite. Los roles de apoyo (`analista`, `otro`) no aplican descuentos por ninguna vía — ni directo ni por solicitud.
 
 ---
 
@@ -1137,7 +1137,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /oportunidades/:id/estado
 > Cambia el estado de una oportunidad.
 
-**Roles:** todos con restricción: el paso a `facturado` solo lo pueden confirmar `admin`, `gerente` y `analista`.
+**Roles:** todos con restricción: el paso a `facturado` solo lo pueden confirmar `admin` y `gerencia`. (Corregido 2026-08-18: decía "gerente" — nombre obsoleto desde la migración V25 — y "analista", que dejó de tener este privilegio al pasar a rol de apoyo.)
 
 **Body:**
 ```json
@@ -2262,6 +2262,7 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 | Fecha | Endpoint(s) | Tipo | Cambio | Acción para frontend |
 |---|---|---|---|---|
 | 2026-08-18 | — | — | Se crea este changelog. Sin entradas retroactivas. | Ninguna |
+| 2026-08-18 | `GET /oportunidades`, `GET /oportunidades/:id`, `GET /empresas`, `GET /empresas/:id`, `PATCH /oportunidades/:id/estado`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /empresas`, `PUT /empresas/:id`, `PATCH /empresas/:id/estado-cartera`, `PATCH /empresas/:id/vendedor`, `PATCH /empresas/:id/cartera-maestra`, `POST /oportunidades/:id/archivos`, `POST /oportunidades/:id/carpeta-drive`, `POST /empresas/:id/archivos`, `POST /empresas/:id/carpeta-drive`, `POST /solicitudes` | **Breaking** | `analista` y `otro` pasan a roles de apoyo de solo lectura, sin cartera propia: los listados y el detalle solo devuelven las entidades donde el usuario colabora vía tarea (`ids_colaboradores`); toda escritura (incluida la subida de archivos/creación de carpeta en Drive) responde `403 PERMISO_INSUFICIENTE` con mensaje específico; `analista` deja de poder confirmar `facturado`; ninguno de los dos aplica descuentos por ninguna vía ni crea solicitudes de aprobación. Ver `matriz_permisos.md` para el detalle completo por operación. | Ocultar en el cliente las acciones de escritura y de subida de Drive para estos roles, y no asumir que "lo que veo, lo puedo editar". El 403 trae un mensaje específico que se puede mostrar tal cual. Las solicitudes históricas que estos roles ya tenían siguen siendo visibles (no hay regresión de lectura ahí). |
 
 ---
 

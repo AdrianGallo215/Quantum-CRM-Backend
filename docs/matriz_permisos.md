@@ -12,7 +12,8 @@
 | `gerencia` | Gustavo | Visibilidad total. No gestiona empleados ni configuración de sistema. |
 | `jdv` | Aldo | Jefe de ventas. Visibilidad total del equipo (excepto Cartera Maestra). Reasigna el vendedor de una empresa solo vía solicitud aprobada por `gerencia`; aplica descuentos hasta 7% directo. |
 | `vendedor` | Asesores comerciales | Solo ve y opera sobre sus propios registros. |
-| `analista` | Analista financiero | Misma visibilidad que vendedor en MVP. Puede validar paso a Facturado. |
+| `analista` | Analista financiero | **Rol de apoyo: sin cartera propia.** Solo lectura sobre empresas y oportunidades, y únicamente las que colabora vía tarea. No confirma `facturado`, no aplica descuentos, no crea solicitudes. |
+| `otro` | Roles de apoyo no comerciales | Mismos permisos que `analista`: sin cartera propia, solo lectura por colaboración. |
 
 ---
 
@@ -20,19 +21,26 @@
 
 La visibilidad define qué registros devuelven los endpoints de listado y detalle. El backend aplica estos filtros sin excepción.
 
-| Recurso | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| **Empresas** | Todas | Todas (incluida Cartera Maestra) | Todas (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) |
-| **Oportunidades** | Todas | Todas | Todas | Solo donde `oportunidades.id_vendedor = yo` | Solo donde `oportunidades.id_vendedor = yo` |
-| **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` |
-| **Eventos** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de sus oportunidades |
-| **Contactos** | Todos | Todos | Todos | Todos (búsqueda global para vincular) | Todos |
-| **Empleados** | Todos | Todos | Todos | Solo `GET /empleados/me` | Solo `GET /empleados/me` |
-| **Financiadoras** | Todas | Todas | Todas | Todas (solo lectura) | Todas (solo lectura) |
-| **Modelos** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) |
-| **Catálogo de eventos** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) |
-| **Reportes** | Todos | Todos | Todos | Sin acceso | Sin acceso |
-| **Log de estados** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de sus oportunidades |
+| Recurso | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| **Empresas** | Todas | Todas (incluida Cartera Maestra) | Todas (excepto Cartera Maestra) | Solo donde `empresas.id_vendedor = yo` (excepto Cartera Maestra) | **Solo donde colabora vía tarea** (`empresas.id ∈ idsEmpresasDondeColabora`, excepto Cartera Maestra — nunca visible para un rol de apoyo) | Igual que analista |
+| **Oportunidades** | Todas | Todas | Todas | Solo donde `oportunidades.id_vendedor = yo` | **Solo donde colabora vía tarea** (`oportunidades.id ∈ idsOportunidadesDondeColabora`) | Igual que analista |
+| **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` (sin cambios — este plan no tocó el módulo tareas) | Igual que analista |
+| **Eventos** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de oportunidades donde colabora (hereda de la visibilidad de oportunidades vía `vinculoVisible`, sin cambio de código propio) | Igual que analista |
+| **Contactos** | Todos | Todos | Todos | Todos (búsqueda global para vincular) | Todos (sin cambios — este plan no tocó el módulo contactos; ver nota) | Igual que analista |
+| **Empleados** | Todos | Todos | Todos | Solo `GET /empleados/me` | Solo `GET /empleados/me` | Igual que analista |
+| **Financiadoras** | Todas | Todas | Todas | Todas (solo lectura) | Todas (solo lectura) | Igual que analista |
+| **Modelos** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) | Igual que analista |
+| **Catálogo de eventos** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) | Igual que analista |
+| **Reportes** | Todos | Todos | Todos | Sin acceso | Sin acceso | Igual que analista |
+| **Log de estados** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de oportunidades donde colabora (mismo mecanismo que Eventos) | Igual que analista |
+
+**Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente `oportunidades`, `empresas` y `solicitudes` (los módulos con lógica propia de escritura/límites), más el filtro de colaboración expuesto por `tareas`. Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
+- **Contactos:** el permiso de vinculación de `analista`/`otro` sigue existiendo en código, hoy inerte porque ya no tiene cartera propia.
+- **Metas de venta (`MetaVentaServiceImpl`):** el rol `otro` no está contemplado en el filtro de visibilidad (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — hoy ve todas las metas sin restricción, una fuga de visibilidad preexistente y no introducida por este cambio.
+- **Prospección (`ProspeccionServiceImpl`) e Inicio (`InicioService`):** siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración vía tarea — en la práctica devuelven vacío para un rol de apoyo, no una fuga, pero tampoco reflejan el nuevo modelo de visibilidad.
+
+Ninguno de los tres es una fuga de seguridad explotable en las dos últimas (fallan cerrado); el de Metas de venta sí lo es y amerita atención. Los tres quedan fuera de este cambio — candidatos a un ticket aparte.
 
 ---
 
@@ -40,29 +48,31 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.1 Empleados
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver lista de empleados | ✓ | ✓ | ✓ | — | — |
-| Ver perfil propio (`/me`) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Crear empleado | ✓ | — | — | — | — |
-| Editar empleado | ✓ | — | — | — | — |
-| Activar / desactivar empleado | ✓ | — | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver lista de empleados | ✓ | ✓ | ✓ | — | — | — |
+| Ver perfil propio (`/me`) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Crear empleado | ✓ | — | — | — | — | — |
+| Editar empleado | ✓ | — | — | — | — | — |
+| Activar / desactivar empleado | ✓ | — | — | — | — | — |
 
 ---
 
 ### 2.2 Empresas
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Crear empresa | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Editar empresa (datos) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Reasignar vendedor directo | ✓ | ✓ | — (vía solicitud a gerencia) | — | — |
-| Cambiar `estado_cartera` manual | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Ver/subir archivos en Drive (`GET`/`POST /empresas/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Crear carpeta de Drive (`POST /empresas/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Ver check de RUC duplicado | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mover/liberar Cartera Maestra | ✓ | ✓ | — | — | — |
-| Eliminar empresa (definitivo, cascada a oportunidades/tareas/eventos) | ✓ | — | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Crear empresa | ✓ | ✓ | ✓ | ✓ | — | — |
+| Editar empresa (datos) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
+| Reasignar vendedor directo | ✓ | ✓ | — (vía solicitud a gerencia) | — | — | — |
+| Cambiar `estado_cartera` manual | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
+| Ver archivos en Drive (`GET /empresas/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo donde colabora | ✓ Solo donde colabora |
+| Subir archivos / crear carpeta de Drive (`POST /empresas/:id/archivos`, `POST /empresas/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
+| Ver check de RUC duplicado | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mover/liberar Cartera Maestra | ✓ | ✓ | — | — | — | — |
+| Eliminar empresa (definitivo, cascada a oportunidades/tareas/eventos) | ✓ | — | — | — | — | — |
+
+**Nota sobre roles de apoyo (2026-08-18):** `analista`/`otro` no tienen cartera propia — toda operación de escritura de esta tabla les está vedada, incluida la subida de archivos a Drive (escribe `empresas.drive_folder_id`). La visibilidad de lectura (`Editar`, `Ver archivos`, etc. cuando aplica) es únicamente sobre empresas donde el usuario colabora vía una tarea (`ids_colaboradores`), nunca por cartera propia.
 
 **Nota sobre `estado_cartera` manual:** solo se permiten los estados `no_contactado`, `no_aplica`, `no_interesado`, `prospeccion`. Los estados `oportunidad_activa` y `cliente` son derivados y nunca editables manualmente por ningún rol.
 
@@ -70,166 +80,174 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 
 ### 2.3 Contactos
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Buscar contactos | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Crear contacto | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Editar contacto | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Eliminar contacto | ✓ | ✓ | ✓ | — | — |
-| Vincular contacto a empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas |
-| Editar vínculo (cargo / toma_decision) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas |
-| Desvincular contacto de empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas |
-| Vincular contacto a oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Editar rol en oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Desvincular de oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
+> **Sin cambios en este módulo (2026-08-18):** el cambio de `analista`/`otro` a rol de apoyo no tocó `ContactoService`. Las filas de `analista` reflejan el permiso preexistente, que en la práctica queda inerte para vincular a empresas/oportunidades (ya no tiene "sus empresas"/"suyas" — ver §1). Si conviene bloquearlo explícitamente, es un ticket aparte.
+
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Buscar contactos | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Crear contacto | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Editar contacto | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Eliminar contacto | ✓ | ✓ | ✓ | — | — | — |
+| Vincular contacto a empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas (inerte: sin cartera propia) | Igual que analista |
+| Editar vínculo (cargo / toma_decision) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas (inerte) | Igual que analista |
+| Desvincular contacto de empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas (inerte) | Igual que analista |
+| Vincular contacto a oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas (inerte) | Igual que analista |
+| Editar rol en oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas (inerte) | Igual que analista |
+| Desvincular de oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas (inerte) | Igual que analista |
 
 ---
 
 ### 2.4 Oportunidades
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Crear oportunidad | ✓ | ✓ (asigna vendedor si la empresa no tiene) | ✓ | ✓ Solo en sus empresas | ✓ Solo en sus empresas |
-| Editar campos negociables | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Ver/subir archivos en Drive (`GET`/`POST /oportunidades/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Crear carpeta de Drive (`POST /oportunidades/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo las suyas |
-| Aplicar descuento directo | Sin límite | Sin límite | Hasta 7% | Hasta 3% | Hasta 3% |
-| Solicitar descuento sobre su límite | — | — | ✓ (>7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) |
-| Cambiar estado (cualquier estado excepto `facturado`) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| **Confirmar paso a `facturado`** | ✓ | ✓ | — | — | ✓ |
-| Ver log de estados | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Eliminar oportunidad (definitivo, cascada a tareas/eventos/log) | ✓ | — | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Crear oportunidad | ✓ | ✓ (asigna vendedor si la empresa no tiene) | ✓ | ✓ Solo en sus empresas | — | — |
+| Editar campos negociables | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
+| Ver archivos en Drive (`GET /oportunidades/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo donde colabora | ✓ Solo donde colabora |
+| Subir archivos / crear carpeta de Drive (`POST /oportunidades/:id/archivos`, `POST /oportunidades/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
+| Aplicar descuento directo | Sin límite | Sin límite | Hasta 7% | Hasta 3% | Sin margen (ninguna vía) | Sin margen (ninguna vía) |
+| Solicitar descuento sobre su límite | — | — | ✓ (>7% → gerencia) | ✓ (3–7% → jdv, >7% → gerencia) | — | — |
+| Cambiar estado (cualquier estado excepto `facturado`) | ✓ | ✓ | ✓ | ✓ Solo las suyas | — | — |
+| **Confirmar paso a `facturado`** | ✓ | ✓ | — | — | — | — |
+| Ver log de estados | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo donde colabora | ✓ Solo donde colabora |
+| Eliminar oportunidad (definitivo, cascada a tareas/eventos/log) | ✓ | — | — | — | — | — |
 
-**Nota sobre el paso a `facturado`:** el vendedor y el JdV no pueden confirmar este paso porque dispara el cálculo de comisiones. Solo lo pueden confirmar `admin`, `gerencia` y `analista`. Esta restricción se aplica en el endpoint `PATCH /oportunidades/:id/estado`.
+**Nota sobre el paso a `facturado` (corregida 2026-08-18):** el vendedor y el JdV no pueden confirmar este paso porque dispara el cálculo de comisiones. Desde este cambio, **solo `admin` y `gerencia`** — `analista` era rol de apoyo antes de la Fase de módulo financiero (§4.3) y ya no confirma facturación. Esta restricción se aplica en el endpoint `PATCH /oportunidades/:id/estado`.
+
+**Nota sobre roles de apoyo:** `analista`/`otro` no tienen cartera propia ni margen de descuento por ninguna vía (ni directo ni por solicitud — ver §2.12). Solo ven (nunca editan) las oportunidades donde colaboran vía una tarea.
 
 ---
 
 ### 2.5 Eventos
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver eventos de una oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Crear evento (del catálogo o personalizado) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Marcar evento como ocurrido | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Marcar evento como descartado | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
-| Editar evento pendiente | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas |
+> **Sin cambios de código en este módulo (2026-08-18):** las operaciones de escritura siguen sin un guard de rol de apoyo propio; lo que sí cambió es la visibilidad, porque `EventoService` resuelve la oportunidad vía `OportunidadService.vinculoVisible`, que ya aplica la regla de colaboración (§2.4). Un `analista`/`otro` puede, en teoría, seguir creando/editando eventos de una oportunidad en la que colabora — no fue evaluado si eso debería bloquearse también; ver nota de §1.
 
-**Nota:** marcar un evento como ocurrido no ejecuta el cambio de estado — solo devuelve la sugerencia. La confirmación del cambio de estado corre las mismas reglas del punto 2.4.
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver eventos de una oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+| Crear evento (del catálogo o personalizado) | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+| Marcar evento como ocurrido | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+| Marcar evento como descartado | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+| Editar evento pendiente | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+
+**Nota:** marcar un evento como ocurrido no ejecuta el cambio de estado — solo devuelve la sugerencia. La confirmación del cambio de estado corre las mismas reglas del punto 2.4 (hoy solo `admin`/`gerencia`).
 
 ---
 
 ### 2.6 Tareas
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver tareas | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
-| Crear tarea | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Asignar tarea (dueño) a otro empleado | ✓ | ✓ | ✓ | — | — |
-| Agregar colaborador a otro empleado | ✓ | ✓ | ✓ | — | — |
-| Marcar tarea como completada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
-| Marcar tarea como cancelada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
-| Editar tarea pendiente | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver tareas | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador | Igual que analista |
+| Crear tarea | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Asignar tarea (dueño) a otro empleado | ✓ | ✓ | ✓ | — | — | — |
+| Agregar colaborador a otro empleado | ✓ | ✓ | ✓ | — | — | — |
+| Marcar tarea como completada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador | Igual que analista |
+| Marcar tarea como cancelada | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador | Igual que analista |
+| Editar tarea pendiente | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde es dueño o colaborador | ✓ Solo donde es dueño o colaborador | Igual que analista |
 
 ---
 
 ### 2.7 Financiadoras
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver lista | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Crear financiadora | ✓ | ✓ | — | — | — |
-| Editar financiadora | ✓ | ✓ | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver lista | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Crear financiadora | ✓ | ✓ | — | — | — | — |
+| Editar financiadora | ✓ | ✓ | — | — | — | — |
 
 ---
 
 ### 2.8 Modelos de bus
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver catálogo | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Crear modelo (con aplicaciones) | ✓ | ✓ | — | — | — |
-| Editar modelo | ✓ | ✓ | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver catálogo | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Crear modelo (con aplicaciones) | ✓ | ✓ | — | — | — | — |
+| Editar modelo | ✓ | ✓ | — | — | — | — |
 
 ---
 
 ### 2.9 Catálogo de eventos
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver catálogo | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Crear evento en catálogo | ✓ | — | — | — | — |
-| Editar evento del catálogo | ✓ | — | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver catálogo | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Crear evento en catálogo | ✓ | — | — | — | — | — |
+| Editar evento del catálogo | ✓ | — | — | — | — | — |
 
 ---
 
 ### 2.10 Reportes
 
-| Reporte | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ventas acumuladas | ✓ | ✓ | ✓ | — | — |
-| Estado del pipeline | ✓ | ✓ | ✓ | — | — |
-| Resumen del equipo | ✓ | ✓ | ✓ | — | — |
-| Velocidad por etapa | ✓ | ✓ | ✓ | — | — |
-| Embudo de prospección | ✓ | ✓ | ✓ | — | — |
-| Mix de descuentos | ✓ | ✓ | ✓ | — | — |
+| Reporte | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ventas acumuladas | ✓ | ✓ | ✓ | — | — | — |
+| Estado del pipeline | ✓ | ✓ | ✓ | — | — | — |
+| Resumen del equipo | ✓ | ✓ | ✓ | — | — | — |
+| Velocidad por etapa | ✓ | ✓ | ✓ | — | — | — |
+| Embudo de prospección | ✓ | ✓ | ✓ | — | — | — |
+| Mix de descuentos | ✓ | ✓ | ✓ | — | — | — |
 
-Ningún rol `vendedor` ni `analista` tiene acceso a reportes en el MVP.
+Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 
 ---
 
 ### 2.11 Vistas de navegación
 
-| Vista | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Inicio (`GET /inicio`) | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos |
-| Prospección (`GET /prospeccion`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo las suyas |
-| Pipeline | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo las suyas |
-| Cartera (listado de empresas) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo las suyas |
-| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — |
-| Cartera Maestra | ✓ | ✓ | — | — | — |
+| Vista | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Inicio (`GET /inicio`) | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos | ✓ Sus datos (sin cambios de código — sigue filtrando por `usuario.id`, vacío en la práctica sin cartera propia) | Igual que analista |
+| Prospección (`GET /prospeccion`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Sin cambios de código — `ProspeccionServiceImpl` sigue filtrando por `id_vendedor = usuario.id`, no por colaboración; vacío en la práctica | Igual que analista |
+| Pipeline (vista sobre `GET /oportunidades`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+| Cartera (`GET /empresas`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
+| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — | — |
+| Cartera Maestra | ✓ | ✓ | — | — | — | — |
 
 ---
 
 ### 2.12 Solicitudes de aprobación
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Crear solicitud de descuento (sobre su límite) | — (aplica directo) | — (aplica directo) | ✓ (>7%) | ✓ (>3%) | ✓ (>3%) |
-| Crear solicitud de reasignación de cliente | — (reasigna directo) | — (reasigna directo) | ✓ | — | — |
-| Ver bandeja de aprobación | ✓ Todas | ✓ Las dirigidas a gerencia | ✓ Las dirigidas a jdv | — | — |
-| Ver solicitudes propias | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Aprobar / denegar | ✓ Cualquiera | ✓ Su bandeja | ✓ Su bandeja | — | — |
-| Ver / gestionar cartera maestra | ✓ | ✓ | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Crear solicitud de descuento (sobre su límite) | — (aplica directo) | — (aplica directo) | ✓ (>7%) | ✓ (>3%) | — | — |
+| Crear solicitud de reasignación de cliente | — (reasigna directo) | — (reasigna directo) | ✓ | — | — | — |
+| Ver bandeja de aprobación | ✓ Todas | ✓ Las dirigidas a gerencia | ✓ Las dirigidas a jdv | — | — | — |
+| Ver solicitudes propias (históricas) | ✓ | ✓ | ✓ | ✓ | ✓ (no genera nuevas, conserva las que ya tenía) | Igual que analista |
+| Aprobar / denegar | ✓ Cualquiera | ✓ Su bandeja | ✓ Su bandeja | — | — | — |
+| Ver / gestionar cartera maestra | ✓ | ✓ | — | — | — | — |
 
 **Notas:**
 - El aprobador lo deriva el backend al crear la solicitud; nunca lo elige el solicitante (`gerencia_solicitudes_modelo_datos.md §3.4`).
 - Al aprobar, el cambio se aplica en la misma transacción que resuelve la solicitud (descuento: recalcula `monto_total`; reasignación: reutiliza `reasignarVendedor` con su cascada existente).
 - `gerencia` y `admin` nunca son destino de asignación de vendedor (no tienen cartera propia).
+- **Roles de apoyo (2026-08-18):** `analista`/`otro` ya no pueden crear ninguna solicitud — no tienen margen de descuento por ninguna vía (§2.4) y no reasignan clientes. Conservan la visibilidad de lectura sobre solicitudes que hayan creado antes de este cambio; no es una regresión de acceso.
 
 ---
 
 ### 2.13 Metas de venta
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Proponer meta de un vendedor o de sí mismo | — (crea directo) | — (crea directo) | ✓ | — | — |
-| Crear/modificar meta directo (queda aprobada) | ✓ | ✓ | — | — | — |
-| Aprobar / rechazar propuesta | ✓ | ✓ | — | — | — |
-| Ver metas propias | ✓ | ✓ | ✓ | ✓ | — (no aplica, no tiene meta) |
-| Ver metas del equipo (todos los vendedores) | ✓ | ✓ | ✓ | — | — |
-| Ver medidor de cumplimiento en Inicio | — (no vende) | — (no vende) | ✓ (propio + equipo) | ✓ (propio) | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Proponer meta de un vendedor o de sí mismo | — (crea directo) | — (crea directo) | ✓ | — | — | — |
+| Crear/modificar meta directo (queda aprobada) | ✓ | ✓ | — | — | — | — |
+| Aprobar / rechazar propuesta | ✓ | ✓ | — | — | — | — |
+| Ver metas propias | ✓ | ✓ | ✓ | ✓ | — (no aplica, no tiene meta) | — (no aplica) |
+| Ver metas del equipo (todos los vendedores) | ✓ | ✓ | ✓ | — | — | ⚠️ Sin restricción explícita en código (ver nota) |
+| Ver medidor de cumplimiento en Inicio | — (no vende) | — (no vende) | ✓ (propio + equipo) | ✓ (propio) | — | — |
 
 **Notas:**
 - La meta es en unidades vendidas, no en monto. Un vendedor solo aparece en la tabla como `id_empleado`, nunca `gerencia`/`admin` (no tienen cartera propia, igual que en reasignación de vendedor).
 - Las unidades de una oportunidad cuentan para el cumplimiento del vendedor únicamente mientras esté en estado `facturado` (`oportunidades.facturado_en`); al cancelarse (retroceder de estado) o eliminarse estando facturada, dejan de contar sin acción manual.
+- **⚠️ Hallazgo de seguridad preexistente, no introducido por este cambio (2026-08-18):** el filtro de `MetaVentaServiceImpl.especificacion()` restringe por `idEmpleado = usuario.id` solo si `usuario.rol == "vendedor" || usuario.rol == "analista"`. El rol `otro` no cae en esa condición, así que hoy **ve todas las metas de venta sin restricción**, como si fuera supervisor. No se corrige en este cambio (el módulo de metas de venta está fuera de su alcance) — requiere un fix propio.
 
 ---
 
 ### 2.14 Mantenimiento
 
-| Operación | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Backfill de carpetas de Drive (`POST /mantenimiento/carpetas-drive`) | ✓ | — | — | — | — |
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Backfill de carpetas de Drive (`POST /mantenimiento/carpetas-drive`) | ✓ | — | — | — | — | — |
 
 ---
 
@@ -241,10 +259,12 @@ Implementar con `@PreAuthorize` a nivel de método de servicio, no solo a nivel 
 
 ```java
 // Ejemplo en el servicio de oportunidades
-@PreAuthorize("hasAnyRole('ADMIN', 'GERENTE', 'JDV') or " +
-              "(hasAnyRole('VENDEDOR', 'ANALISTA') and @ownershipChecker.isOwner(#id, authentication))")
+@PreAuthorize("hasAnyRole('ADMIN', 'GERENCIA', 'JDV') or " +
+              "(hasAnyRole('VENDEDOR', 'ANALISTA', 'OTRO') and @ownershipChecker.isOwner(#id, authentication))")
 public OportunidadDTO getOportunidad(Long id) { ... }
 ```
+
+**Nota (2026-08-18):** `GERENTE` era el nombre anterior a la migración V25, corregido a `GERENCIA`. Esta §3 completa es pseudocódigo aspiracional de diseño temprano — la implementación real no usa `@PreAuthorize`/`OwnershipChecker`, sino los predicados de `UsuarioActual` (`esRolApoyo`, `visibilidadRestringida`, etc.) evaluados dentro de cada `ServiceImpl`. El ejemplo tampoco refleja que `ANALISTA`/`OTRO` ya no tienen ownership por cartera propia sino por colaboración vía tarea — esta sección quedó desactualizada desde antes de este cambio y su reescritura completa está fuera de alcance acá.
 
 ### 3.2 OwnershipChecker
 
@@ -300,9 +320,9 @@ public class OportunidadService {
     public OportunidadDTO cambiarEstado(Long id, EstadoRequest request, EmpleadoDetails auth) {
 
         if (request.getEstado() == EstadoOp.FACTURADO) {
-            if (!auth.tieneRol(ADMIN, GERENTE, ANALISTA)) {
+            if (!auth.tieneRol(ADMIN, GERENCIA)) {
                 throw new PermisoInsuficienteException(
-                    "Solo admin, gerencia o analista pueden confirmar el paso a Facturado");
+                    "Solo admin o gerencia pueden confirmar el paso a Facturado");
             }
         }
         // ... resto de la lógica
@@ -316,15 +336,17 @@ public class OportunidadService {
 
 ### 4.1 Empresa sin vendedor asignado
 
-Si `empresas.id_vendedor = NULL`, la empresa solo es visible para `admin`, `gerencia` y `jdv`. Ningún `vendedor` ni `analista` puede verla.
+Si `empresas.id_vendedor = NULL`, la empresa solo es visible para `admin`, `gerencia` y `jdv` por la vía de cartera. Ningún `vendedor` puede verla por esa vía. **Actualizado 2026-08-18:** un `analista`/`otro` tampoco la ve por cartera (no tiene), pero si un supervisor lo agrega como colaborador en una tarea vinculada a esa empresa, sí la vería vía colaboración — la visibilidad de rol de apoyo no depende de `id_vendedor`.
 
 ### 4.2 Tareas sin asignar
 
-Si `tareas.id_asignado = NULL`, la tarea la puede ver y completar cualquier `vendedor` o `analista` que sea el vendedor de la oportunidad o empresa vinculada. Si ninguno aplica, solo la ven admin/gerencia/jdv.
+Si `tareas.id_asignado = NULL`, la tarea la puede ver y completar cualquier `vendedor` que sea el vendedor de la oportunidad o empresa vinculada, o `analista`/`otro` que colabore en ella. Si ninguno aplica, solo la ven admin/gerencia/jdv. (Este módulo no se tocó en el cambio del 2026-08-18; la redacción se ajustó aquí solo para no seguir describiendo a `analista` como si tuviera cartera propia.)
 
-### 4.3 Analista financiero en fases futuras
+### 4.3 Analista financiero — rol de apoyo (actualizado 2026-08-18)
 
-En el MVP el `analista` tiene visibilidad de vendedor con el único privilegio adicional de confirmar el paso a `facturado`. En fases posteriores, cuando se implemente el módulo financiero, el analista necesitará acceso a campos que hoy no existen. El panel de administración de permisos (post-MVP) permitirá configurar esto sin una nueva migración de roles.
+`analista` (y `otro`, con los mismos permisos) dejó de tener visibilidad de vendedor y el privilegio de confirmar `facturado`. Es ahora un **rol de apoyo sin cartera propia**: solo lectura sobre empresas y oportunidades, únicamente donde colabora vía una tarea (`ids_colaboradores`); no crea ni edita empresas/oportunidades, no aplica descuentos por ninguna vía, no crea solicitudes de aprobación. El cambio se hizo porque producto identificó que la restricción de solo lectura solo se cumplía en el frontend, no en el backend (sin seguridad real).
+
+Cuando se implemente el módulo financiero, el analista necesitará acceso a campos que hoy no existen — eso sigue pendiente y no está resuelto por este cambio. El panel de administración de permisos (post-MVP) permitirá configurar esto sin una nueva migración de roles.
 
 ### 4.4 Reasignación y visibilidad histórica
 
