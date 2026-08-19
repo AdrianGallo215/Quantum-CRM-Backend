@@ -44,6 +44,11 @@ class SolicitudServiceImpl(
         request: CrearSolicitudRequest,
         usuario: UsuarioActual,
     ): SolicitudDto {
+        if (usuario.esRolApoyo) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: no puedes crear solicitudes de aprobación",
+            )
+        }
         val tipo = requireNotNull(request.tipo)
         val entidadId = requireNotNull(request.entidadId)
         val (rolAprobador, entidadTipo, descripcion) =
