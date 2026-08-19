@@ -161,23 +161,23 @@ Todos los endpoints de listado aceptan:
 
 La visibilidad de datos varía según el rol del usuario autenticado. El backend aplica estos filtros automáticamente — el frontend no puede sobreescribirlos.
 
-| Recurso | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo asignadas |
-| Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Ver todas las tareas | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Reasignar empresa directo (cascada automática a sus oportunidades activas) | ✓ | ✓ | — (vía solicitud) | — | — |
-| Ver / gestionar Cartera Maestra | ✓ | ✓ | — | — | — |
-| Validar paso a Facturado | ✓ | ✓ | — | — | ✓ |
-| Crear empleado | ✓ | — | — | — | — |
-| Modificar catálogo de eventos | ✓ | — | — | — | — |
-| Modificar financiadoras | ✓ | ✓ | — | — | — |
-| Modificar modelos | ✓ | ✓ | — | — | — |
-| Eliminar empresa / oportunidad (definitivo, cascada) | ✓ | — | — | — | — |
+| Recurso | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo donde colabora vía tarea | Igual que analista |
+| Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo donde colabora vía tarea | Igual que analista |
+| Ver todas las tareas | ✓ | ✓ | ✓ | Solo propias | Solo propias (sin cambios) | Igual que analista |
+| Reasignar empresa directo (cascada automática a sus oportunidades activas) | ✓ | ✓ | — (vía solicitud) | — | — | — |
+| Ver / gestionar Cartera Maestra | ✓ | ✓ | — | — | — | — |
+| Validar paso a Facturado | ✓ | ✓ | — | — | — | — |
+| Crear empleado | ✓ | — | — | — | — | — |
+| Modificar catálogo de eventos | ✓ | — | — | — | — | — |
+| Modificar financiadoras | ✓ | ✓ | — | — | — | — |
+| Modificar modelos | ✓ | ✓ | — | — | — | — |
+| Eliminar empresa / oportunidad (definitivo, cascada) | ✓ | — | — | — | — | — |
 
-`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
+`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y en oportunidades. **`analista`/`otro` (roles de apoyo, actualizado 2026-08-18) ya no aplican el mismo filtro que `vendedor`**: no tienen cartera propia (`id_vendedor`), y su visibilidad es exclusivamente sobre empresas/oportunidades donde el usuario figura como colaborador de una tarea (`ids_colaboradores`). Tampoco crean ni editan empresas/oportunidades, ni confirman `facturado`. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y los roles de apoyo en todos los endpoints. Detalle completo por operación en `matriz_permisos.md`.
 
-**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §19): `vendedor` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite. Los roles de apoyo (`analista`, `otro`) no aplican descuentos por ninguna vía — ni directo ni por solicitud.
+**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §20 Solicitudes): `vendedor` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite. Los roles de apoyo (`analista`, `otro`) no aplican descuentos por ninguna vía — ni directo ni por solicitud.
 
 ---
 
@@ -555,7 +555,7 @@ Reemite ambas cookies.
 ### PUT /empresas/:id
 > Actualiza datos de una empresa. No actualiza `estado_cartera` ni `id_vendedor`.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su empresa) — **los roles de apoyo (`analista`, `otro`) no pueden editar ninguna empresa: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:** mismos campos que POST, todos opcionales. Si `segmentos` viene en el body, reemplaza completamente los segmentos actuales.
 
@@ -603,7 +603,7 @@ Reemite ambas cookies.
 ### POST /empresas/:id/eventos
 > Registra un nuevo evento en la empresa, sin oportunidad asociada.
 
-**Roles:** todos (solo su empresa si es vendedor/analista — mismo filtro que `PATCH /empresas/:id/estado-cartera`)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — este endpoint no tiene guard de escritura propio, a diferencia de `PATCH /empresas/:id/estado-cartera`, así que no está bloqueado; sin verificar si es intencional, ver `matriz_permisos.md §2.5`)
 
 **Body** — idéntico al de `POST /oportunidades/:id/eventos` (catálogo o personalizado, §11).
 
@@ -618,7 +618,7 @@ Reemite ambas cookies.
 ### PATCH /empresas/:id/estado-cartera
 > Cambia el estado de cartera manualmente. Solo acepta estados manuales.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su empresa) — **los roles de apoyo (`analista`, `otro`) no pueden cambiar el estado de cartera: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:**
 ```json
@@ -864,7 +864,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /empresas/:id/contactos
 > Vincula un contacto existente a una empresa.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo empresas donde colaboran vía tarea — no bloqueado, a diferencia de las operaciones de escritura sobre la empresa misma)
 
 **Body:**
 ```json
@@ -883,7 +883,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### PUT /empresas/:id/contactos/:contacto_id
 > Actualiza el cargo o rol del contacto en esta empresa.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo empresas donde colaboran vía tarea — no bloqueado, a diferencia de las operaciones de escritura sobre la empresa misma)
 
 **Body:** `{ "cargo": "Socio", "toma_decision": false, "es_principal": false }`
 
@@ -894,7 +894,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### DELETE /empresas/:id/contactos/:contacto_id
 > Desvincula un contacto de una empresa. No elimina el contacto.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo empresas donde colaboran vía tarea — no bloqueado, a diferencia de las operaciones de escritura sobre la empresa misma)
 
 **Respuesta 204:** sin body.
 
@@ -981,7 +981,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /oportunidades
 > Crea una nueva oportunidad.
 
-**Roles:** todos (la empresa debe estar asignada al vendedor si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (la empresa debe estar asignada al vendedor si es `vendedor`) — **los roles de apoyo (`analista`, `otro`) no pueden crear oportunidades: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:**
 ```json
@@ -1104,7 +1104,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PUT /oportunidades/:id
 > Actualiza campos negociables de la oportunidad. No cambia el estado.
 
-**Roles:** todos (solo su oportunidad si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su oportunidad) — **los roles de apoyo (`analista`, `otro`) no pueden editar ninguna oportunidad: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:** `id_modelo`, `cantidad`, `precio_unitario`, `dcto`, `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado` — todos opcionales.
 
@@ -1198,7 +1198,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### POST /oportunidades/:id/contactos
 > Vincula un contacto a la oportunidad con su rol.
 
-**Roles:** todos (solo su oportunidad si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su oportunidad) — **los roles de apoyo (`analista`, `otro`) no pueden vincular contactos a una oportunidad: `403 PERMISO_INSUFICIENTE`** (2026-08-18). A diferencia de la vinculación de contactos a una *empresa* (§9), que sí les está permitida donde colaboran — ver `matriz_permisos.md §2.3`.
 
 **Body:** `{ "id_contacto": 5, "rol_en_oportunidad": "Contacto Principal" }`
 
@@ -1274,7 +1274,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### POST /oportunidades/:id/eventos
 > Registra un nuevo evento en la oportunidad.
 
-**Roles:** todos (solo su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su oportunidad; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body (evento del catálogo):**
 ```json
@@ -1304,7 +1304,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /eventos/:id/ocurrido
 > Marca un evento como ocurrido.
 
-**Roles:** todos (solo eventos de su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo eventos de su oportunidad; roles de apoyo `analista`/`otro`: solo eventos de oportunidades donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body:**
 ```json
@@ -1340,7 +1340,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /eventos/:id/descartado
 > Marca un evento como descartado.
 
-**Roles:** todos (solo eventos de su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo eventos de su oportunidad; roles de apoyo `analista`/`otro`: solo eventos de oportunidades donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body:** `{ "descripcion": "Evento ya no aplica" }` (opcional)
 
@@ -1351,7 +1351,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PUT /eventos/:id
 > Actualiza fechas o descripción de un evento pendiente.
 
-**Roles:** todos (solo eventos de su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo eventos de su oportunidad; roles de apoyo `analista`/`otro`: solo eventos de oportunidades donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body:** `fecha_estimada`, `fecha_seguimiento`, `descripcion` — todos opcionales.
 
@@ -2041,7 +2041,7 @@ Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una 
 ### POST /solicitudes
 > Crea una solicitud de aprobación.
 
-**Roles:** `vendedor` `analista` `jdv` (según tipo; `gerencia`/`admin` no solicitan, ejecutan directo)
+**Roles:** `vendedor` `jdv` (según tipo; `gerencia`/`admin` no solicitan, ejecutan directo). **Los roles de apoyo (`analista`, `otro`) no pueden crear ninguna solicitud: `403 PERMISO_INSUFICIENTE`** (2026-08-18) — no tienen margen de descuento por ninguna vía ni reasignan clientes.
 
 **Body (descuento):**
 ```json
@@ -2073,6 +2073,8 @@ Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una 
 
 ### GET /solicitudes
 > Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista` solo las propias.
+>
+> **⚠️ Hallazgo de seguridad preexistente, no introducido por el cambio del 2026-08-18:** el rol `otro` no está contemplado en el filtro de visibilidad — hoy ve *todas* las solicitudes de la empresa sin restricción (incluye montos de descuento y motivos de reasignación ajenos). Fuera del alcance del cambio de roles de apoyo; requiere un fix propio. Ver `matriz_permisos.md §2.12`.
 
 **Query params:** `estado` (`pendiente|aprobada|denegada`), `tipo`, `mias=true` (fuerza "solo las que yo creé").
 
@@ -2165,7 +2167,9 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 ---
 
 ### GET /metas-venta
-> Lista metas, paginado estándar (§4). `admin`/`gerencia`/`jdv` ven todas (el jdv ve todo el equipo, incluida la suya); `vendedor`/`analista` solo las propias.
+> Lista metas, paginado estándar (§4). `admin`/`gerencia`/`jdv` ven todas (el jdv ve todo el equipo, incluida la suya); `vendedor`/`analista` solo las propias (en la práctica vacío para `analista`, que no tiene meta).
+>
+> **⚠️ Hallazgo de seguridad preexistente, no introducido por el cambio del 2026-08-18:** el rol `otro` no está contemplado en el filtro de visibilidad de este listado — hoy ve *todas* las metas sin restricción. El detalle (`GET /metas-venta/:id`) sí está cerrado. Fuera del alcance del cambio de roles de apoyo; requiere un fix propio. Ver `matriz_permisos.md §2.13`.
 
 **Query params:** `id_empleado`, `anio`, `estado` (`propuesta|aprobada|rechazada`).
 

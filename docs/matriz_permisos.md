@@ -35,12 +35,13 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | **Reportes** | Todos | Todos | Todos | Sin acceso | Sin acceso | Igual que analista |
 | **Log de estados** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de oportunidades donde colabora (mismo mecanismo que Eventos) | Igual que analista |
 
-**Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente `oportunidades`, `empresas` y `solicitudes` (los módulos con lógica propia de escritura/límites), más el filtro de colaboración expuesto por `tareas`. Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
-- **Contactos:** el permiso de vinculación de `analista`/`otro` sigue existiendo en código, hoy inerte porque ya no tiene cartera propia.
-- **Metas de venta (`MetaVentaServiceImpl`):** el rol `otro` no está contemplado en el filtro de visibilidad (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — hoy ve todas las metas sin restricción, una fuga de visibilidad preexistente y no introducida por este cambio.
-- **Prospección (`ProspeccionServiceImpl`) e Inicio (`InicioService`):** siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración vía tarea — en la práctica devuelven vacío para un rol de apoyo, no una fuga, pero tampoco reflejan el nuevo modelo de visibilidad.
+**Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente la escritura y visibilidad de `oportunidades` y `empresas`, y el guard de creación de `solicitudes` (más el filtro de colaboración expuesto por `tareas`). Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
+- **Contactos:** el permiso de vinculación de `analista`/`otro` sigue existiendo en código. **No es inerte** — al resolver visibilidad vía `vinculoVisible`, hereda automáticamente la regla de colaboración de oportunidades/empresas (igual que Eventos, §2.5): un rol de apoyo puede vincular/desvincular contactos en toda empresa/oportunidad donde colabora.
+- **Solicitudes de aprobación (`SolicitudServiceImpl`):** el rol `otro` no está contemplado en el filtro de bandeja (`filtros.mias || rol == "vendedor" || rol == "analista"`) — ve *todas* las solicitudes de la empresa sin restricción. **Fuga de seguridad preexistente**, no introducida por este cambio; ver nota de §2.12.
+- **Metas de venta (`MetaVentaServiceImpl`):** el rol `otro` tampoco está contemplado en su filtro de visibilidad del *listado* (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — ve todas las metas del listado sin restricción (el detalle sí está cerrado). **Fuga de seguridad preexistente**, no introducida por este cambio; ver nota de §2.13.
+- **Prospección (`ProspeccionServiceImpl`) e Inicio (`InicioService`):** siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración vía tarea — en la práctica devuelven vacío para un rol de apoyo (fallan cerrado), no una fuga, pero tampoco reflejan el nuevo modelo de visibilidad.
 
-Ninguno de los tres es una fuga de seguridad explotable en las dos últimas (fallan cerrado); el de Metas de venta sí lo es y amerita atención. Los tres quedan fuera de este cambio — candidatos a un ticket aparte.
+Las fugas de **Solicitudes** y **Metas de venta** son explotables por el rol `otro` hoy mismo y ameritan un fix propio con prioridad — la de Solicitudes es la más sensible por el tipo de dato que expone (descuentos, motivos de reasignación). Los cuatro puntos quedan fuera de este cambio — candidatos a un ticket aparte vía `redactar-requerimiento`.
 
 ---
 
@@ -80,7 +81,7 @@ Ninguno de los tres es una fuga de seguridad explotable en las dos últimas (fal
 
 ### 2.3 Contactos
 
-> **Sin cambios en este módulo (2026-08-18):** el cambio de `analista`/`otro` a rol de apoyo no tocó `ContactoService`. Las filas de `analista` reflejan el permiso preexistente, que en la práctica queda inerte para vincular a empresas/oportunidades (ya no tiene "sus empresas"/"suyas" — ver §1). Si conviene bloquearlo explícitamente, es un ticket aparte.
+> **Sin guard propio en este módulo (2026-08-18):** el cambio de `analista`/`otro` a rol de apoyo no tocó `ContactoServiceImpl`. Sus operaciones de vinculación resuelven visibilidad llamando a `EmpresaService.vinculoVisible`/`OportunidadService.vinculoVisible`, que **si** aplican la regla nueva — pero eso significa cosas distintas para empresas y para oportunidades, ver cada fila.
 
 | Operación | admin | gerencia | jdv | vendedor | analista | otro |
 |---|---|---|---|---|---|---|
@@ -88,12 +89,14 @@ Ninguno de los tres es una fuga de seguridad explotable en las dos últimas (fal
 | Crear contacto | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Editar contacto | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Eliminar contacto | ✓ | ✓ | ✓ | — | — | — |
-| Vincular contacto a empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas (inerte: sin cartera propia) | Igual que analista |
-| Editar vínculo (cargo / toma_decision) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas (inerte) | Igual que analista |
-| Desvincular contacto de empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo sus empresas (inerte) | Igual que analista |
-| Vincular contacto a oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas (inerte) | Igual que analista |
-| Editar rol en oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas (inerte) | Igual que analista |
-| Desvincular de oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | ✓ Solo las suyas (inerte) | Igual que analista |
+| Vincular contacto a empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo donde colabora (vía `vinculoVisible`, no está bloqueado) | Igual que analista |
+| Editar vínculo (cargo / toma_decision) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo donde colabora | Igual que analista |
+| Desvincular contacto de empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo donde colabora | Igual que analista |
+| Vincular contacto a oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | — (bloqueado por `rechazarSiEsApoyo`, 403) | Igual que analista |
+| Editar rol en oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | — (bloqueado, 403) | Igual que analista |
+| Desvincular de oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | — (bloqueado, 403) | Igual que analista |
+
+**Nota:** la asimetría es real, no un error de esta tabla — `EmpresaServiceImpl.vinculoVisible` no tiene guard de escritura (solo resuelve visibilidad), mientras que `OportunidadServiceImpl` sí bloquea con `rechazarSiEsApoyo` en sus métodos de vinculación de contacto. Un `analista` puede hoy vincular/desvincular contactos de una empresa donde colabora, pero no de una oportunidad donde colabora. Si esta diferencia es intencional o un descuido queda para el ticket aparte de Contactos mencionado en §1.
 
 ---
 
@@ -201,7 +204,7 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 | Prospección (`GET /prospeccion`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Sin cambios de código — `ProspeccionServiceImpl` sigue filtrando por `id_vendedor = usuario.id`, no por colaboración; vacío en la práctica | Igual que analista |
 | Pipeline (vista sobre `GET /oportunidades`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
 | Cartera (`GET /empresas`) | ✓ Todas | ✓ Todas | ✓ Todas | ✓ Solo las suyas | ✓ Solo donde colabora | Igual que analista |
-| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — | — |
+| Gerencia (bandeja de solicitudes) | ✓ Todas las bandejas | ✓ Su bandeja | ✓ Su bandeja + propias | — | — | ⚠️ Ve todo por el hallazgo de §2.12, no por diseño — no es un "—" real |
 | Cartera Maestra | ✓ | ✓ | — | — | — | — |
 
 ---
@@ -213,7 +216,7 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 | Crear solicitud de descuento (sobre su límite) | — (aplica directo) | — (aplica directo) | ✓ (>7%) | ✓ (>3%) | — | — |
 | Crear solicitud de reasignación de cliente | — (reasigna directo) | — (reasigna directo) | ✓ | — | — | — |
 | Ver bandeja de aprobación | ✓ Todas | ✓ Las dirigidas a gerencia | ✓ Las dirigidas a jdv | — | — | — |
-| Ver solicitudes propias (históricas) | ✓ | ✓ | ✓ | ✓ | ✓ (no genera nuevas, conserva las que ya tenía) | Igual que analista |
+| Ver solicitudes propias (históricas) | ✓ | ✓ | ✓ | ✓ | ✓ (no genera nuevas, conserva las que ya tenía) | ⚠️ Sin restricción explícita en código (ver nota) |
 | Aprobar / denegar | ✓ Cualquiera | ✓ Su bandeja | ✓ Su bandeja | — | — | — |
 | Ver / gestionar cartera maestra | ✓ | ✓ | — | — | — | — |
 
@@ -221,7 +224,8 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 - El aprobador lo deriva el backend al crear la solicitud; nunca lo elige el solicitante (`gerencia_solicitudes_modelo_datos.md §3.4`).
 - Al aprobar, el cambio se aplica en la misma transacción que resuelve la solicitud (descuento: recalcula `monto_total`; reasignación: reutiliza `reasignarVendedor` con su cascada existente).
 - `gerencia` y `admin` nunca son destino de asignación de vendedor (no tienen cartera propia).
-- **Roles de apoyo (2026-08-18):** `analista`/`otro` ya no pueden crear ninguna solicitud — no tienen margen de descuento por ninguna vía (§2.4) y no reasignan clientes. Conservan la visibilidad de lectura sobre solicitudes que hayan creado antes de este cambio; no es una regresión de acceso.
+- **Roles de apoyo (2026-08-18):** `analista`/`otro` ya no pueden crear ninguna solicitud — no tienen margen de descuento por ninguna vía (§2.4) y no reasignan clientes. `analista` conserva la visibilidad de lectura sobre solicitudes que haya creado antes de este cambio (filtro `usuario.rol == "analista"` intacto, sin tocar a propósito).
+- **⚠️ Hallazgo de seguridad preexistente, no introducido por este cambio, y más severo que el de metas de venta (2026-08-18):** el filtro de bandeja de `SolicitudServiceImpl.especificacion()` no tiene ninguna rama para el rol `otro` — cae fuera de `admin`, `gerencia`, `jdv` y de la condición `filtros.mias || rol == "vendedor" || rol == "analista"`, así que **no se le agrega ningún predicado de alcance**: `GET /solicitudes` le devuelve *todas* las solicitudes de la empresa, incluidos montos de descuento y motivos de reasignación de otros vendedores. El detalle (`GET /solicitudes/:id`) sí está cerrado. No se corrige en este cambio (el módulo de solicitudes está fuera de su alcance más allá del guard de creación de Task 8) — requiere un fix propio, con prioridad alta por la sensibilidad de los datos que expone.
 
 ---
 
@@ -239,7 +243,7 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 **Notas:**
 - La meta es en unidades vendidas, no en monto. Un vendedor solo aparece en la tabla como `id_empleado`, nunca `gerencia`/`admin` (no tienen cartera propia, igual que en reasignación de vendedor).
 - Las unidades de una oportunidad cuentan para el cumplimiento del vendedor únicamente mientras esté en estado `facturado` (`oportunidades.facturado_en`); al cancelarse (retroceder de estado) o eliminarse estando facturada, dejan de contar sin acción manual.
-- **⚠️ Hallazgo de seguridad preexistente, no introducido por este cambio (2026-08-18):** el filtro de `MetaVentaServiceImpl.especificacion()` restringe por `idEmpleado = usuario.id` solo si `usuario.rol == "vendedor" || usuario.rol == "analista"`. El rol `otro` no cae en esa condición, así que hoy **ve todas las metas de venta sin restricción**, como si fuera supervisor. No se corrige en este cambio (el módulo de metas de venta está fuera de su alcance) — requiere un fix propio.
+- **⚠️ Hallazgo de seguridad preexistente, no introducido por este cambio (2026-08-18):** el filtro de `MetaVentaServiceImpl.especificacion()` (el que usa el **listado**, `GET /metas-venta`) restringe por `idEmpleado = usuario.id` solo si `usuario.rol == "vendedor" || usuario.rol == "analista"`. El rol `otro` no cae en esa condición, así que hoy **el listado le devuelve todas las metas sin restricción**, como si fuera supervisor. El detalle (`GET /metas-venta/:id`) sí está cerrado (`visible()`, `else -> meta.idEmpleado == usuario.id`) — la fuga es solo del listado. No se corrige en este cambio (el módulo de metas de venta está fuera de su alcance) — requiere un fix propio.
 
 ---
 
