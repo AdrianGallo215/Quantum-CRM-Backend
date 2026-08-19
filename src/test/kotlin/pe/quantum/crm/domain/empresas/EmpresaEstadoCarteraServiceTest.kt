@@ -12,6 +12,7 @@ import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.dto.ActualizarEmpresaRequest
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.OrigenLead
@@ -44,6 +45,7 @@ class EmpresaEstadoCarteraServiceTest {
     private val driveStorageService = mockk<DriveStorageService>()
     private val contactoService = mockk<ContactoService>()
     private val transactionTemplate = mockk<TransactionTemplate>()
+    private val tareaService = mockk<TareaService>()
     private val service =
         EmpresaServiceImpl(
             empresaRepository,
@@ -53,6 +55,7 @@ class EmpresaEstadoCarteraServiceTest {
             driveStorageService,
             contactoService,
             transactionTemplate,
+            tareaService,
         )
 
     private val gerencia = UsuarioActual(id = 1, rol = "gerencia")
