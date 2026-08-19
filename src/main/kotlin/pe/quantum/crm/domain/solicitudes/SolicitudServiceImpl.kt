@@ -243,7 +243,7 @@ class SolicitudServiceImpl(
         Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
             when {
-                filtros.mias || usuario.rol == "vendedor" || usuario.rol == "analista" ->
+                filtros.mias || usuario.rol == "vendedor" || usuario.esRolApoyo ->
                     predicados += cb.equal(root.get<Long>("idSolicitante"), usuario.id)
                 usuario.rol == "gerencia" ->
                     predicados += cb.equal(root.get<AprobadorSolicitud>("rolAprobador"), AprobadorSolicitud.gerencia)
