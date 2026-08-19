@@ -68,7 +68,7 @@ class OportunidadContactosTest {
             consultas,
             notificacionService,
             driveStorageService,
-            tareaService,
+            OportunidadVisibilidad(tareaService),
         )
 
     private val vendedor = UsuarioActual(id = 5, rol = "vendedor")

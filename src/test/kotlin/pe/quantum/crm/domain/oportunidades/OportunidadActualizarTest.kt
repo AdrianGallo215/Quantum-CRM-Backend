@@ -63,7 +63,7 @@ class OportunidadActualizarTest {
             consultas,
             notificacionService,
             driveStorageService,
-            tareaService,
+            OportunidadVisibilidad(tareaService),
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")

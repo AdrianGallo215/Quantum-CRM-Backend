@@ -1,7 +1,6 @@
 package pe.quantum.crm.domain.oportunidades
 
 import jakarta.persistence.criteria.Predicate
-import org.springframework.context.annotation.Lazy
 import org.springframework.context.event.EventListener
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
@@ -29,7 +28,6 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
-import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.CamposOrdenables
@@ -66,11 +64,7 @@ class OportunidadServiceImpl(
     private val consultas: OportunidadConsultas,
     private val notificacionService: NotificacionService,
     private val driveStorageService: DriveStorageService,
-    // Solo la interfaz publica de tareas (regla 12). `@Lazy` porque tareas ya
-    // depende de OportunidadService (vinculoVisible) y Spring Boot 3 rechaza los
-    // ciclos de constructor; el proxy corta el ciclo al arrancar (mismo patron
-    // que `EmpresaServiceImpl.contactoService`).
-    @Lazy private val tareaService: TareaService,
+    private val visibilidad: OportunidadVisibilidad,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -83,7 +77,7 @@ class OportunidadServiceImpl(
         request: CrearOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         val empresa = empresaService.vinculoVisible(request.idEmpresa, usuario)
         validarLimiteDescuento(request.dcto, usuario)
         // Snapshot del vendedor de la empresa (reglas §8.4). Una empresa sin vendedor
@@ -183,7 +177,7 @@ class OportunidadServiceImpl(
         request: ActualizarOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         if (request.montoTotal != null) {
             throw MontoNoEditableException()
         }
@@ -236,7 +230,7 @@ class OportunidadServiceImpl(
         request: CambiarEstadoRequest,
         usuario: UsuarioActual,
     ): CambioEstadoDto {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         val oportunidad = visibleBloqueando(id, usuario)
         val nuevo =
             runCatching { EstadoOportunidad.valueOf(request.estado) }.getOrNull()
@@ -374,7 +368,7 @@ class OportunidadServiceImpl(
         request: ContactoVinculoRequest,
         usuario: UsuarioActual,
     ): ContactoVinculoRequest {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         if (!contactoService.existe(request.idContacto)) {
             throw NoEncontradoException("El contacto no existe")
@@ -402,7 +396,7 @@ class OportunidadServiceImpl(
         rolEnOportunidad: String?,
         usuario: UsuarioActual,
     ): ContactoVinculoRequest {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         val vinculo =
             contactoOportunidadRepository
@@ -419,7 +413,7 @@ class OportunidadServiceImpl(
         idContacto: Long,
         usuario: UsuarioActual,
     ) {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         val vinculo =
             contactoOportunidadRepository
@@ -575,7 +569,7 @@ class OportunidadServiceImpl(
         id: Long,
         usuario: UsuarioActual,
     ): String {
-        rechazarSiEsApoyo(usuario)
+        visibilidad.rechazarSiEsApoyo(usuario)
         return asegurarCarpetaDriveDe(visible(id, usuario))
     }
 
@@ -627,46 +621,16 @@ class OportunidadServiceImpl(
         codigoModelo: String?,
     ): String = listOfNotNull("OP-$idOportunidad", codigoModelo).joinToString(" - ")
 
-    /**
-     * Roles de apoyo: solo lectura sobre oportunidades (matriz_permisos.md).
-     * 403 y no 404 a proposito: la entidad puede ser perfectamente visible para
-     * el (colabora en una tarea suya); lo que no tiene es permiso de escritura, y
-     * el mensaje debe decirlo para que el cliente no lo confunda con "no existe".
-     */
-    private fun rechazarSiEsApoyo(usuario: UsuarioActual) {
-        if (usuario.esRolApoyo) {
-            throw PermisoInsuficienteException(
-                "Tu rol es de apoyo: puedes consultar esta oportunidad, pero no modificarla",
-            )
-        }
-    }
-
     private fun visible(
         id: Long,
         usuario: UsuarioActual,
     ): Oportunidad {
         val oportunidad = entidad(id)
-        if (!alcanza(oportunidad, usuario)) {
+        if (!visibilidad.alcanza(oportunidad, usuario)) {
             throw NoEncontradoException("La oportunidad no existe")
         }
         return oportunidad
     }
-
-    /**
-     * Visibilidad unificada para detalle y listado. Rol de apoyo: solo donde
-     * colabora via tarea (no tiene cartera propia). Vendedor: solo lo suyo.
-     * Supervisor: todo.
-     */
-    private fun alcanza(
-        oportunidad: Oportunidad,
-        usuario: UsuarioActual,
-    ): Boolean =
-        when {
-            usuario.esRolApoyo ->
-                oportunidad.id in tareaService.idsOportunidadesDondeColabora(usuario.id)
-            usuario.visibilidadRestringida -> oportunidad.idVendedor == usuario.id
-            else -> true
-        }
 
     /**
      * Igual que [visible] pero tomando el lock de la fila. Cambiar de estado es la
@@ -681,7 +645,7 @@ class OportunidadServiceImpl(
         val oportunidad =
             oportunidadRepository.findByIdBloqueando(id)
                 ?: throw NoEncontradoException("La oportunidad no existe")
-        if (!alcanza(oportunidad, usuario)) {
+        if (!visibilidad.alcanza(oportunidad, usuario)) {
             throw NoEncontradoException("La oportunidad no existe")
         }
         return oportunidad
@@ -710,18 +674,14 @@ class OportunidadServiceImpl(
     ): Specification<Oportunidad> {
         // Resuelto ANTES de construir la Specification, no dentro de su lambda:
         // Spring Data JPA evalua `toPredicate` dos veces por pagina (contenido y
-        // conteo), y `idsOportunidadesDondeColabora` es una consulta, no un `equal`
-        // gratis como el resto de predicados.
-        val idsColaboracion = if (usuario.esRolApoyo) tareaService.idsOportunidadesDondeColabora(usuario.id) else null
+        // conteo), y `idsColaboracion` es una consulta, no un `equal` gratis como
+        // el resto de predicados.
+        val idsColaboracion = visibilidad.idsColaboracion(usuario)
         return Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
-            if (idsColaboracion != null) {
-                // Conjunto vacio: `in(emptySet())` es SQL invalido o, peor, un
-                // predicado que no filtra nada. Falso explicito.
-                predicados +=
-                    if (idsColaboracion.isEmpty()) cb.disjunction() else root.get<Long>("id").`in`(idsColaboracion)
-            } else if (usuario.visibilidadRestringida) {
-                predicados += cb.equal(root.get<Long>("idVendedor"), usuario.id)
+            val predicadoVisibilidad = visibilidad.predicadoVisibilidad(root, cb, idsColaboracion, usuario)
+            if (predicadoVisibilidad != null) {
+                predicados += predicadoVisibilidad
             } else if (filtros.idVendedor != null) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), filtros.idVendedor)
             }

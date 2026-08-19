@@ -58,7 +58,7 @@ class OportunidadRolApoyoTest {
             consultas,
             notificacionService,
             driveStorageService,
-            tareaService,
+            OportunidadVisibilidad(tareaService),
         )
 
     private val analista = UsuarioActual(id = 7L, rol = "analista")

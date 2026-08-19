@@ -63,7 +63,7 @@ class OportunidadServiceImplTest {
             consultas,
             notificacionService,
             driveStorageService,
-            tareaService,
+            OportunidadVisibilidad(tareaService),
         )
 
     init {
@@ -223,7 +223,7 @@ class OportunidadServiceImplTest {
                 consultas,
                 notificacionServiceReal,
                 driveStorageService,
-                tareaService,
+                OportunidadVisibilidad(tareaService),
             )
         val entidad = oportunidad(idVendedor = 1)
         every { oportunidadRepository.findByIdBloqueando(100) } returns entidad

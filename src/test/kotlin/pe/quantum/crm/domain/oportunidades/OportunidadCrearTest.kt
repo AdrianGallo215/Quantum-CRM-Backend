@@ -63,7 +63,7 @@ class OportunidadCrearTest {
             consultas,
             notificacionService,
             driveStorageService,
-            tareaService,
+            OportunidadVisibilidad(tareaService),
         )
 
     private val busX = ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal("92000.00"))

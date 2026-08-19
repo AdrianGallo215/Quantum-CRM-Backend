@@ -68,7 +68,7 @@ class OportunidadCambiarEstadoInvariantesTest {
             consultas,
             notificacionService,
             driveStorageService,
-            tareaService,
+            OportunidadVisibilidad(tareaService),
         )
 
     private fun oportunidad(
