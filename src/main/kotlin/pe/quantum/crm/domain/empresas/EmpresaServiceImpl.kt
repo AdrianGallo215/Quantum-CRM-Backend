@@ -153,6 +153,7 @@ class EmpresaServiceImpl(
         conCarpetaDrive: Boolean,
         reutilizarDelMismoVendedor: Boolean,
     ): AltaEmpresaResultado {
+        rechazarSiEsApoyo(usuario)
         val idVendedor = vendedorAlCrear(request.idVendedor, usuario)
         val existente = empresaRepository.findByRuc(request.ruc)
         if (existente != null) {
@@ -249,7 +250,10 @@ class EmpresaServiceImpl(
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+    ): String {
+        rechazarSiEsApoyo(usuario)
+        return asegurarCarpetaDriveDe(visible(id, usuario))
+    }
 
     /**
      * SIN `@Transactional` en los metodos publicos a proposito: aqui hay una llamada
@@ -293,6 +297,7 @@ class EmpresaServiceImpl(
         request: ActualizarEmpresaRequest,
         usuario: UsuarioActual,
     ): EmpresaDetalleDto {
+        rechazarSiEsApoyo(usuario)
         val empresa = visible(id, usuario)
         request.ruc?.let {
             if (it != empresa.ruc && empresaRepository.existsByRuc(it)) {
@@ -336,6 +341,7 @@ class EmpresaServiceImpl(
         estadoCartera: String,
         usuario: UsuarioActual,
     ): String {
+        rechazarSiEsApoyo(usuario)
         val empresa = visible(id, usuario)
         val nuevo =
             runCatching { EstadoCartera.valueOf(estadoCartera) }.getOrNull()
@@ -361,6 +367,7 @@ class EmpresaServiceImpl(
         idVendedor: Long,
         usuario: UsuarioActual,
     ): Long {
+        rechazarSiEsApoyo(usuario)
         if (!usuario.puedeReasignarDirecto) {
             throw PermisoInsuficienteException("La reasignación directa es exclusiva de gerencia; envía una solicitud")
         }
@@ -443,6 +450,7 @@ class EmpresaServiceImpl(
         idVendedor: Long?,
         usuario: UsuarioActual,
     ): CarteraMaestraDto {
+        rechazarSiEsApoyo(usuario)
         if (!usuario.puedeVerCarteraMaestra) {
             throw PermisoInsuficienteException("La cartera maestra es exclusiva de gerencia")
         }
@@ -505,6 +513,18 @@ class EmpresaServiceImpl(
     override fun idsSinCarpetaDrive(): List<Long> = empresaRepository.findIdsSinCarpetaDrive()
 
     // ── privados ───────────────────────────────────────────────
+
+    /**
+     * Roles de apoyo: solo lectura sobre empresas (matriz_permisos.md). 403 y no
+     * 404: la empresa puede ser visible para el si colabora en una tarea suya.
+     */
+    private fun rechazarSiEsApoyo(usuario: UsuarioActual) {
+        if (usuario.esRolApoyo) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: puedes consultar esta empresa, pero no modificarla",
+            )
+        }
+    }
 
     private fun entidad(id: Long): Empresa = empresaRepository.findById(id).orElseThrow { NoEncontradoException("La empresa no existe") }
 
