@@ -143,4 +143,20 @@ class EmpresaRolApoyoTest {
         assertThatThrownBy { service.detalle(1L, analista) }
             .isInstanceOf(NoEncontradoException::class.java)
     }
+
+    /**
+     * Distingue "la regla cambio" de "sigue siendo la regla vieja": la empresa
+     * tiene `idVendedor == usuario.id`, que bajo la regla anterior
+     * (`visibilidadRestringida && idVendedor != id`) la haria "propia". El rol
+     * de apoyo no tiene cartera propia — solo colaboracion via tarea — asi que
+     * sin colaborar sigue siendo 404 aunque `idVendedor` coincida.
+     */
+    @Test
+    fun `un rol de apoyo no ve una empresa donde figura como idVendedor pero no colabora`() {
+        every { tareaService.idsEmpresasDondeColabora(7L) } returns setOf(99L)
+        every { empresaRepository.findById(1L) } returns Optional.of(empresaDe(id = 1L, idVendedor = 7L))
+
+        assertThatThrownBy { service.detalle(1L, analista) }
+            .isInstanceOf(NoEncontradoException::class.java)
+    }
 }
