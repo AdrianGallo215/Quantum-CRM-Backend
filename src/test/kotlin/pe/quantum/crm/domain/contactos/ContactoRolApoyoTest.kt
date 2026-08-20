@@ -341,4 +341,82 @@ class ContactoRolApoyoTest {
 
         verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
     }
+
+    // ── R7 / R10: escritura ────────────────────────────────────
+
+    private fun requestDeActualizacion() = pe.quantum.crm.domain.contactos.dto.ActualizarContactoRequest(tlf_1 = "999888777")
+
+    /**
+     * 403 y no 404 a proposito (decision de producto, R10): en modo vincular este
+     * mismo usuario puede ver el contacto por nombre, asi que su existencia no es
+     * secreta para el — esconderlo al editar mentiria. Mismo criterio que
+     * `EmpresaServiceImpl.rechazarSiEsApoyo`.
+     */
+    @Test
+    fun `un rol de apoyo no puede editar un contacto fuera de su alcance`() {
+        contactoExiste(1)
+        colaboraEn(idEmpleado = 7, empresas = setOf(99L), contactos = listOf(50L))
+
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.actualizar(1, requestDeActualizacion(), analista) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+            .hasMessageContaining("apoyo")
+
+        verify(exactly = 0) { contactoRepository.save(any()) }
+    }
+
+    @Test
+    fun `el rol otro tampoco puede editar un contacto fuera de su alcance`() {
+        contactoExiste(1)
+        every { tareaService.idsEmpresasDondeColabora(8) } returns emptySet()
+
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.actualizar(1, requestDeActualizacion(), otro) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+
+        verify(exactly = 0) { contactoRepository.save(any()) }
+    }
+
+    /** Dentro de su alcance sigue pudiendo editar: R7 restringe, no prohibe. */
+    @Test
+    fun `un rol de apoyo puede editar un contacto de una empresa donde colabora`() {
+        contactoExiste(1)
+        colaboraEn(idEmpleado = 7, empresas = setOf(3L), contactos = listOf(1L))
+        every { contactoRepository.save(any()) } answers { firstArg() }
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns emptyList()
+        every { empresaService.resumenPorIds(emptyList()) } returns emptyMap()
+
+        val dto = service.actualizar(1, requestDeActualizacion(), analista)
+
+        assertThat(dto.tlf_1).isEqualTo("999888777")
+        verify(exactly = 1) { contactoRepository.save(any()) }
+    }
+
+    /** R4: vendedor y supervisores no pierden nada. */
+    @Test
+    fun `un vendedor edita sin que se consulte la colaboracion`() {
+        contactoExiste(1)
+        every { contactoRepository.save(any()) } answers { firstArg() }
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns emptyList()
+        every { empresaService.resumenPorIds(emptyList()) } returns emptyMap()
+
+        service.actualizar(1, requestDeActualizacion(), vendedor)
+
+        verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
+    }
+
+    /**
+     * El 404 del inexistente gana al 403 del permiso: si el contacto no existe, la
+     * respuesta es la misma para todos los roles y no revela nada.
+     */
+    @Test
+    fun `editar un contacto inexistente sigue siendo 404 tambien para un rol de apoyo`() {
+        every { contactoRepository.findById(99) } returns java.util.Optional.empty()
+
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.actualizar(99, requestDeActualizacion(), analista) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+
+        verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
+    }
 }

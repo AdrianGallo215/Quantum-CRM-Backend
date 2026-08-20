@@ -29,6 +29,7 @@ import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.ContactoVinculadoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
+import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 
@@ -123,6 +124,7 @@ class ContactoServiceImpl(
         usuario: UsuarioActual,
     ): ContactoDto {
         val contacto = entidad(id)
+        rechazarSiFueraDeAlcance(id, usuario)
         request.nombres?.let { contacto.nombres = it }
         request.apellidos?.let { contacto.apellidos = it }
         request.email_1?.let { contacto.email_1 = it }
@@ -353,6 +355,31 @@ class ContactoServiceImpl(
             return emptySet()
         }
         return empresaContactoRepository.findByIdIdEmpresaIn(empresas).map { it.id.idContacto }.toSet()
+    }
+
+    /**
+     * Escritura de un rol de apoyo sobre un contacto que no alcanza: 403, no 404.
+     *
+     * Es una desviacion deliberada de CLAUDE.md regla 14, aprobada por producto
+     * (R10 del requerimiento). La regla existe para no confirmar la existencia de
+     * un recurso que el usuario no deberia poder enumerar — y aqui no aplica: en
+     * contexto `vincular` este mismo usuario ve legitimamente ese contacto por
+     * nombre, asi que su existencia no es secreta para el. Devolver 404 al editar
+     * mentiria sobre algo que el sistema le acaba de mostrar. Mismo razonamiento
+     * (y mismo status) que `EmpresaServiceImpl.rechazarSiEsApoyo`.
+     */
+    private fun rechazarSiFueraDeAlcance(
+        idContacto: Long,
+        usuario: UsuarioActual,
+    ) {
+        if (!usuario.esRolApoyo) {
+            return
+        }
+        if (idContacto !in idsContactosVisiblesPara(usuario)) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: solo puedes editar contactos de las empresas donde colaboras",
+            )
+        }
     }
 
     private fun Contacto.toListaDto(): ContactoListaDto {

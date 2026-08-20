@@ -435,4 +435,23 @@ class ContactoControllerWebMvcTest {
             jsonPath("$.error.code") { value("NO_ENCONTRADO") }
         }
     }
+
+    /** matriz_permisos.md §2.3: un rol de apoyo solo edita contactos donde colabora. */
+    @Test
+    fun `PUT contactos fuera del alcance de un rol de apoyo devuelve 403 PERMISO_INSUFICIENTE`() {
+        every { contactoService.actualizar(5, any(), any()) } throws
+            pe.quantum.crm.shared.exception.PermisoInsuficienteException(
+                "Tu rol es de apoyo: solo puedes editar contactos de las empresas donde colaboras",
+            )
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.put("/api/v1/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"tlf_1":"999888777"}"""
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.error.code") { value("PERMISO_INSUFICIENTE") }
+        }
+    }
 }
