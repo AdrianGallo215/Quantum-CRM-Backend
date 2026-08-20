@@ -6,6 +6,7 @@ import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
+import pe.quantum.crm.domain.contactos.dto.ContextoBusquedaContacto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VincularContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VinculoDto
@@ -20,6 +21,12 @@ import pe.quantum.crm.shared.security.UsuarioActual
  */
 @Suppress("TooManyFunctions", "LongParameterList")
 interface ContactoService {
+    /**
+     * Busqueda paginada de contactos. `contexto` decide el modo de visibilidad
+     * para los roles de apoyo (ver `ContextoBusquedaContacto`); el default es el
+     * restrictivo, asi que un llamante que no lo pase nunca abre la busqueda
+     * global por descuido.
+     */
     fun buscar(
         q: String?,
         idEmpresa: Long?,
@@ -28,6 +35,7 @@ interface ContactoService {
         perPage: Int?,
         sort: String?,
         dir: String?,
+        contexto: ContextoBusquedaContacto = ContextoBusquedaContacto.listado,
     ): Paginado<ContactoListaDto>
 
     /** Contacto + vinculacion a empresa en una sola transaccion (§9). */

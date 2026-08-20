@@ -1,6 +1,9 @@
 package pe.quantum.crm.domain.contactos
 
+import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Predicate
+import jakarta.persistence.criteria.Root
+import org.springframework.context.annotation.Lazy
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -10,6 +13,7 @@ import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
+import pe.quantum.crm.domain.contactos.dto.ContextoBusquedaContacto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.contactos.dto.EmpresaDeContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.EmpresaDeContactoDto
@@ -18,6 +22,7 @@ import pe.quantum.crm.domain.contactos.dto.VinculoDto
 import pe.quantum.crm.domain.contactos.dto.toResumen
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.ContactoDeEmpresaDto
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
@@ -28,11 +33,20 @@ import pe.quantum.crm.shared.security.UsuarioActual
 import java.time.LocalDateTime
 
 @Service
-@Suppress("TooManyFunctions") // Igual que su interfaz: vinculacion con empresas y oportunidades.
+// TooManyFunctions: vinculacion con empresas y oportunidades; igual que su interfaz.
+// LongParameterList: `buscar` arrastra los 4 parametros de paginacion del contrato
+// mas el contexto de visibilidad; son el contrato del endpoint, no una firma suelta.
+@Suppress("TooManyFunctions", "LongParameterList")
 class ContactoServiceImpl(
     private val contactoRepository: ContactoRepository,
     private val empresaContactoRepository: EmpresaContactoRepository,
     private val empresaService: EmpresaService,
+    // Solo la interfaz publica de tareas (CLAUDE.md regla 12): contactos nunca toca
+    // `tareas` ni `tarea_responsables`, recibe ids. `@Lazy` porque tareas ya depende
+    // de ContactoService (existe/resumenPorIds) y Spring Boot 3 rechaza los ciclos
+    // de constructor; el proxy corta el ciclo al arrancar. Mismo patron que
+    // EmpresaServiceImpl con este mismo colaborador.
+    @Lazy private val tareaService: TareaService,
 ) : ContactoService {
     @Transactional(readOnly = true)
     override fun buscar(
@@ -43,14 +57,21 @@ class ContactoServiceImpl(
         perPage: Int?,
         sort: String?,
         dir: String?,
+        contexto: ContextoBusquedaContacto,
     ): Paginado<ContactoListaDto> {
-        val idsPermitidos =
+        val idsDeLaEmpresa =
             idEmpresa?.let {
                 empresaService.vinculoVisible(it, usuario)
                 empresaContactoRepository.findByIdIdEmpresa(it).map { vinculo -> vinculo.id.idContacto }
             }
+        // Resuelto ANTES de construir la Specification, no dentro de su lambda:
+        // Spring Data JPA evalua `toPredicate` dos veces por pagina (contenido y
+        // conteo), y esto son dos consultas, no un `equal` gratis. Mismo criterio
+        // que EmpresaServiceImpl.especificacion.
+        val idsVisibles =
+            if (contexto.aplicaFiltroDeVisibilidadPara(usuario)) idsContactosVisiblesPara(usuario) else null
         val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
-        val resultado = contactoRepository.findAll(especificacion(q, idsPermitidos), pageRequest)
+        val resultado = contactoRepository.findAll(especificacion(q, idsDeLaEmpresa, idsVisibles), pageRequest)
         val items = resultado.content.map { it.toListaDto() }
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(items, meta)
@@ -250,17 +271,13 @@ class ContactoServiceImpl(
 
     private fun especificacion(
         q: String?,
-        idsPermitidos: List<Long>?,
+        idsDeLaEmpresa: List<Long>?,
+        idsVisibles: Set<Long>?,
     ): Specification<Contacto> =
         Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
-            if (idsPermitidos != null) {
-                if (idsPermitidos.isEmpty()) {
-                    predicados += cb.disjunction()
-                } else {
-                    predicados += root.get<Long>("id").`in`(idsPermitidos)
-                }
-            }
+            restriccionPorIds(idsDeLaEmpresa, root, cb)?.let { predicados += it }
+            restriccionPorIds(idsVisibles, root, cb)?.let { predicados += it }
             q?.takeIf { it.isNotBlank() }?.let { texto ->
                 val patron = "%${texto.lowercase()}%"
                 predicados +=
@@ -274,6 +291,39 @@ class ContactoServiceImpl(
             }
             cb.and(*predicados.toTypedArray())
         }
+
+    /**
+     * `null` = sin restriccion. Coleccion vacia = falso explicito: `in(emptySet())`
+     * es SQL invalido o, peor, un predicado que no filtra nada — y ahi es justo
+     * donde se colaria el listado completo.
+     */
+    private fun restriccionPorIds(
+        ids: Collection<Long>?,
+        root: Root<Contacto>,
+        cb: CriteriaBuilder,
+    ): Predicate? {
+        if (ids == null) {
+            return null
+        }
+        return if (ids.isEmpty()) cb.disjunction() else root.get<Long>("id").`in`(ids)
+    }
+
+    /**
+     * Contactos que un rol de apoyo alcanza: los vinculados a alguna empresa donde
+     * colabora via tarea (matriz_permisos.md §1). Un contacto sin ninguna empresa
+     * vinculada no lo alcanza nadie por esta via, y es lo correcto: el huerfano no
+     * pertenece a ninguna cartera.
+     *
+     * Cruza la frontera del modulo tareas solo con ids, por su interfaz publica
+     * (CLAUDE.md regla 12).
+     */
+    private fun idsContactosVisiblesPara(usuario: UsuarioActual): Set<Long> {
+        val empresas = tareaService.idsEmpresasDondeColabora(usuario.id)
+        if (empresas.isEmpty()) {
+            return emptySet()
+        }
+        return empresaContactoRepository.findByIdIdEmpresaIn(empresas).map { it.id.idContacto }.toSet()
+    }
 
     private fun Contacto.toListaDto(): ContactoListaDto {
         val vinculos = empresaContactoRepository.findByIdIdContacto(requireNotNull(id))
