@@ -96,6 +96,16 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 
 ---
 
+## Cómo escribir un plan de implementación en este repo
+
+Vale para cualquier skill que arme el plan (`writing-plans`, `subagent-driven-development` u otra) — es una exigencia de este repo, no de la skill.
+
+**Al principio del plan (fase de investigación, antes de la Task 1):** el plan tiene que decir explícitamente qué documentos de la tabla de arriba (`Documentos de referencia`) y qué reglas de esta lista (`Reglas que NUNCA debes romper`) tocan el cambio, y qué dicen exactamente sobre eso — no basta con "se leyeron los docs". Objetivo: que una regla ya escrita (como la 15, que yo mismo redacté y después rompí en la sesión donde nació) quede citada en el plan y no se pierda por el volumen de contexto de una sesión larga.
+
+**Al final del plan, como tarea propia (antes o junto con la verificación final/PR):** una tarea dedicada a re-leer el diff completo de la rama contra esos mismos documentos citados al principio, no solo contra lo que el plan pedía implementar. Busca específicamente contradicciones con algo que **ya estaba escrito correctamente** antes de empezar — es un caso distinto de "falta documentar X"; acá lo que falla es que documentación ya vigente se ignoró o se pisó a mitad de una sesión larga.
+
+---
+
 ## Plan de fases (resumen)
 
 0. Infra base: Spring Boot, migraciones, auth/JWT, `/me`, CI
