@@ -745,9 +745,9 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### GET /contactos
 > Busca contactos. Usado para vincular un contacto existente a una empresa, y para la vista de listado de Contactos.
 
-**Roles:** todos
+**Roles:** todos — **con filtro automático por rol** para `analista` y `otro` (ver nota de visibilidad abajo)
 
-**Query params:** `q` (nombre o teléfono), `id_empresa` (contactos de una empresa específica), `page`, `per_page`
+**Query params:** `q` (nombre o teléfono), `id_empresa` (contactos de una empresa específica), `contexto` (`listado` | `vincular`), `page`, `per_page`
 
 **Respuesta 200:**
 ```json
@@ -769,12 +769,28 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 }
 ```
 
+**Visibilidad por rol (`analista` y `otro`):** estos roles no tienen cartera propia. Lo que devuelve el endpoint depende de `contexto`:
+
+| `contexto` | Qué contactos devuelve | Qué campos devuelve |
+|---|---|---|
+| `listado` (default) | Solo los vinculados a empresas donde el usuario colabora vía tarea (`ids_colaboradores`). Un contacto sin ninguna empresa vinculada nunca aparece. | Todos, igual que el resto de roles. |
+| `vincular` | Todos los del CRM, incluidos los que no tienen empresa. | **Solo `id`, `nombres` y `apellidos`.** `email_*`, `tlf_*`, `notas`, `empresas` y `oportunidades_count` vienen vacíos/nulos. |
+
+**Notas sobre `contexto`:**
+- **Es el parámetro que distingue las dos pantallas que comparten este endpoint:** la vista de listado de Contactos (`listado`) y el buscador de "vincular contacto existente" dentro de una empresa (`vincular`). Sin él, el backend no puede aplicar la regla correcta, porque son opuestas para el mismo rol.
+- **Si no se envía, se asume `listado`** — el modo restrictivo. Un cliente que todavía no adoptó el parámetro nunca abre la búsqueda global por omisión.
+- Un valor fuera de `listado`/`vincular` devuelve `400 VALIDACION` con `field: "contexto"`. No se ignora silenciosamente.
+- **En `contexto=vincular`, para `analista`/`otro`, `q` busca solo por nombre y apellidos — no por teléfono.** Ocultar el teléfono en la respuesta no bastaría: un `LIKE` sobre el número convertiría el endpoint en un oráculo (escribo un teléfono, me devuelve de quién es). Para el resto de roles `q` sigue buscando por nombre y por los dos teléfonos, como siempre.
+- Para `admin`, `gerencia`, `jdv` y `vendedor` el parámetro no cambia nada: ven todo, con todos los campos, en cualquier contexto.
+
 ---
 
 ### GET /contactos/:id
 > Detalle completo del contacto: empresas vinculadas, oportunidades vinculadas y su línea de tiempo de actividades.
 
-**Roles:** todos
+**Roles:** todos — **con filtro automático por rol** para `analista` y `otro`
+
+**Query params:** `contexto` (`listado` | `vincular`) — misma semántica que en `GET /contactos`
 
 **Respuesta 200:**
 ```json
@@ -805,7 +821,8 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 - `oportunidades[].modelo.codigo` usa el mismo campo que el resto del contrato (§10), no `nombre`.
 - `actividades[].titulo` es el valor de `tipo_accion` (`llamada`, `correo`, `reunion`, `whatsapp`, `otro`) — `Tarea` no tiene un campo de título libre.
 - `actividades[]` respeta la visibilidad de tareas: vendedor/analista solo ven las tareas asignadas a sí mismos.
-- Errores: `404 NO_ENCONTRADO` si el contacto no existe.
+- **Visibilidad para `analista`/`otro`:** en `contexto=listado` (default), un contacto que no esté vinculado a ninguna empresa donde el usuario colabora devuelve `404 NO_ENCONTRADO` — indistinguible de un contacto inexistente, a propósito. En `contexto=vincular` el detalle sí se devuelve para cualquier contacto, pero recortado: solo `id`, `nombres` y `apellidos`; `empresas`, `oportunidades` y `actividades` vienen vacíos.
+- Errores: `404 NO_ENCONTRADO` si el contacto no existe o está fuera del alcance del rol. `400 VALIDACION` si `contexto` trae un valor desconocido.
 
 ---
 
@@ -841,18 +858,22 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### PUT /contactos/:id
 > Actualiza datos propios del contacto (no los de su vinculación a empresa).
 
-**Roles:** todos
+**Roles:** todos — `analista` y `otro` solo sobre contactos vinculados a empresas donde colaboran
 
 **Body:** `nombres`, `apellidos`, `email_1`, `email_2`, `tlf_1`, `tlf_2`, `notas` — todos opcionales.
 
 **Respuesta 200:** el contacto actualizado.
+
+**Notas:**
+- **`analista`/`otro` sobre un contacto fuera de su alcance:** `403 PERMISO_INSUFICIENTE`, no 404. Es una excepción deliberada al criterio IDOR del resto del contrato (§4): en `contexto=vincular` estos roles pueden ver ese mismo contacto por nombre, así que esconderlo al editar mentiría sobre algo que el sistema ya les mostró. El mensaje del error se puede mostrar tal cual al usuario.
+- Un contacto inexistente devuelve `404 NO_ENCONTRADO` para todos los roles, incluidos los de apoyo: el 404 se evalúa antes que el permiso.
 
 ---
 
 ### DELETE /contactos/:id
 > Elimina un contacto. Solo si no está vinculado a ninguna empresa.
 
-**Roles:** `admin` `gerente` `jdv`
+**Roles:** `admin` `gerencia` `jdv`
 
 **Respuesta 204:** sin body.
 
@@ -2265,6 +2286,7 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 | 2026-08-18 | `GET /oportunidades`, `GET /oportunidades/:id`, `GET /empresas`, `GET /empresas/:id`, `PATCH /oportunidades/:id/estado`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /empresas`, `PUT /empresas/:id`, `PATCH /empresas/:id/estado-cartera`, `PATCH /empresas/:id/vendedor`, `PATCH /empresas/:id/cartera-maestra`, `POST /oportunidades/:id/archivos`, `POST /oportunidades/:id/carpeta-drive`, `POST /empresas/:id/archivos`, `POST /empresas/:id/carpeta-drive`, `POST /solicitudes` | **Breaking** | `analista` y `otro` pasan a roles de apoyo sin cartera propia: en empresas y oportunidades (los recursos que lista esta fila) los listados y el detalle solo devuelven las entidades donde el usuario colabora vía tarea (`ids_colaboradores`), y toda escritura sobre esos dos recursos (incluida la subida de archivos/creación de carpeta en Drive) responde `403 PERMISO_INSUFICIENTE` con mensaje específico; `analista` deja de poder confirmar `facturado`; ninguno de los dos aplica descuentos por ninguna vía ni crea solicitudes de aprobación. Eventos y la vinculación de contactos a empresa no tienen guard de escritura propio y heredan la visibilidad por colaboración (detalle en `matriz_permisos.md §2.3/§2.5`). Ver `matriz_permisos.md` para el detalle completo por operación. | Ocultar en el cliente las acciones de escritura y de subida de Drive para estos roles, y no asumir que "lo que veo, lo puedo editar". El 403 trae un mensaje específico que se puede mostrar tal cual. Las solicitudes históricas que estos roles ya tenían siguen siendo visibles (no hay regresión de lectura ahí). |
 | 2026-08-19 | `GET /solicitudes` | Non-breaking (fix de seguridad) | El filtro de visibilidad del listado no tenía ninguna rama para el rol `otro` y devolvía todas las solicitudes de la empresa sin restricción, incluidos montos de descuento y motivos de reasignación ajenos. Corregido: `otro` ahora solo ve las solicitudes que él mismo creó, igual que `analista`. | Ninguna — el comportamiento correcto ya era el documentado; ningún cliente debía depender de la fuga. |
 | 2026-08-19 | `GET /metas-venta` | Non-breaking (fix de seguridad) | El filtro de visibilidad del listado tenía la misma falla que `GET /solicitudes`: ninguna rama para el rol `otro`, que veía todas las metas del equipo sin restricción. Corregido: `otro` ahora solo ve su propia meta, igual que `analista`. | Ninguna — el comportamiento correcto ya era el documentado; ningún cliente debía depender de la fuga. |
+| 2026-08-20 | `GET /contactos`, `GET /contactos/:id`, `PUT /contactos/:id` | **Breaking** | Cierre de la última fuga de visibilidad del cambio de roles de apoyo del 2026-08-18: el módulo `contactos` no se había tocado y `analista`/`otro` listaban, abrían y **editaban** nombre, teléfono y correo de todos los contactos del CRM. Ahora: (1) `GET /contactos` y `GET /contactos/:id` solo devuelven, para esos roles, los contactos vinculados a empresas donde colaboran vía tarea — el contacto sin empresa (huérfano) queda fuera; el que queda fuera de alcance en el detalle responde `404 NO_ENCONTRADO`. (2) Se agrega el query param `contexto` (`listado` \| `vincular`) a ambos GET: `vincular` levanta el filtro para que el buscador de "vincular contacto existente" siga alcanzando todo el CRM, pero recorta la respuesta a `id`/`nombres`/`apellidos` y hace que `q` busque solo por nombre, no por teléfono. Ausente ⇒ `listado`; valor desconocido ⇒ `400 VALIDACION`. (3) `PUT /contactos/:id` responde `403 PERMISO_INSUFICIENTE` para `analista`/`otro` sobre un contacto fuera de su alcance. El resto de roles no cambia en nada. Ver `matriz_permisos.md §1` y `§2.3`. | **Enviar `contexto=vincular` en el buscador de vincular contacto** — sin él ese buscador deja de encontrar contactos fuera del alcance del usuario de apoyo y el flujo se rompe para esos roles. La vista de listado no necesita cambios (el default ya es el correcto). Para `analista`/`otro` el cliente debe tolerar filas con `tlf_*`/`email_*` nulos y `empresas`/`oportunidades_count` vacíos en modo `vincular`, y un `403` con mensaje mostrable al editar. La mitigación de UI que ocultaba la sección Contactos para estos roles ya puede retirarse: el control ahora está en el backend. |
 
 ---
 
