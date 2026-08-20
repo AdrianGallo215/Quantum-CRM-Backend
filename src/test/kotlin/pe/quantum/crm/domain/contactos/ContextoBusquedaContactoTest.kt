@@ -61,8 +61,9 @@ class ContextoBusquedaContactoTest {
     fun `el contexto invalido apunta al campo contexto`() {
         val error = assertThatThrownBy { ContextoBusquedaContacto.desde("VINCULAR") }
         error.isInstanceOf(ValidacionException::class.java)
-        assertThat((org.assertj.core.api.Assertions.catchThrowable { ContextoBusquedaContacto.desde("VINCULAR") } as ValidacionException).field)
-            .isEqualTo("contexto")
+        val lanzado =
+            org.assertj.core.api.Assertions.catchThrowable { ContextoBusquedaContacto.desde("VINCULAR") } as ValidacionException
+        assertThat(lanzado.field).isEqualTo("contexto")
     }
 
     @Test
