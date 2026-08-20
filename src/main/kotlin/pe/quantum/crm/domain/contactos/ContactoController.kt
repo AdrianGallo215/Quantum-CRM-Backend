@@ -18,6 +18,7 @@ import pe.quantum.crm.domain.contactos.dto.ActualizarVinculoRequest
 import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
+import pe.quantum.crm.domain.contactos.dto.ContextoBusquedaContacto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VincularContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VinculoDto
@@ -39,11 +40,19 @@ class ContactoController(
     fun buscar(
         @RequestParam(required = false) q: String?,
         @RequestParam(name = "id_empresa", required = false) idEmpresa: Long?,
+        @RequestParam(required = false) contexto: String?,
         @RequestParam(required = false) page: Int?,
         @RequestParam(name = "per_page", required = false) perPage: Int?,
     ): ApiResponse<List<ContactoListaDto>> {
         val usuario = usuarioProvider.actual()
-        val resultado = contactoService.buscar(q, idEmpresa, usuario, page, perPage, null, null)
+        val modo = ContextoBusquedaContacto.desde(contexto)
+        val resultado = contactoService.buscar(q, idEmpresa, usuario, page, perPage, null, null, modo)
+        // En modo reducido la fila solo lleva el nombre: enriquecerla con
+        // `oportunidades_count` reabriria por otra puerta el dato que el modo
+        // esconde (cuanto pipeline arrastra ese contacto).
+        if (modo.esReducidoPara(usuario)) {
+            return ApiResponse.ok(resultado.items, resultado.meta)
+        }
         val conteos = oportunidadesDeContacto.contarPorContactos(resultado.items.map { it.id }, usuario)
         val conConteo = resultado.items.map { it.copy(oportunidadesCount = conteos[it.id] ?: 0) }
         return ApiResponse.ok(conConteo, resultado.meta)

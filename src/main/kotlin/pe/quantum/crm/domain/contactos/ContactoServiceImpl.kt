@@ -59,6 +59,7 @@ class ContactoServiceImpl(
         dir: String?,
         contexto: ContextoBusquedaContacto,
     ): Paginado<ContactoListaDto> {
+        val reducido = contexto.esReducidoPara(usuario)
         val idsDeLaEmpresa =
             idEmpresa?.let {
                 empresaService.vinculoVisible(it, usuario)
@@ -71,8 +72,12 @@ class ContactoServiceImpl(
         val idsVisibles =
             if (contexto.aplicaFiltroDeVisibilidadPara(usuario)) idsContactosVisiblesPara(usuario) else null
         val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
-        val resultado = contactoRepository.findAll(especificacion(q, idsDeLaEmpresa, idsVisibles), pageRequest)
-        val items = resultado.content.map { it.toListaDto() }
+        val resultado =
+            contactoRepository.findAll(
+                especificacion(q, idsDeLaEmpresa, idsVisibles, soloPorNombre = reducido),
+                pageRequest,
+            )
+        val items = resultado.content.map { if (reducido) it.toListaReducidoDto() else it.toListaDto() }
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(items, meta)
     }
@@ -273,6 +278,7 @@ class ContactoServiceImpl(
         q: String?,
         idsDeLaEmpresa: List<Long>?,
         idsVisibles: Set<Long>?,
+        soloPorNombre: Boolean,
     ): Specification<Contacto> =
         Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
@@ -280,14 +286,23 @@ class ContactoServiceImpl(
             restriccionPorIds(idsVisibles, root, cb)?.let { predicados += it }
             q?.takeIf { it.isNotBlank() }?.let { texto ->
                 val patron = "%${texto.lowercase()}%"
+                val porNombre =
+                    cb.like(cb.lower(cb.concat(cb.concat(root.get("nombres"), " "), root.get("apellidos"))), patron)
                 predicados +=
-                    cb.or(
-                        cb.like(cb.lower(cb.concat(cb.concat(root.get("nombres"), " "), root.get("apellidos"))), patron),
-                        // Los atributos JPA se llaman como el campo de la entidad
-                        // (`tlf_1`/`tlf_2`), no como su version sin guion bajo.
-                        cb.like(root.get("tlf_1"), "%${texto.trim()}%"),
-                        cb.like(root.get("tlf_2"), "%${texto.trim()}%"),
-                    )
+                    if (soloPorNombre) {
+                        // Modo reducido: buscar por telefono seria un oraculo. La
+                        // respuesta oculta el numero, pero un `like` sobre `tlf_1`
+                        // devolveria igual el nombre del dueño de ese numero.
+                        porNombre
+                    } else {
+                        cb.or(
+                            porNombre,
+                            // Los atributos JPA se llaman como el campo de la entidad
+                            // (`tlf_1`/`tlf_2`), no como su version sin guion bajo.
+                            cb.like(root.get("tlf_1"), "%${texto.trim()}%"),
+                            cb.like(root.get("tlf_2"), "%${texto.trim()}%"),
+                        )
+                    }
             }
             cb.and(*predicados.toTypedArray())
         }
@@ -345,6 +360,26 @@ class ContactoServiceImpl(
                 },
         )
     }
+
+    /**
+     * Fila del buscador de vinculacion para un rol de apoyo: solo el nombre.
+     * Ni telefonos, ni correos, ni notas, ni las empresas del contacto — saber a
+     * que empresas pertenece es justo el dato que no tiene por que ver de una
+     * empresa donde no colabora. De paso evita la consulta de vinculos por fila
+     * que hace `toListaDto`.
+     */
+    private fun Contacto.toListaReducidoDto(): ContactoListaDto =
+        ContactoListaDto(
+            id = requireNotNull(id),
+            nombres = nombres,
+            apellidos = apellidos,
+            email_1 = null,
+            email_2 = null,
+            tlf_1 = null,
+            tlf_2 = null,
+            notas = null,
+            empresas = emptyList(),
+        )
 
     private fun vinculoEntidad(
         idEmpresa: Long,

@@ -155,4 +155,86 @@ class ContactoRolApoyoTest {
         assertThat(fila.email_1).isEqualTo("hugo@transportes.pe")
         assertThat(fila.notas).isEqualTo("Prefiere WhatsApp")
     }
+
+    // ── R5: modo vincular, respuesta reducida ──────────────────
+
+    private fun buscarParaVincular(
+        usuario: UsuarioActual,
+        q: String? = null,
+    ) = service.buscar(
+        q = q,
+        idEmpresa = null,
+        usuario = usuario,
+        page = null,
+        perPage = null,
+        sort = null,
+        dir = null,
+        contexto = ContextoBusquedaContacto.vincular,
+    )
+
+    /**
+     * En el buscador de vinculacion el rol de apoyo alcanza todo el CRM — si no,
+     * no podria vincular un contacto que todavia no conoce — asi que aqui NO se
+     * consulta la colaboracion.
+     */
+    @Test
+    fun `en modo vincular un rol de apoyo no arrastra el filtro de colaboracion`() {
+        paginaConUnContacto()
+
+        assertThat(buscarParaVincular(analista).items).hasSize(1)
+
+        verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
+    }
+
+    /** Lo que se recorta es el contenido: solo el nombre, nada mas. */
+    @Test
+    fun `en modo vincular la fila de un rol de apoyo solo lleva el nombre`() {
+        every { contactoRepository.findAll(any<Specification<Contacto>>(), any<PageRequest>()) } returns
+            PageImpl(listOf(contacto()), PageRequest.of(0, 20), 1)
+
+        val fila = buscarParaVincular(analista).items.first()
+
+        assertThat(fila.id).isEqualTo(1)
+        assertThat(fila.nombres).isEqualTo("Hugo")
+        assertThat(fila.apellidos).isEqualTo("Rodríguez")
+        assertThat(fila.tlf_1).isNull()
+        assertThat(fila.tlf_2).isNull()
+        assertThat(fila.email_1).isNull()
+        assertThat(fila.email_2).isNull()
+        assertThat(fila.notas).isNull()
+        assertThat(fila.empresas).isEmpty()
+        assertThat(fila.oportunidadesCount).isZero()
+    }
+
+    /**
+     * La fila reducida no consulta los vinculos por fila: ademas de no exponerlos,
+     * se ahorra la consulta por contacto que hace `toListaDto`.
+     */
+    @Test
+    fun `la fila reducida no consulta los vinculos del contacto`() {
+        every { contactoRepository.findAll(any<Specification<Contacto>>(), any<PageRequest>()) } returns
+            PageImpl(listOf(contacto()), PageRequest.of(0, 20), 1)
+
+        buscarParaVincular(analista)
+
+        verify(exactly = 0) { empresaContactoRepository.findByIdIdContacto(any()) }
+    }
+
+    /** R4/R6: el modo vincular no cambia nada para quien si tiene cartera. */
+    @Test
+    fun `en modo vincular un vendedor sigue viendo la fila completa`() {
+        paginaConUnContacto()
+
+        val fila = buscarParaVincular(vendedor).items.first()
+
+        assertThat(fila.tlf_1).isEqualTo("964415122")
+        assertThat(fila.email_1).isEqualTo("hugo@transportes.pe")
+    }
+
+    @Test
+    fun `en modo vincular un admin sigue viendo la fila completa`() {
+        paginaConUnContacto()
+
+        assertThat(buscarParaVincular(admin).items.first().tlf_1).isEqualTo("964415122")
+    }
 }

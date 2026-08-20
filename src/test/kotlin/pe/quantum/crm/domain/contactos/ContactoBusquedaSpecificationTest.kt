@@ -165,6 +165,33 @@ class ContactoBusquedaSpecificationTest {
         assertThat(hql).containsIgnoringCase("where").contains("nombres", "apellidos")
     }
 
+    /**
+     * El canal que motivo la pregunta P1 del requerimiento: si `q` siguiera
+     * matcheando `tlf_1`/`tlf_2` en modo reducido, el endpoint seria un oraculo de
+     * telefonos — escribo un numero, vuelve una fila, ya se de quien es. Ocultar
+     * el campo en la respuesta no cierra ese canal; quitarlo del WHERE si.
+     */
+    @Test
+    fun `en modo vincular la busqueda de un rol de apoyo no toca los telefonos`() {
+        val hql = buscar(q = "964415122", quien = analista, contexto = ContextoBusquedaContacto.vincular)
+
+        assertThat(hql).contains("nombres", "apellidos")
+        assertThat(hql).doesNotContain("tlf_1").doesNotContain("tlf_2")
+    }
+
+    /** El resto de roles conserva la busqueda por telefono documentada en §9. */
+    @Test
+    fun `en modo vincular un vendedor sigue buscando por telefono`() {
+        val hql =
+            buscar(
+                q = "964415122",
+                quien = UsuarioActual(id = 42, rol = "vendedor"),
+                contexto = ContextoBusquedaContacto.vincular,
+            )
+
+        assertThat(hql).contains("tlf_1", "tlf_2")
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     /**

@@ -21,6 +21,7 @@ import pe.quantum.crm.config.security.JwtService
 import pe.quantum.crm.domain.contactos.dto.ActualizarContactoRequest
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
+import pe.quantum.crm.domain.contactos.dto.ContextoBusquedaContacto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.oportunidades.OportunidadesDeContacto
 import pe.quantum.crm.shared.PageMeta
@@ -266,5 +267,100 @@ class ContactoControllerWebMvcTest {
             status { isConflict() }
             jsonPath("$.error.code") { value("CONTACTO_VINCULADO") }
         }
+    }
+
+    // ── contexto de visibilidad (contrato_api.md §9) ───────────
+
+    private fun filaReducida() =
+        ContactoListaDto(
+            id = 5,
+            nombres = "Hugo",
+            apellidos = "Rodríguez",
+            email_1 = null,
+            email_2 = null,
+            tlf_1 = null,
+            tlf_2 = null,
+            notas = null,
+            empresas = emptyList(),
+        )
+
+    /**
+     * `oportunidades_count` es pipeline: enriquecer la fila reducida reabriria por
+     * otra puerta justo el dato que el modo esconde.
+     */
+    @Test
+    fun `GET contactos en modo vincular con rol de apoyo no consulta oportunidades_count`() {
+        every {
+            contactoService.buscar(null, null, any(), null, null, null, null, ContextoBusquedaContacto.vincular)
+        } returns Paginado(listOf(filaReducida()), PageMeta(page = 1, perPage = 20, total = 1, totalPages = 1))
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.get("/api/v1/contactos?contexto=vincular") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data[0].id") { value(5) }
+            jsonPath("$.data[0].oportunidades_count") { value(0) }
+            jsonPath("$.data[0].tlf_1") { doesNotExist() }
+        }
+
+        verify(exactly = 0) { oportunidadesDeContacto.contarPorContactos(any(), any()) }
+    }
+
+    /** Un rol con cartera propia no entra en modo reducido aunque pida `vincular`. */
+    @Test
+    fun `GET contactos en modo vincular con vendedor sigue enriqueciendo el conteo`() {
+        val item =
+            ContactoListaDto(
+                id = 5, nombres = "Hugo", apellidos = "Rodríguez",
+                email_1 = null, email_2 = null, tlf_1 = "964415122", tlf_2 = null, notas = null,
+                empresas = emptyList(),
+            )
+        every {
+            contactoService.buscar(null, null, any(), null, null, null, null, ContextoBusquedaContacto.vincular)
+        } returns Paginado(listOf(item), PageMeta(page = 1, perPage = 20, total = 1, totalPages = 1))
+        every { oportunidadesDeContacto.contarPorContactos(listOf(5L), any()) } returns mapOf(5L to 2)
+        val token = jwtService.generateAccessToken(empleadoId = 42, rol = "vendedor")
+
+        mockMvc.get("/api/v1/contactos?contexto=vincular") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data[0].oportunidades_count") { value(2) }
+        }
+    }
+
+    /** R9: sin el parametro se cae en `listado`, el modo restrictivo. */
+    @Test
+    fun `GET contactos sin contexto usa el modo listado`() {
+        every {
+            contactoService.buscar(null, null, any(), null, null, null, null, ContextoBusquedaContacto.listado)
+        } returns Paginado(emptyList(), PageMeta(page = 1, perPage = 20, total = 0, totalPages = 0))
+        // Modo listado no es reducido: el controller igual llama a enriquecer con
+        // oportunidades_count, aunque la pagina venga vacia.
+        every { oportunidadesDeContacto.contarPorContactos(emptyList(), any()) } returns emptyMap()
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.get("/api/v1/contactos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect { status { isOk() } }
+
+        verify {
+            contactoService.buscar(null, null, any(), null, null, null, null, ContextoBusquedaContacto.listado)
+        }
+    }
+
+    @Test
+    fun `GET contactos con un contexto invalido devuelve 400 sin llegar al servicio`() {
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.get("/api/v1/contactos?contexto=global") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("VALIDACION") }
+        }
+
+        verify(exactly = 0) { contactoService.buscar(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 }
