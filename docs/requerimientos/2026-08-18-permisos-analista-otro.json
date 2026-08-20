@@ -1,0 +1,83 @@
+{
+  "titulo": "Roles analista y otro pasan a solo lectura en oportunidades y empresas",
+  "origen": "producto, vía equipo de frontend",
+  "fecha": "2026-08-18",
+  "problema": "Analista y otro no deben poder modificar ni crear oportunidades ni empresas. Excepción: deben poder ver, sin editar, los registros donde el dueño los agregó como colaborador en una tarea. Hoy cualquier restricción de este tipo aplicada solo en el frontend es cosmética, no seguridad — se necesita que el backend la haga cumplir.",
+  "requisitos_cerrados": [
+    {
+      "id": "R1",
+      "pedido": "Retirar a analista de la autorización para confirmar (PATCH) el paso de una oportunidad a facturado.",
+      "segun_solicitante": "hoy lo permiten junto con admin y gerencia",
+      "verificar_en_triage": true
+    },
+    {
+      "id": "R2",
+      "pedido": "Retirar a analista del límite de descuento directo del 3%. Analista deja de tener cualquier vía para aplicar un descuento — ni directo ni por solicitud de aprobación (ver R7). No es 'todo descuento requiere aprobación' como decía el ticket original: es 'analista no aplica descuentos'.",
+      "segun_solicitante": "hoy tiene un límite directo de 3%, documentado en contrato §2",
+      "decidido_por": "producto, en esta conversación (resuelve P1 original: confirmado, no es una contradicción)",
+      "verificar_en_triage": true
+    },
+    {
+      "id": "R3",
+      "pedido": "Analista y otro mantienen la visibilidad de lectura que tienen hoy sobre oportunidades y empresas, pero pierden todo permiso de edición sobre esos registros.",
+      "decidido_por": "producto, en esta conversación",
+      "nota": "Tensión a verificar en triage: si 'otro' no tiene cartera propia asignada (ver R7), 'mantener visibilidad actual' puede no aplicarle en la práctica — confirmar contra el código qué ve 'otro' hoy antes de implementar.",
+      "verificar_en_triage": true
+    },
+    {
+      "id": "R4",
+      "pedido": "Además de R3, analista y otro deben poder ver (nunca editar) las oportunidades/empresas donde el dueño del registro los agregó como colaborador en una tarea (ids_colaboradores de Tarea).",
+      "decidido_por": "ticket original"
+    },
+    {
+      "id": "R5",
+      "pedido": "El filtro de visibilidad por colaborador (R4) se aplica en el backend (en la query, no en memoria ni solo en el cliente).",
+      "decidido_por": "ticket original",
+      "nota_del_solicitante": "sin esto cualquier restricción de visibilidad en el frontend es cosmética, no seguridad"
+    },
+    {
+      "id": "R6",
+      "pedido": "Analista y otro pierden también el permiso de crear empresas y oportunidades nuevas — no es solo pérdida de edición sobre lo existente.",
+      "decidido_por": "producto, en esta conversación"
+    },
+    {
+      "id": "R7",
+      "pedido": "Analista y otro pierden el permiso de crear solicitudes de aprobación (descuento, reasignación de cliente) bajo el nuevo modelo de solo lectura.",
+      "decidido_por": "producto, en esta conversación",
+      "nota": "Confirmado explícitamente por producto: no es un efecto colateral no deseado. Junto con R2, analista queda sin ninguna vía para aplicar descuento — ni directa ni por solicitud.",
+      "verificar_en_triage": true
+    },
+    {
+      "id": "R8",
+      "pedido": "Definir explícitamente los permisos del rol otro en matriz_permisos.md — hoy no están documentados en ningún lugar accesible al frontend.",
+      "segun_solicitante": "el rol otro no tiene cartera propia asignada (a diferencia de analista); es un rol de solo consulta general",
+      "verificar_en_triage": true
+    }
+  ],
+  "preguntas_abiertas": [
+    {
+      "id": "P2",
+      "pregunta": "El ticket original pide 'evaluar si el filtro de colaborador aplica también a GET /empresas', sin decidirlo. ¿Es una decisión de producto o una evaluación técnica a cargo del triage/implementación?",
+      "por_que_bloquea": "No bloquea el resto del ticket, pero conviene que quien lo revise sepa que no está cerrado.",
+      "decide": "triage técnico, salvo que producto tenga una preferencia de negocio"
+    }
+  ],
+  "areas_sospechadas": {
+    "advertencia": "sospecha del solicitante y de esta conversación, sin verificar contra el repo",
+    "endpoints": ["PATCH /oportunidades/:id/estado", "GET /oportunidades", "GET /empresas", "POST /oportunidades", "POST /empresas", "POST /solicitudes"],
+    "docs": ["matriz_permisos.md", "contrato_api.md §2 y §12 (solicitudes)"]
+  },
+  "impacto_esperado_en_frontend": "Cambia qué devuelven los listados para estos roles y qué acciones pueden intentar. El solicitante lo considera breaking.",
+  "no_alcance": [
+    "No se toca la visibilidad ni los permisos de admin, gerencia, jdv ni vendedor.",
+    "No se toca el módulo de reportes.",
+    "No se define aquí si el filtro de colaborador aplica a empresas (ver P2)."
+  ],
+  "urgencia": "normal — sin fecha límite; la app está en producción, no se apura el deploy",
+  "verificacion_datos_prod": {
+    "fecha": "2026-08-18",
+    "consulta": "empresas y oportunidades con id_vendedor apuntando a un empleado de rol analista u otro",
+    "resultado": "0 empresas, 0 oportunidades",
+    "consecuencia": "No se requiere remediación de datos. La ambigüedad entre 'mantienen visibilidad actual' y 'sin cartera propia' queda sin efecto práctico: ningún usuario pierde acceso a registros que vea hoy."
+  }
+}

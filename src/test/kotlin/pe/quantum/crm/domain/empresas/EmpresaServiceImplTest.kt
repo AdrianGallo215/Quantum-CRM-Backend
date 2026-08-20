@@ -28,6 +28,7 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveException
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -46,6 +47,7 @@ class EmpresaServiceImplTest {
     private val driveStorageService = mockk<DriveStorageService>()
     private val contactoService = mockk<ContactoService>()
     private val transactionTemplate = mockk<TransactionTemplate>()
+    private val tareaService = mockk<TareaService>()
     private val service =
         EmpresaServiceImpl(
             empresaRepository,
@@ -55,6 +57,7 @@ class EmpresaServiceImplTest {
             driveStorageService,
             contactoService,
             transactionTemplate,
+            tareaService,
         )
 
     init {

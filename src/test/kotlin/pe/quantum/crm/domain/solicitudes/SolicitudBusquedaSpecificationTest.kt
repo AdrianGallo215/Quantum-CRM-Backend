@@ -45,6 +45,7 @@ class SolicitudBusquedaSpecificationTest {
     private val jdv = UsuarioActual(id = 3, rol = "jdv")
     private val vendedor = UsuarioActual(id = 5, rol = "vendedor")
     private val analista = UsuarioActual(id = 6, rol = "analista")
+    private val otro = UsuarioActual(id = 9, rol = "otro")
 
     @Test
     fun `todos los filtros a la vez arman una Specification que el metamodelo resuelve`() {
@@ -57,6 +58,14 @@ class SolicitudBusquedaSpecificationTest {
     fun `vendedor y analista solo ven las solicitudes que ellos enviaron`() {
         assertThat(listar(SolicitudFiltros(), vendedor)).contains("idSolicitante")
         assertThat(listar(SolicitudFiltros(), analista)).contains("idSolicitante")
+    }
+
+    @Test
+    fun `el rol de apoyo otro solo ve las solicitudes que el mismo envio`() {
+        val hql = listar(SolicitudFiltros(), otro)
+
+        assertThat(hql).contains("idSolicitante")
+        assertThat(hql).doesNotContain("rolAprobador")
     }
 
     @Test

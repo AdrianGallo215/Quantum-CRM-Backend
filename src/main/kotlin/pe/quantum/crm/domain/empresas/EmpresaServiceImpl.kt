@@ -28,6 +28,7 @@ import pe.quantum.crm.domain.empresas.dto.toVinculo
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.CamposOrdenables
@@ -65,6 +66,11 @@ class EmpresaServiceImpl(
     // llamar a Drive con la transaccion ya abierta; asi la red ocurre fuera y la
     // escritura entra despues, en una transaccion propia y corta.
     private val transactionTemplate: TransactionTemplate,
+    // Solo la interfaz publica de tareas (regla 12). `@Lazy` porque tareas ya
+    // depende de EmpresaService (vinculoVisible/resumenPorIds) y Spring Boot 3
+    // rechaza los ciclos de constructor; el proxy corta el ciclo al arrancar
+    // (mismo patron que `contactoService` arriba).
+    @Lazy private val tareaService: TareaService,
 ) : EmpresaService {
     private val log = LoggerFactory.getLogger(EmpresaServiceImpl::class.java)
 
@@ -153,6 +159,7 @@ class EmpresaServiceImpl(
         conCarpetaDrive: Boolean,
         reutilizarDelMismoVendedor: Boolean,
     ): AltaEmpresaResultado {
+        rechazarSiEsApoyo(usuario)
         val idVendedor = vendedorAlCrear(request.idVendedor, usuario)
         val existente = empresaRepository.findByRuc(request.ruc)
         if (existente != null) {
@@ -219,9 +226,10 @@ class EmpresaServiceImpl(
      * `id_vendedor` en el alta. Asignar la empresa a otro empleado es la misma
      * decision que reasignarla, y matriz_permisos.md §2.2 ("Reasignar vendedor
      * directo") la reserva a admin y gerencia: el jdv necesita solicitud aprobada
-     * y vendedor/analista no pueden. Quedarse la empresa uno mismo (o no enviar
-     * el campo) sigue permitido para todos, que es como vendedor y analista
-     * conservan visibilidad sobre lo que registran.
+     * y vendedor no puede. Quedarse la empresa uno mismo (o no enviar el campo)
+     * sigue permitido, que es como vendedor conserva visibilidad sobre lo que
+     * registra. Los roles de apoyo nunca llegan hasta aca: `rechazarSiEsApoyo`
+     * los bloquea antes en `crear()`.
      */
     private fun vendedorAlCrear(
         solicitado: Long?,
@@ -249,7 +257,10 @@ class EmpresaServiceImpl(
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+    ): String {
+        rechazarSiEsApoyo(usuario)
+        return asegurarCarpetaDriveDe(visible(id, usuario))
+    }
 
     /**
      * SIN `@Transactional` en los metodos publicos a proposito: aqui hay una llamada
@@ -293,6 +304,7 @@ class EmpresaServiceImpl(
         request: ActualizarEmpresaRequest,
         usuario: UsuarioActual,
     ): EmpresaDetalleDto {
+        rechazarSiEsApoyo(usuario)
         val empresa = visible(id, usuario)
         request.ruc?.let {
             if (it != empresa.ruc && empresaRepository.existsByRuc(it)) {
@@ -336,6 +348,7 @@ class EmpresaServiceImpl(
         estadoCartera: String,
         usuario: UsuarioActual,
     ): String {
+        rechazarSiEsApoyo(usuario)
         val empresa = visible(id, usuario)
         val nuevo =
             runCatching { EstadoCartera.valueOf(estadoCartera) }.getOrNull()
@@ -361,6 +374,7 @@ class EmpresaServiceImpl(
         idVendedor: Long,
         usuario: UsuarioActual,
     ): Long {
+        rechazarSiEsApoyo(usuario)
         if (!usuario.puedeReasignarDirecto) {
             throw PermisoInsuficienteException("La reasignación directa es exclusiva de gerencia; envía una solicitud")
         }
@@ -443,6 +457,7 @@ class EmpresaServiceImpl(
         idVendedor: Long?,
         usuario: UsuarioActual,
     ): CarteraMaestraDto {
+        rechazarSiEsApoyo(usuario)
         if (!usuario.puedeVerCarteraMaestra) {
             throw PermisoInsuficienteException("La cartera maestra es exclusiva de gerencia")
         }
@@ -506,9 +521,24 @@ class EmpresaServiceImpl(
 
     // ── privados ───────────────────────────────────────────────
 
+    /**
+     * Roles de apoyo: solo lectura sobre empresas (matriz_permisos.md). 403 y no
+     * 404: la empresa puede ser visible para el si colabora en una tarea suya.
+     */
+    private fun rechazarSiEsApoyo(usuario: UsuarioActual) {
+        if (usuario.esRolApoyo) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: puedes consultar esta empresa, pero no modificarla",
+            )
+        }
+    }
+
     private fun entidad(id: Long): Empresa = empresaRepository.findById(id).orElseThrow { NoEncontradoException("La empresa no existe") }
 
-    /** IDOR: una empresa ajena para vendedor/analista responde 404, no 403. */
+    /**
+     * IDOR: una empresa ajena responde 404, no 403. Rol de apoyo: solo donde
+     * colabora via tarea (no tiene cartera propia). Vendedor/jdv: solo lo suyo.
+     */
     private fun visible(
         id: Long,
         usuario: UsuarioActual,
@@ -517,7 +547,13 @@ class EmpresaServiceImpl(
         if (empresa.enCarteraMaestra && !usuario.puedeVerCarteraMaestra) {
             throw NoEncontradoException("La empresa no existe")
         }
-        if (usuario.visibilidadRestringida && empresa.idVendedor != usuario.id) {
+        val alcanza =
+            when {
+                usuario.esRolApoyo -> empresa.id in tareaService.idsEmpresasDondeColabora(usuario.id)
+                usuario.visibilidadRestringida -> empresa.idVendedor == usuario.id
+                else -> true
+            }
+        if (!alcanza) {
             throw NoEncontradoException("La empresa no existe")
         }
         return empresa
@@ -541,8 +577,13 @@ class EmpresaServiceImpl(
         filtros: EmpresaFiltros,
         estadoCartera: EstadoCartera?,
         usuario: UsuarioActual,
-    ): Specification<Empresa> =
-        Specification { root, query, cb ->
+    ): Specification<Empresa> {
+        // Resuelto ANTES de construir la Specification, no dentro de su lambda:
+        // Spring Data JPA evalua `toPredicate` dos veces por pagina (contenido y
+        // conteo), y `idsEmpresasDondeColabora` es una consulta, no un `equal`
+        // gratis como el resto de predicados.
+        val idsColaboracion = if (usuario.esRolApoyo) tareaService.idsEmpresasDondeColabora(usuario.id) else null
+        return Specification { root, query, cb ->
             val predicados = mutableListOf<Predicate>()
             if (!usuario.puedeVerCarteraMaestra) {
                 predicados += cb.isFalse(root.get("enCarteraMaestra"))
@@ -551,7 +592,12 @@ class EmpresaServiceImpl(
                     predicados += cb.equal(root.get<Boolean>("enCarteraMaestra"), it)
                 }
             }
-            if (usuario.visibilidadRestringida) {
+            if (idsColaboracion != null) {
+                // Conjunto vacio: `in(emptySet())` es SQL invalido o, peor, un
+                // predicado que no filtra nada. Falso explicito.
+                predicados +=
+                    if (idsColaboracion.isEmpty()) cb.disjunction() else root.get<Long>("id").`in`(idsColaboracion)
+            } else if (usuario.visibilidadRestringida) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), usuario.id)
             } else if (filtros.idVendedor != null) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), filtros.idVendedor)
@@ -575,6 +621,7 @@ class EmpresaServiceImpl(
             }
             cb.and(*predicados.toTypedArray())
         }
+    }
 
     /** `{ruc} - {razon social}`: ordena alfabeticamente y es rastreable desde Drive. */
     private fun nombreCarpetaDrive(

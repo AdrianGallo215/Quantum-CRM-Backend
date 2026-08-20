@@ -19,6 +19,7 @@ import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.dto.EmpresaFiltros
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.enums.Segmento
@@ -43,6 +44,7 @@ class EmpresaBusquedaSpecificationTest {
     private val driveStorageService = mockk<DriveStorageService>()
     private val contactoService = mockk<ContactoService>()
     private val transactionTemplate = mockk<TransactionTemplate>()
+    private val tareaService = mockk<TareaService>()
     private val service =
         EmpresaServiceImpl(
             empresaRepository,
@@ -52,11 +54,13 @@ class EmpresaBusquedaSpecificationTest {
             driveStorageService,
             contactoService,
             transactionTemplate,
+            tareaService,
         )
 
     private val gerencia = UsuarioActual(id = 1, rol = "gerencia")
     private val jdv = UsuarioActual(id = 3, rol = "jdv")
     private val vendedor = UsuarioActual(id = 7, rol = "vendedor")
+    private val analista = UsuarioActual(id = 7, rol = "analista")
 
     init {
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
@@ -162,6 +166,37 @@ class EmpresaBusquedaSpecificationTest {
         val hql = listar(EmpresaFiltros(segmento = Segmento.urbano), gerencia)
 
         assertThat(hql).contains("segmentos")
+    }
+
+    /**
+     * El hueco de seguridad que este plan viene a cerrar: si `especificacion`
+     * cambiara `cb.disjunction()` por `cb.conjunction()` (o el `if` desapareciera),
+     * este test tiene que fallar porque el HQL compilado dejaria de forzar el
+     * "siempre falso". Se compila contra el metamodelo real (no contra un mock de
+     * `findAll`) precisamente para que la rama de la lambda se evalue de verdad.
+     */
+    @Test
+    fun `un rol de apoyo sin colaboraciones compila una Specification siempre falsa`() {
+        every { tareaService.idsEmpresasDondeColabora(7) } returns emptySet()
+
+        val hql = listar(EmpresaFiltros(), analista)
+
+        assertThat(hql).contains("1 <> 1")
+    }
+
+    /**
+     * Contraparte: con colaboraciones, la Specification compilada debe traer un
+     * `IN` sobre esos ids exactos, no un filtro de `idVendedor` (el rol de apoyo no
+     * tiene cartera propia).
+     */
+    @Test
+    fun `un rol de apoyo con colaboraciones compila un IN sobre esos ids`() {
+        every { tareaService.idsEmpresasDondeColabora(7) } returns setOf(1L, 2L)
+
+        val hql = listar(EmpresaFiltros(), analista)
+
+        assertThat(hql).contains(".id in (1, 2)")
+        assertThat(hql).doesNotContain("idVendedor")
     }
 
     /**

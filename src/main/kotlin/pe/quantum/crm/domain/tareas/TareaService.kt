@@ -60,4 +60,14 @@ interface TareaService {
         idContacto: Long,
         usuario: UsuarioActual,
     ): List<ActividadContactoDto>
+
+    /**
+     * Ids de oportunidad donde `idEmpleado` colabora en alguna tarea. Es la API
+     * publica que usan `oportunidades` y `empresas` para su filtro de visibilidad
+     * de roles de apoyo: cruzan la frontera con ids, nunca con entidades.
+     */
+    fun idsOportunidadesDondeColabora(idEmpleado: Long): Set<Long>
+
+    /** Ids de empresa donde `idEmpleado` colabora en alguna tarea. */
+    fun idsEmpresasDondeColabora(idEmpleado: Long): Set<Long>
 }

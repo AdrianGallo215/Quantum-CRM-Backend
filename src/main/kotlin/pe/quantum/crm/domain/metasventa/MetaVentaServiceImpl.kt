@@ -237,7 +237,7 @@ class MetaVentaServiceImpl(
     ): Specification<MetaVenta> =
         Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
-            if (usuario.rol == "vendedor" || usuario.rol == "analista") {
+            if (usuario.rol == "vendedor" || usuario.esRolApoyo) {
                 predicados += cb.equal(root.get<Long>("idEmpleado"), usuario.id)
             }
             filtros.idEmpleado?.let { predicados += cb.equal(root.get<Long>("idEmpleado"), it) }

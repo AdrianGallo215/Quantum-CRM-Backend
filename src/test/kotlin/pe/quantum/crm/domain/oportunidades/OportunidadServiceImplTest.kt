@@ -25,6 +25,7 @@ import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
 import pe.quantum.crm.shared.exception.AprobacionRequeridaException
@@ -47,6 +48,7 @@ class OportunidadServiceImplTest {
     private val consultas = mockk<OportunidadConsultas>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
+    private val tareaService = mockk<TareaService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -61,6 +63,7 @@ class OportunidadServiceImplTest {
             consultas,
             notificacionService,
             driveStorageService,
+            OportunidadVisibilidad(tareaService),
         )
 
     init {
@@ -220,6 +223,7 @@ class OportunidadServiceImplTest {
                 consultas,
                 notificacionServiceReal,
                 driveStorageService,
+                OportunidadVisibilidad(tareaService),
             )
         val entidad = oportunidad(idVendedor = 1)
         every { oportunidadRepository.findByIdBloqueando(100) } returns entidad

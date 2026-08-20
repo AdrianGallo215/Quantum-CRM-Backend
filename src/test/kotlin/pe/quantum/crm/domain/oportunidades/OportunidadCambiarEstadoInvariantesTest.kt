@@ -18,6 +18,7 @@ import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
+import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
@@ -52,6 +53,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     private val consultas = mockk<OportunidadConsultas>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
+    private val tareaService = mockk<TareaService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -66,6 +68,7 @@ class OportunidadCambiarEstadoInvariantesTest {
             consultas,
             notificacionService,
             driveStorageService,
+            OportunidadVisibilidad(tareaService),
         )
 
     private fun oportunidad(
@@ -181,8 +184,8 @@ class OportunidadCambiarEstadoInvariantesTest {
     }
 
     @Test
-    fun `admin, gerencia y analista si pueden pasar a facturado`() {
-        listOf("admin", "gerencia", "analista").forEach { rol ->
+    fun `admin y gerencia si pueden pasar a facturado`() {
+        listOf("admin", "gerencia").forEach { rol ->
             val entidad = oportunidad(idVendedor = 1)
             stubsDeCambioEstado(entidad)
 

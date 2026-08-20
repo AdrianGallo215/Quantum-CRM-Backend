@@ -30,6 +30,7 @@
 22. [Mantenimiento](#22-mantenimiento)
 23. [Enums](#23-enums)
 24. [Notas operativas — Drive](#24-notas-operativas--drive)
+25. [Changelog del contrato](#25-changelog-del-contrato)
 
 ---
 
@@ -160,23 +161,23 @@ Todos los endpoints de listado aceptan:
 
 La visibilidad de datos varía según el rol del usuario autenticado. El backend aplica estos filtros automáticamente — el frontend no puede sobreescribirlos.
 
-| Recurso | admin | gerencia | jdv | vendedor | analista |
-|---|---|---|---|---|---|
-| Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo asignadas |
-| Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Ver todas las tareas | ✓ | ✓ | ✓ | Solo propias | Solo propias |
-| Reasignar empresa directo (cascada automática a sus oportunidades activas) | ✓ | ✓ | — (vía solicitud) | — | — |
-| Ver / gestionar Cartera Maestra | ✓ | ✓ | — | — | — |
-| Validar paso a Facturado | ✓ | ✓ | — | — | ✓ |
-| Crear empleado | ✓ | — | — | — | — |
-| Modificar catálogo de eventos | ✓ | — | — | — | — |
-| Modificar financiadoras | ✓ | ✓ | — | — | — |
-| Modificar modelos | ✓ | ✓ | — | — | — |
-| Eliminar empresa / oportunidad (definitivo, cascada) | ✓ | — | — | — | — |
+| Recurso | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver todas las empresas | ✓ | ✓ | ✓ | Solo asignadas | Solo donde colabora vía tarea | Igual que analista |
+| Ver todas las oportunidades | ✓ | ✓ | ✓ | Solo propias | Solo donde colabora vía tarea | Igual que analista |
+| Ver todas las tareas | ✓ | ✓ | ✓ | Solo donde es dueño o colaborador | Solo donde es dueño o colaborador (sin cambios) | Igual que analista |
+| Reasignar empresa directo (cascada automática a sus oportunidades activas) | ✓ | ✓ | — (vía solicitud) | — | — | — |
+| Ver / gestionar Cartera Maestra | ✓ | ✓ | — | — | — | — |
+| Validar paso a Facturado | ✓ | ✓ | — | — | — | — |
+| Crear empleado | ✓ | — | — | — | — | — |
+| Modificar catálogo de eventos | ✓ | — | — | — | — | — |
+| Modificar financiadoras | ✓ | ✓ | — | — | — | — |
+| Modificar modelos | ✓ | ✓ | — | — | — | — |
+| Eliminar empresa / oportunidad (definitivo, cascada) | ✓ | — | — | — | — | — |
 
-`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y por `id_vendedor = usuario_actual` en oportunidades. `analista` aplica el mismo filtro que `vendedor` en el MVP. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y `analista` en todos los endpoints.
+`vendedor` filtra por `id_vendedor = usuario_actual` en empresas y en oportunidades. **`analista`/`otro` (roles de apoyo, actualizado 2026-08-18) ya no aplican el mismo filtro que `vendedor`**: no tienen cartera propia (`id_vendedor`), y su visibilidad es exclusivamente sobre empresas/oportunidades donde el usuario figura como colaborador de una tarea (`ids_colaboradores`). Tampoco crean ni editan empresas/oportunidades, ni confirman `facturado`. Las empresas en Cartera Maestra (`en_cartera_maestra = true`) son invisibles para `jdv`, `vendedor` y los roles de apoyo en todos los endpoints. Detalle completo por operación en `matriz_permisos.md`.
 
-**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §19): `vendedor`/`analista` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite.
+**Límites de descuento** (por encima del límite, el cambio requiere una solicitud — ver §20 Solicitudes): `vendedor` hasta 3%, `jdv` hasta 7%, `gerencia`/`admin` sin límite. Los roles de apoyo (`analista`, `otro`) no aplican descuentos por ninguna vía — ni directo ni por solicitud.
 
 ---
 
@@ -507,7 +508,7 @@ Reemite ambas cookies.
 ### POST /empresas
 > Crea una nueva empresa.
 
-**Roles:** todos
+**Roles:** `admin` `gerencia` `jdv` `vendedor` — **los roles de apoyo (`analista`, `otro`) no pueden crear empresas: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:**
 ```json
@@ -554,7 +555,7 @@ Reemite ambas cookies.
 ### PUT /empresas/:id
 > Actualiza datos de una empresa. No actualiza `estado_cartera` ni `id_vendedor`.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su empresa) — **los roles de apoyo (`analista`, `otro`) no pueden editar ninguna empresa: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:** mismos campos que POST, todos opcionales. Si `segmentos` viene en el body, reemplaza completamente los segmentos actuales.
 
@@ -602,7 +603,7 @@ Reemite ambas cookies.
 ### POST /empresas/:id/eventos
 > Registra un nuevo evento en la empresa, sin oportunidad asociada.
 
-**Roles:** todos (solo su empresa si es vendedor/analista — mismo filtro que `PATCH /empresas/:id/estado-cartera`)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — este endpoint no tiene guard de escritura propio, a diferencia de `PATCH /empresas/:id/estado-cartera`, así que no está bloqueado; sin verificar si es intencional, ver `matriz_permisos.md §2.5`)
 
 **Body** — idéntico al de `POST /oportunidades/:id/eventos` (catálogo o personalizado, §11).
 
@@ -617,7 +618,7 @@ Reemite ambas cookies.
 ### PATCH /empresas/:id/estado-cartera
 > Cambia el estado de cartera manualmente. Solo acepta estados manuales.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su empresa) — **los roles de apoyo (`analista`, `otro`) no pueden cambiar el estado de cartera: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:**
 ```json
@@ -669,7 +670,7 @@ Reemite ambas cookies.
 ### POST /empresas/:id/carpeta-drive
 > Crea la carpeta de Google Drive de la empresa. Idempotente.
 
-**Roles:** los mismos que ven la empresa (un vendedor solo las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden crear la carpeta: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque escribe `drive_folder_id` en la empresa.
 
 **Body:** vacío.
 
@@ -685,7 +686,7 @@ Reemite ambas cookies.
 ### GET /empresas/:id/archivos
 > Lista los documentos de la carpeta de Google Drive de la empresa.
 
-**Roles:** los mismos que ven la empresa (un vendedor solo ve las suyas).
+**Roles:** los mismos que ven la empresa (`vendedor`: solo las suyas; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — lectura, no bloqueada).
 
 **Respuesta 200:**
 
@@ -713,7 +714,7 @@ Reemite ambas cookies.
 ### POST /empresas/:id/archivos
 > Sube un documento a la carpeta de Google Drive de la empresa.
 
-**Roles:** los mismos que ven la empresa (un vendedor solo sube a las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden subir archivos: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque este endpoint asegura la carpeta primero (`asegurarCarpetaDrive`, ver nota arriba).
 
 **Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
 
@@ -863,7 +864,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /empresas/:id/contactos
 > Vincula un contacto existente a una empresa.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo empresas donde colaboran vía tarea — no bloqueado, a diferencia de las operaciones de escritura sobre la empresa misma)
 
 **Body:**
 ```json
@@ -882,7 +883,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### PUT /empresas/:id/contactos/:contacto_id
 > Actualiza el cargo o rol del contacto en esta empresa.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo empresas donde colaboran vía tarea — no bloqueado, a diferencia de las operaciones de escritura sobre la empresa misma)
 
 **Body:** `{ "cargo": "Socio", "toma_decision": false, "es_principal": false }`
 
@@ -893,7 +894,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### DELETE /empresas/:id/contactos/:contacto_id
 > Desvincula un contacto de una empresa. No elimina el contacto.
 
-**Roles:** todos (solo su empresa si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su empresa; roles de apoyo `analista`/`otro`: solo empresas donde colaboran vía tarea — no bloqueado, a diferencia de las operaciones de escritura sobre la empresa misma)
 
 **Respuesta 204:** sin body.
 
@@ -980,7 +981,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /oportunidades
 > Crea una nueva oportunidad.
 
-**Roles:** todos (la empresa debe estar asignada al vendedor si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (la empresa debe estar asignada al vendedor si es `vendedor`) — **los roles de apoyo (`analista`, `otro`) no pueden crear oportunidades: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:**
 ```json
@@ -1019,7 +1020,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /oportunidades/:id/carpeta-drive
 > Crea la carpeta de Google Drive de la oportunidad, dentro de la de su empresa. Idempotente.
 
-**Roles:** los mismos que ven la oportunidad (un vendedor solo las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden crear la carpeta: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque escribe `drive_folder_id` en la oportunidad.
 
 **Body:** vacío.
 
@@ -1036,7 +1037,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### GET /oportunidades/:id/archivos
 > Lista los documentos de la carpeta de Google Drive de la oportunidad.
 
-**Roles:** los mismos que ven la oportunidad (un vendedor solo ve las suyas).
+**Roles:** los mismos que ven la oportunidad (`vendedor`: solo las suyas; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — lectura, no bloqueada).
 
 **Respuesta 200:**
 
@@ -1064,7 +1065,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 ### POST /oportunidades/:id/archivos
 > Sube un documento a la carpeta de Google Drive de la oportunidad.
 
-**Roles:** los mismos que ven la oportunidad (un vendedor solo sube a las suyas).
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo las suyas) — **los roles de apoyo (`analista`, `otro`) no pueden subir archivos: `403 PERMISO_INSUFICIENTE`** (2026-08-18), porque este endpoint asegura la carpeta primero.
 
 **Request:** `multipart/form-data` con el archivo en el campo **`file`**. Otros campos se ignoran.
 
@@ -1103,7 +1104,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PUT /oportunidades/:id
 > Actualiza campos negociables de la oportunidad. No cambia el estado.
 
-**Roles:** todos (solo su oportunidad si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su oportunidad) — **los roles de apoyo (`analista`, `otro`) no pueden editar ninguna oportunidad: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
 **Body:** `id_modelo`, `cantidad`, `precio_unitario`, `dcto`, `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado` — todos opcionales.
 
@@ -1136,7 +1137,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /oportunidades/:id/estado
 > Cambia el estado de una oportunidad.
 
-**Roles:** todos con restricción: el paso a `facturado` solo lo pueden confirmar `admin`, `gerente` y `analista`.
+**Roles:** todos con restricción: el paso a `facturado` solo lo pueden confirmar `admin` y `gerencia`. (Corregido 2026-08-18: decía "gerente" — nombre obsoleto desde la migración V25 — y "analista", que dejó de tener este privilegio al pasar a rol de apoyo.)
 
 **Body:**
 ```json
@@ -1197,7 +1198,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### POST /oportunidades/:id/contactos
 > Vincula un contacto a la oportunidad con su rol.
 
-**Roles:** todos (solo su oportunidad si es vendedor/analista)
+**Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su oportunidad) — **los roles de apoyo (`analista`, `otro`) no pueden vincular contactos a una oportunidad: `403 PERMISO_INSUFICIENTE`** (2026-08-18). A diferencia de la vinculación de contactos a una *empresa* (§9), que sí les está permitida donde colaboran — ver `matriz_permisos.md §2.3`.
 
 **Body:** `{ "id_contacto": 5, "rol_en_oportunidad": "Contacto Principal" }`
 
@@ -1273,7 +1274,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### POST /oportunidades/:id/eventos
 > Registra un nuevo evento en la oportunidad.
 
-**Roles:** todos (solo su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo su oportunidad; roles de apoyo `analista`/`otro`: solo donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body (evento del catálogo):**
 ```json
@@ -1303,7 +1304,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /eventos/:id/ocurrido
 > Marca un evento como ocurrido.
 
-**Roles:** todos (solo eventos de su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo eventos de su oportunidad; roles de apoyo `analista`/`otro`: solo eventos de oportunidades donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body:**
 ```json
@@ -1339,7 +1340,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PATCH /eventos/:id/descartado
 > Marca un evento como descartado.
 
-**Roles:** todos (solo eventos de su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo eventos de su oportunidad; roles de apoyo `analista`/`otro`: solo eventos de oportunidades donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body:** `{ "descripcion": "Evento ya no aplica" }` (opcional)
 
@@ -1350,7 +1351,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 ### PUT /eventos/:id
 > Actualiza fechas o descripción de un evento pendiente.
 
-**Roles:** todos (solo eventos de su oportunidad si es vendedor/analista)
+**Roles:** todos (`vendedor`: solo eventos de su oportunidad; roles de apoyo `analista`/`otro`: solo eventos de oportunidades donde colaboran vía tarea — no bloqueado, ver `matriz_permisos.md §2.5`)
 
 **Body:** `fecha_estimada`, `fecha_seguimiento`, `descripcion` — todos opcionales.
 
@@ -2035,12 +2036,12 @@ Notifica a un usuario cuando ocurre una acción relacionada con él pero no acci
 
 ## 20. Solicitudes
 
-Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una acción por encima de su permiso (hoy: descuentos sobre su límite y reasignación de clientes por el `jdv`), envían una Solicitud en vez de aplicar el cambio directo. El aprobador (`jdv` o `gerencia`, según el caso) la aprueba o deniega; `admin` puede resolver ambas bandejas. Ver `gerencia_solicitudes_modelo_datos.md` y `gerencia_contrato_frontend.md` para el detalle completo.
+Capa intermedia de aprobación: cuando `vendedor`/`jdv` intentan una acción por encima de su permiso (hoy: descuentos sobre su límite y reasignación de clientes por el `jdv`), envían una Solicitud en vez de aplicar el cambio directo. El aprobador (`jdv` o `gerencia`, según el caso) la aprueba o deniega; `admin` puede resolver ambas bandejas. **Los roles de apoyo (`analista`, `otro`) no crean solicitudes** (2026-08-18) — no tienen margen de descuento por ninguna vía ni reasignan clientes; ver `POST /solicitudes` abajo. Ver `gerencia_solicitudes_modelo_datos.md` y `gerencia_contrato_frontend.md` para el detalle completo.
 
 ### POST /solicitudes
 > Crea una solicitud de aprobación.
 
-**Roles:** `vendedor` `analista` `jdv` (según tipo; `gerencia`/`admin` no solicitan, ejecutan directo)
+**Roles:** `vendedor` `jdv` (según tipo; `gerencia`/`admin` no solicitan, ejecutan directo). **Los roles de apoyo (`analista`, `otro`) no pueden crear ninguna solicitud: `403 PERMISO_INSUFICIENTE`** (2026-08-18) — no tienen margen de descuento por ninguna vía ni reasignan clientes.
 
 **Body (descuento):**
 ```json
@@ -2071,7 +2072,7 @@ Capa intermedia de aprobación: cuando `vendedor`/`analista`/`jdv` intentan una 
 ---
 
 ### GET /solicitudes
-> Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista` solo las propias.
+> Lista solicitudes, paginado estándar (§4). La visibilidad la decide el backend: `admin` ve todas; `gerencia` las dirigidas a `gerencia`; `jdv` las dirigidas a `jdv` + las propias; `vendedor`/`analista`/`otro` solo las propias.
 
 **Query params:** `estado` (`pendiente|aprobada|denegada`), `tipo`, `mias=true` (fuerza "solo las que yo creé").
 
@@ -2164,7 +2165,7 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 ---
 
 ### GET /metas-venta
-> Lista metas, paginado estándar (§4). `admin`/`gerencia`/`jdv` ven todas (el jdv ve todo el equipo, incluida la suya); `vendedor`/`analista` solo las propias.
+> Lista metas, paginado estándar (§4). `admin`/`gerencia`/`jdv` ven todas (el jdv ve todo el equipo, incluida la suya); `vendedor`/`analista`/`otro` solo las propias (en la práctica vacío para los roles de apoyo, que no tienen meta).
 
 **Query params:** `id_empleado`, `anio`, `estado` (`propuesta|aprobada|rechazada`).
 
@@ -2247,6 +2248,23 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 - **Creación de carpeta al subir sobre `drive_folder_id: null`:** `POST /empresas/:id/archivos` y `POST /oportunidades/:id/archivos` llaman primero a `asegurarCarpetaDrive`, que crea la carpeta en ese momento si `drive_folder_id` es `null` y la persiste antes de subir el archivo — no devuelve 404. El 404 solo ocurre si la entidad no existe o es ajena al usuario (chequeo de visibilidad corre antes de tocar Drive, por diseño de IDOR). Consecuencia para el cliente: tras esa primera subida, el detalle de la entidad debe refrescarse, porque `drive_folder_id` ya dejó de ser `null` en el servidor.
 - **Unidad del límite de tamaño:** el límite de archivo es `app.drive.max-file-size-bytes`, por defecto **`104_857_600` bytes exactos** (100 × 1024 × 1024 = MiB, no MB decimales — ver `DriveProperties.DEFAULT_MAX_FILE_SIZE_BYTES`). El límite se aplica sobre el stream ya desenmarcado del multipart (`StreamAcotado` envuelve `parte.inputStream`, después de que `commons-fileupload2` separa boundary/headers/CRLFs): el framing nunca cuenta contra el tope. Validar contra `file.size` en el cliente es exacto y no requiere reservar margen.
 - **Errores sin envelope:** el deploy (Render/Railway, ver `DEVOPS-backend.md` §6.1) no tiene nginx propio — corre detrás del proxy de borde de la plataforma, que puede cortar una petición antes de que llegue a la API Spring. En ese caso la respuesta **no trae el envelope** `{ data, meta, error }` ni `error.code`. El cliente nunca debe leer `error.code` a ciegas: si el body no parsea como el envelope esperado, cae al mensaje genérico. Cuando la petición sí llega a la API, un 413 por archivo grande **siempre** trae el envelope con `code: "ARCHIVO_DEMASIADO_GRANDE"` (`GlobalExceptionHandler.handleUploadTooLarge`). Excepción razonada para el cliente: un 413 sin envelope se puede tratar igual que `ARCHIVO_DEMASIADO_GRANDE`, porque ese status solo puede significar eso.
+
+---
+
+## 25. Changelog del contrato
+
+> Registro de cambios a este contrato desde que la app está en producción (2026-08-18 en adelante — no se reconstruyen entradas retroactivas para lo anterior a esa fecha). **Todo PR que modifique la forma de un request/response, un código de error, la semántica de un campo, o agregue/quite un endpoint documentado aquí, agrega una entrada a esta tabla en el mismo PR.** Sin entrada, el PR no se considera completo aunque el código y los tests pasen.
+
+**Breaking vs non-breaking, para este contrato:**
+- **Breaking** — requiere que el frontend actualice código antes o al mismo tiempo del deploy: quitar o renombrar un campo de un response, cambiar el tipo/formato de un campo existente, cambiar un código de error ya usado, cambiar el status HTTP de un caso ya documentado, quitar un endpoint, agregar un campo *requerido* a un request.
+- **Non-breaking** — el frontend puede ignorarlo hasta que lo adopte: nuevo endpoint, nuevo campo *opcional* en un response, nuevo valor de enum aditivo en un campo que el cliente ya trata con un `default`/`else`, aclaración de comportamiento no observable en la firma (como las notas de §24).
+
+| Fecha | Endpoint(s) | Tipo | Cambio | Acción para frontend |
+|---|---|---|---|---|
+| 2026-08-18 | — | — | Se crea este changelog. Sin entradas retroactivas. | Ninguna |
+| 2026-08-18 | `GET /oportunidades`, `GET /oportunidades/:id`, `GET /empresas`, `GET /empresas/:id`, `PATCH /oportunidades/:id/estado`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /empresas`, `PUT /empresas/:id`, `PATCH /empresas/:id/estado-cartera`, `PATCH /empresas/:id/vendedor`, `PATCH /empresas/:id/cartera-maestra`, `POST /oportunidades/:id/archivos`, `POST /oportunidades/:id/carpeta-drive`, `POST /empresas/:id/archivos`, `POST /empresas/:id/carpeta-drive`, `POST /solicitudes` | **Breaking** | `analista` y `otro` pasan a roles de apoyo sin cartera propia: en empresas y oportunidades (los recursos que lista esta fila) los listados y el detalle solo devuelven las entidades donde el usuario colabora vía tarea (`ids_colaboradores`), y toda escritura sobre esos dos recursos (incluida la subida de archivos/creación de carpeta en Drive) responde `403 PERMISO_INSUFICIENTE` con mensaje específico; `analista` deja de poder confirmar `facturado`; ninguno de los dos aplica descuentos por ninguna vía ni crea solicitudes de aprobación. Eventos y la vinculación de contactos a empresa no tienen guard de escritura propio y heredan la visibilidad por colaboración (detalle en `matriz_permisos.md §2.3/§2.5`). Ver `matriz_permisos.md` para el detalle completo por operación. | Ocultar en el cliente las acciones de escritura y de subida de Drive para estos roles, y no asumir que "lo que veo, lo puedo editar". El 403 trae un mensaje específico que se puede mostrar tal cual. Las solicitudes históricas que estos roles ya tenían siguen siendo visibles (no hay regresión de lectura ahí). |
+| 2026-08-19 | `GET /solicitudes` | Non-breaking (fix de seguridad) | El filtro de visibilidad del listado no tenía ninguna rama para el rol `otro` y devolvía todas las solicitudes de la empresa sin restricción, incluidos montos de descuento y motivos de reasignación ajenos. Corregido: `otro` ahora solo ve las solicitudes que él mismo creó, igual que `analista`. | Ninguna — el comportamiento correcto ya era el documentado; ningún cliente debía depender de la fuga. |
+| 2026-08-19 | `GET /metas-venta` | Non-breaking (fix de seguridad) | El filtro de visibilidad del listado tenía la misma falla que `GET /solicitudes`: ninguna rama para el rol `otro`, que veía todas las metas del equipo sin restricción. Corregido: `otro` ahora solo ve su propia meta, igual que `analista`. | Ninguna — el comportamiento correcto ya era el documentado; ningún cliente debía depender de la fuga. |
 
 ---
 

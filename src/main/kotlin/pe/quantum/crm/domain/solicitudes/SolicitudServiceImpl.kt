@@ -44,6 +44,11 @@ class SolicitudServiceImpl(
         request: CrearSolicitudRequest,
         usuario: UsuarioActual,
     ): SolicitudDto {
+        if (usuario.esRolApoyo) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: no puedes crear solicitudes de aprobación",
+            )
+        }
         val tipo = requireNotNull(request.tipo)
         val entidadId = requireNotNull(request.entidadId)
         val (rolAprobador, entidadTipo, descripcion) =
@@ -238,7 +243,7 @@ class SolicitudServiceImpl(
         Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
             when {
-                filtros.mias || usuario.rol == "vendedor" || usuario.rol == "analista" ->
+                filtros.mias || usuario.rol == "vendedor" || usuario.esRolApoyo ->
                     predicados += cb.equal(root.get<Long>("idSolicitante"), usuario.id)
                 usuario.rol == "gerencia" ->
                     predicados += cb.equal(root.get<AprobadorSolicitud>("rolAprobador"), AprobadorSolicitud.gerencia)

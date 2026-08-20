@@ -40,4 +40,30 @@ class UsuarioActualTest {
         assertThat(exGerente.esSupervisor).isFalse()
         assertThat(exGerente.puedeValidarFacturado).isFalse()
     }
+
+    @Test
+    fun `analista y otro son roles de apoyo`() {
+        assertThat(UsuarioActual(1L, "analista").esRolApoyo).isTrue()
+        assertThat(UsuarioActual(2L, "otro").esRolApoyo).isTrue()
+    }
+
+    @Test
+    fun `los roles comerciales y supervisores no son de apoyo`() {
+        assertThat(UsuarioActual(3L, "vendedor").esRolApoyo).isFalse()
+        assertThat(UsuarioActual(4L, "jdv").esRolApoyo).isFalse()
+        assertThat(UsuarioActual(5L, "gerencia").esRolApoyo).isFalse()
+        assertThat(UsuarioActual(6L, "admin").esRolApoyo).isFalse()
+    }
+
+    @Test
+    fun `el analista ya no puede validar el paso a facturado`() {
+        assertThat(UsuarioActual(1L, "analista").puedeValidarFacturado).isFalse()
+        assertThat(UsuarioActual(2L, "otro").puedeValidarFacturado).isFalse()
+    }
+
+    @Test
+    fun `admin y gerencia siguen validando el paso a facturado`() {
+        assertThat(UsuarioActual(5L, "gerencia").puedeValidarFacturado).isTrue()
+        assertThat(UsuarioActual(6L, "admin").puedeValidarFacturado).isTrue()
+    }
 }

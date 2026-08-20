@@ -64,6 +64,7 @@ class OportunidadServiceImpl(
     private val consultas: OportunidadConsultas,
     private val notificacionService: NotificacionService,
     private val driveStorageService: DriveStorageService,
+    private val visibilidad: OportunidadVisibilidad,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -76,6 +77,7 @@ class OportunidadServiceImpl(
         request: CrearOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
+        visibilidad.rechazarSiEsApoyo(usuario)
         val empresa = empresaService.vinculoVisible(request.idEmpresa, usuario)
         validarLimiteDescuento(request.dcto, usuario)
         // Snapshot del vendedor de la empresa (reglas §8.4). Una empresa sin vendedor
@@ -175,6 +177,7 @@ class OportunidadServiceImpl(
         request: ActualizarOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
+        visibilidad.rechazarSiEsApoyo(usuario)
         if (request.montoTotal != null) {
             throw MontoNoEditableException()
         }
@@ -227,6 +230,7 @@ class OportunidadServiceImpl(
         request: CambiarEstadoRequest,
         usuario: UsuarioActual,
     ): CambioEstadoDto {
+        visibilidad.rechazarSiEsApoyo(usuario)
         val oportunidad = visibleBloqueando(id, usuario)
         val nuevo =
             runCatching { EstadoOportunidad.valueOf(request.estado) }.getOrNull()
@@ -364,6 +368,7 @@ class OportunidadServiceImpl(
         request: ContactoVinculoRequest,
         usuario: UsuarioActual,
     ): ContactoVinculoRequest {
+        visibilidad.rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         if (!contactoService.existe(request.idContacto)) {
             throw NoEncontradoException("El contacto no existe")
@@ -391,6 +396,7 @@ class OportunidadServiceImpl(
         rolEnOportunidad: String?,
         usuario: UsuarioActual,
     ): ContactoVinculoRequest {
+        visibilidad.rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         val vinculo =
             contactoOportunidadRepository
@@ -407,6 +413,7 @@ class OportunidadServiceImpl(
         idContacto: Long,
         usuario: UsuarioActual,
     ) {
+        visibilidad.rechazarSiEsApoyo(usuario)
         visible(id, usuario)
         val vinculo =
             contactoOportunidadRepository
@@ -561,7 +568,10 @@ class OportunidadServiceImpl(
     override fun asegurarCarpetaDrive(
         id: Long,
         usuario: UsuarioActual,
-    ): String = asegurarCarpetaDriveDe(visible(id, usuario))
+    ): String {
+        visibilidad.rechazarSiEsApoyo(usuario)
+        return asegurarCarpetaDriveDe(visible(id, usuario))
+    }
 
     override fun asegurarCarpetaDrive(id: Long): String = asegurarCarpetaDriveDe(entidad(id))
 
@@ -616,7 +626,7 @@ class OportunidadServiceImpl(
         usuario: UsuarioActual,
     ): Oportunidad {
         val oportunidad = entidad(id)
-        if (usuario.visibilidadRestringida && oportunidad.idVendedor != usuario.id) {
+        if (!visibilidad.alcanza(oportunidad, usuario)) {
             throw NoEncontradoException("La oportunidad no existe")
         }
         return oportunidad
@@ -635,7 +645,7 @@ class OportunidadServiceImpl(
         val oportunidad =
             oportunidadRepository.findByIdBloqueando(id)
                 ?: throw NoEncontradoException("La oportunidad no existe")
-        if (usuario.visibilidadRestringida && oportunidad.idVendedor != usuario.id) {
+        if (!visibilidad.alcanza(oportunidad, usuario)) {
             throw NoEncontradoException("La oportunidad no existe")
         }
         return oportunidad
@@ -661,11 +671,17 @@ class OportunidadServiceImpl(
         filtros: OportunidadFiltros,
         estado: EstadoOportunidad?,
         usuario: UsuarioActual,
-    ): Specification<Oportunidad> =
-        Specification { root, _, cb ->
+    ): Specification<Oportunidad> {
+        // Resuelto ANTES de construir la Specification, no dentro de su lambda:
+        // Spring Data JPA evalua `toPredicate` dos veces por pagina (contenido y
+        // conteo), y `idsColaboracion` es una consulta, no un `equal` gratis como
+        // el resto de predicados.
+        val idsColaboracion = visibilidad.idsColaboracion(usuario)
+        return Specification { root, _, cb ->
             val predicados = mutableListOf<Predicate>()
-            if (usuario.visibilidadRestringida) {
-                predicados += cb.equal(root.get<Long>("idVendedor"), usuario.id)
+            val predicadoVisibilidad = visibilidad.predicadoVisibilidad(root, cb, idsColaboracion, usuario)
+            if (predicadoVisibilidad != null) {
+                predicados += predicadoVisibilidad
             } else if (filtros.idVendedor != null) {
                 predicados += cb.equal(root.get<Long>("idVendedor"), filtros.idVendedor)
             }
@@ -677,6 +693,7 @@ class OportunidadServiceImpl(
             filtros.idFinanciadora?.let { predicados += cb.equal(root.get<Long>("idFinanciadora"), it) }
             cb.and(*predicados.toTypedArray())
         }
+    }
 
     private fun toDto(
         oportunidad: Oportunidad,

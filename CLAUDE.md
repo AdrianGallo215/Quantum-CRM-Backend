@@ -84,7 +84,7 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 3. **`estado_cartera` solo se modifica vía `actualizarEstadoCartera()`**, dentro de la transacción del evento que lo dispara. Ningún otro código lo toca.
 4. **Los eventos no cambian el estado automáticamente.** Devuelven una sugerencia; el cambio es una segunda llamada confirmada.
 5. **`motivo_cierre` obligatorio cuando `estado = 'cerrado'`.** Validar en backend + CHECK constraint.
-6. **El paso a `facturado` solo para admin, gerencia, analista.** Verificar en el servicio. (El rol se llama `gerencia`, no `gerente`: lo renombró V25.)
+6. **El paso a `facturado` solo para admin, gerencia.** Verificar en el servicio. (El rol se llama `gerencia`, no `gerente`: lo renombró V25. `analista` perdió este privilegio el 2026-08-18 al pasar a rol de apoyo de solo lectura — ver `docs/matriz_permisos.md`.)
 7. **No existe estado `perdido`.** El enum tiene 4 valores. ¿Necesitas otro? Pregunta.
 8. **Inyección por constructor** (`private val`), nunca `@Autowired` en campos.
 9. **Relaciones JPA siempre `LAZY`.** Nunca exponer entidades en controllers — siempre DTOs.
@@ -123,5 +123,6 @@ Módulo financiero (comisiones, cuotas, balloon) · endpoints de `buses_entregad
 ## Coordinación con el frontend (repo separado)
 
 - Este repo es dueño de `contrato_api.md` y `matriz_permisos.md`. Si cambian, se comunica al equipo de frontend.
+- Todo cambio a un endpoint documentado (breaking o no) se registra en `contrato_api.md §25 Changelog del contrato`, en el mismo PR que lo hace. Sin esa entrada, el cambio de contrato no está terminado.
 - El backend debe tener el dominio del frontend en `CORS_ALLOWED_ORIGINS`.
 - API versionada en `/api/v1`.

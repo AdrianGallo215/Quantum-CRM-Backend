@@ -352,6 +352,13 @@ class TareaServiceImpl(
             }
     }
 
+    @Transactional(readOnly = true)
+    override fun idsOportunidadesDondeColabora(idEmpleado: Long): Set<Long> =
+        tareaRepository.idsOportunidadConColaborador(idEmpleado).toSet()
+
+    @Transactional(readOnly = true)
+    override fun idsEmpresasDondeColabora(idEmpleado: Long): Set<Long> = tareaRepository.idsEmpresaConColaborador(idEmpleado).toSet()
+
     // ── privados ───────────────────────────────────────────────
 
     /** vendedor/analista solo operan tareas donde son dueño o colaborador (404 si no). */
