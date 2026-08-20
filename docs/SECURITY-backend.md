@@ -9,7 +9,7 @@
 1. **Defensa en profundidad.** El backend valida todo aunque el frontend ya lo haya hecho.
 2. **Menor privilegio.** Cada rol tiene el mínimo acceso. Ver `matriz_permisos.md`.
 3. **Nunca confiar en el cliente.** Toda validación de seguridad ocurre aquí.
-4. **Fallar de forma segura.** Ante error o duda, denegar.
+4. **Fallar de forma segura.** Ante error o duda, denegar. **Esto incluye ambigüedad de alcance, no solo errores en runtime:** si un cambio de permisos deja sin resolver si una operación adyacente (un endpoint relacionado, un módulo vecino) debería bloquearse también, y no hay forma de confirmarlo con quien pidió el cambio, el default es bloquearla y dejar que la abran explícitamente después — no dejarla abierta "documentada como pendiente". Documentar un hueco de permiso no lo cierra; ver el caso de `analista`/`otro` y escritura de eventos/contactos (2026-08-19) como ejemplo de la decisión tomada en el sentido incorrecto.
 5. **No exponer información.** Los errores no revelan detalles internos ni si un recurso existe.
 
 ---

@@ -252,6 +252,8 @@ La cobertura de servicios de dominio es alta y no negociable porque ahí vive la
 
 Herramienta: **Kover**. El CI falla si la cobertura baja del umbral (`./gradlew koverVerify`).
 
+**Bloqueo conocido en local (Claude Code):** `koverVerify` arrastra `integrationTest` (Testcontainers) como dependencia de la cobertura agregada, y Testcontainers está roto en el entorno de trabajo local por una incompatibilidad de Docker (ver memoria del proyecto `testcontainers-docker29-blocker.md`). Esto significa que `koverVerify` **nunca puede confirmarse en verde localmente**, solo en CI. Decilo explícitamente en el primer intento de correr los gates de una tarea — no lo descubras a mitad de la verificación final y lo reportes como sorpresa. Mismo criterio para cualquier test `@Tag("integration")`.
+
 ---
 
 ## 9. Convenciones de nombres

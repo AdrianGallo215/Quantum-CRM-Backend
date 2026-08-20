@@ -29,6 +29,8 @@ fix/xxx       → bugfixes (desde develop o main si es hotfix).
 
 **Quién trabaja aquí:** el único desarrollador humano es el dueño del repo, así que `enforce_admins` está apagado a propósito y sus commits directos a `main` son válidos — no son un hueco de proceso. Esta disciplina de rama propia + PR + CI en verde aplica en particular a **Claude Code**: cualquier funcionalidad, fix o cambio de esquema que implemente Claude Code va en su propia `feature/xxx` o `fix/xxx`, nunca commiteado directo a `main`.
 
+**Caso específico que ya rompió esta regla una vez (2026-08-19):** hace falta contenido nuevo (un plan, un ticket, una skill) *antes* de poder crear el worktree/rama de la tarea real — por ejemplo, porque la herramienta de worktree necesita que el archivo ya exista para que el primer commit de la rama lo incluya. La tentación es commitear ese contenido a `main` "solo para destrabar el paso siguiente". **No hacerlo.** La secuencia correcta es: crear el worktree primero (aunque parta de un estado sin el archivo nuevo), y que ese archivo sea el **primer commit de la rama de feature**, no un commit en `main` que después se cherry-pickea. Un commit de Claude Code en `main`, aunque el dueño lo apruebe en el momento porque parece necesario para continuar, dejó un commit local sin pushear duplicado por cherry-pick en otra rama — exactamente el tipo de estado confuso que esta regla existe para evitar.
+
 **Commits — Conventional Commits:**
 ```
 feat(empresas): agregar endpoint de búsqueda por RUC

@@ -93,6 +93,7 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 12. **Un módulo nunca accede a tablas ni entidades de otro módulo.** Solo vía su API pública: interfaces de servicio, DTOs, enums de contrato y eventos publicados. Lo verifica ArchUnit sobre el bytecode, en `src/test/kotlin/pe/quantum/crm/arquitectura/ArquitecturaModulosTest.kt` (corre en `./gradlew test`).
 13. **Nunca secretos en código.** Todo desde variables de entorno. `.env` en `.gitignore`.
 14. **IDOR:** recurso ajeno → devolver 404, no 403.
+15. **Nunca commitear contenido propio (docs, skills, plan, ticket) directo a `main`, ni siquiera para destrabar un paso previo a crear el worktree de la tarea real.** El worktree se crea primero; ese contenido es el primer commit de la rama de feature. Ver `DEVOPS-backend.md §2` para el incidente concreto que motivó esta regla.
 
 ---
 
