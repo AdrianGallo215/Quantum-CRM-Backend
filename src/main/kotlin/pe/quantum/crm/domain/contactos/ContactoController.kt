@@ -61,9 +61,16 @@ class ContactoController(
     @GetMapping("/{id}")
     fun detalle(
         @PathVariable id: Long,
+        @RequestParam(required = false) contexto: String?,
     ): ApiResponse<ContactoDetalleDto> {
         val usuario = usuarioProvider.actual()
-        val contacto = contactoService.detalle(id)
+        val modo = ContextoBusquedaContacto.desde(contexto)
+        val contacto = contactoService.detalle(id, usuario, modo)
+        // En modo reducido no se embeben oportunidades ni actividades: son el
+        // pipeline y la agenda de una empresa donde este rol no colabora.
+        if (modo.esReducidoPara(usuario)) {
+            return ApiResponse.ok(contacto)
+        }
         val completo =
             contacto.copy(
                 oportunidades = oportunidadesDeContacto.listar(id, usuario),

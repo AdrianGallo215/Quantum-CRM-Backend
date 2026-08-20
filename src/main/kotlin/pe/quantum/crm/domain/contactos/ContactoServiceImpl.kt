@@ -145,8 +145,23 @@ class ContactoServiceImpl(
     }
 
     @Transactional(readOnly = true)
-    override fun detalle(id: Long): ContactoDetalleDto {
+    override fun detalle(
+        id: Long,
+        usuario: UsuarioActual,
+        contexto: ContextoBusquedaContacto,
+    ): ContactoDetalleDto {
         val contacto = entidad(id)
+        // Modo reducido: el buscador de vinculacion alcanza todo el CRM, asi que
+        // aqui no hay 404 por alcance — lo que se recorta es el contenido.
+        if (contexto.esReducidoPara(usuario)) {
+            return contacto.toDetalleReducido()
+        }
+        // IDOR: contacto fuera de alcance -> 404, no 403 (CLAUDE.md regla 14). El
+        // mensaje es identico al del inexistente a proposito: no debe poder
+        // distinguirse un contacto ajeno de uno que no existe.
+        if (contexto.aplicaFiltroDeVisibilidadPara(usuario) && id !in idsContactosVisiblesPara(usuario)) {
+            throw NoEncontradoException("El contacto no existe")
+        }
         val vinculos = empresaContactoRepository.findByIdIdContacto(id)
         val empresas = empresaService.resumenPorIds(vinculos.map { it.id.idEmpresa })
         val segmentos = empresaService.segmentosPorIds(vinculos.map { it.id.idEmpresa })
@@ -370,6 +385,24 @@ class ContactoServiceImpl(
      */
     private fun Contacto.toListaReducidoDto(): ContactoListaDto =
         ContactoListaDto(
+            id = requireNotNull(id),
+            nombres = nombres,
+            apellidos = apellidos,
+            email_1 = null,
+            email_2 = null,
+            tlf_1 = null,
+            tlf_2 = null,
+            notas = null,
+            empresas = emptyList(),
+        )
+
+    /**
+     * Detalle del buscador de vinculacion para un rol de apoyo: solo el nombre.
+     * `oportunidades` y `actividades` quedan vacias — el controller ni siquiera
+     * las consulta en este modo.
+     */
+    private fun Contacto.toDetalleReducido(): ContactoDetalleDto =
+        ContactoDetalleDto(
             id = requireNotNull(id),
             nombres = nombres,
             apellidos = apellidos,

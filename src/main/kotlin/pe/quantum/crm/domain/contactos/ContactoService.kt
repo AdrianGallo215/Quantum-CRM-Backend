@@ -53,8 +53,20 @@ interface ContactoService {
     /** Elimina solo si no esta vinculado a ninguna empresa (reglas §11.2). */
     fun eliminar(id: Long)
 
-    /** Detalle del contacto: empresas con segmentos. `oportunidades`/`actividades` los completa el controller. */
-    fun detalle(id: Long): ContactoDetalleDto
+    /**
+     * Detalle del contacto: empresas con segmentos. `oportunidades`/`actividades`
+     * los completa el controller.
+     *
+     * Aplica el filtro de visibilidad por rol (matriz_permisos.md §1): un rol de
+     * apoyo en contexto `listado` solo alcanza los contactos de las empresas donde
+     * colabora, y lo que queda fuera responde 404 — nunca 403 (CLAUDE.md regla 14).
+     * En contexto `vincular` alcanza todo el CRM, pero solo se le devuelve el nombre.
+     */
+    fun detalle(
+        id: Long,
+        usuario: UsuarioActual,
+        contexto: ContextoBusquedaContacto = ContextoBusquedaContacto.listado,
+    ): ContactoDetalleDto
 
     fun vincular(
         idEmpresa: Long,

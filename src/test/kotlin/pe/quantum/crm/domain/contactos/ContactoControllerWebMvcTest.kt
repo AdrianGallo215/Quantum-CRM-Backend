@@ -94,7 +94,8 @@ class ContactoControllerWebMvcTest {
 
     @Test
     fun `GET contactos por id inexistente devuelve 404`() {
-        every { contactoService.detalle(99) } throws pe.quantum.crm.shared.exception.NoEncontradoException("El contacto no existe")
+        every { contactoService.detalle(99, any(), any()) } throws
+            pe.quantum.crm.shared.exception.NoEncontradoException("El contacto no existe")
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
 
         mockMvc.get("/api/v1/contactos/99") {
@@ -113,7 +114,7 @@ class ContactoControllerWebMvcTest {
                 email_1 = null, email_2 = null, tlf_1 = "964415122", tlf_2 = null, notas = null,
                 empresas = emptyList(),
             )
-        every { contactoService.detalle(5) } returns detalle
+        every { contactoService.detalle(5, any(), any()) } returns detalle
         every { oportunidadesDeContacto.listar(5, any()) } returns emptyList()
         every { tareaService.actividadesPorContacto(5, any()) } returns emptyList()
         val token = jwtService.generateAccessToken(empleadoId = 1, rol = "admin")
@@ -142,7 +143,7 @@ class ContactoControllerWebMvcTest {
                 email_1 = null, email_2 = null, tlf_1 = "964415122", tlf_2 = null, notas = null,
                 empresas = emptyList(),
             )
-        every { contactoService.detalle(5) } returns detalle
+        every { contactoService.detalle(5, any(), any()) } returns detalle
         every { oportunidadesDeContacto.listar(5, any()) } returns emptyList()
         every { tareaService.actividadesPorContacto(5, any()) } returns emptyList()
         val token = jwtService.generateAccessToken(empleadoId = 42, rol = "vendedor")
@@ -362,5 +363,76 @@ class ContactoControllerWebMvcTest {
         }
 
         verify(exactly = 0) { contactoService.buscar(any(), any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    /**
+     * En modo reducido el detalle no embebe oportunidades ni actividades: son el
+     * pipeline y la agenda de una empresa donde este rol no colabora.
+     */
+    @Test
+    fun `GET contactos por id en modo vincular con rol de apoyo no embebe oportunidades ni actividades`() {
+        val reducido =
+            pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto(
+                id = 5, nombres = "Hugo", apellidos = "Rodríguez",
+                email_1 = null, email_2 = null, tlf_1 = null, tlf_2 = null, notas = null,
+                empresas = emptyList(),
+            )
+        every { contactoService.detalle(5, any(), ContextoBusquedaContacto.vincular) } returns reducido
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.get("/api/v1/contactos/5?contexto=vincular") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(5) }
+            jsonPath("$.data.tlf_1") { doesNotExist() }
+            jsonPath("$.data.oportunidades") { isEmpty() }
+            jsonPath("$.data.actividades") { isEmpty() }
+        }
+
+        verify(exactly = 0) { oportunidadesDeContacto.listar(any(), any()) }
+        verify(exactly = 0) { tareaService.actividadesPorContacto(any(), any()) }
+    }
+
+    /** El controller propaga el usuario autenticado al filtro de visibilidad del servicio. */
+    @Test
+    fun `GET contactos por id propaga el usuario autenticado al servicio`() {
+        val detalle =
+            pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto(
+                id = 5, nombres = "Hugo", apellidos = "Rodríguez",
+                email_1 = null, email_2 = null, tlf_1 = "964415122", tlf_2 = null, notas = null,
+                empresas = emptyList(),
+            )
+        every { contactoService.detalle(5, any(), any()) } returns detalle
+        every { oportunidadesDeContacto.listar(5, any()) } returns emptyList()
+        every { tareaService.actividadesPorContacto(5, any()) } returns emptyList()
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.get("/api/v1/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect { status { isOk() } }
+
+        verify {
+            contactoService.detalle(
+                5,
+                UsuarioActual(id = 7, rol = "analista"),
+                ContextoBusquedaContacto.listado,
+            )
+        }
+    }
+
+    /** El 404 del servicio (contacto fuera de alcance) llega al cliente como 404. */
+    @Test
+    fun `GET contactos por id fuera de alcance devuelve 404 NO_ENCONTRADO`() {
+        every { contactoService.detalle(5, any(), any()) } throws
+            pe.quantum.crm.shared.exception.NoEncontradoException("El contacto no existe")
+        val token = jwtService.generateAccessToken(empleadoId = 7, rol = "analista")
+
+        mockMvc.get("/api/v1/contactos/5") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error.code") { value("NO_ENCONTRADO") }
+        }
     }
 }

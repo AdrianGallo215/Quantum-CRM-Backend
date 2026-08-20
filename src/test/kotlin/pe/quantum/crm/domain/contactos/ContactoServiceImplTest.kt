@@ -88,7 +88,7 @@ class ContactoServiceImplTest {
             mapOf(3L to EmpresaResumen(id = 3, razonSocial = "Transp. Sta. Anita S.A.", distrito = null))
         every { empresaService.segmentosPorIds(listOf(3L)) } returns mapOf(3L to listOf("interprovincial"))
 
-        val resultado = service.detalle(1)
+        val resultado = service.detalle(1, usuario)
 
         assertThat(resultado.empresas).hasSize(1)
         val empresa = resultado.empresas.first()
@@ -167,7 +167,7 @@ class ContactoServiceImplTest {
     fun `detalle de un contacto inexistente lanza NoEncontradoException`() {
         every { contactoRepository.findById(99) } returns Optional.empty()
 
-        assertThatThrownBy { service.detalle(99) }
+        assertThatThrownBy { service.detalle(99, usuario) }
             .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
     }
 
@@ -209,7 +209,7 @@ class ContactoServiceImplTest {
         every { empresaService.resumenPorIds(listOf(3L)) } returns emptyMap()
         every { empresaService.segmentosPorIds(listOf(3L)) } returns emptyMap()
 
-        assertThat(service.detalle(1).empresas).isEmpty()
+        assertThat(service.detalle(1, usuario).empresas).isEmpty()
     }
 
     /** El principal va primero: es el contacto que el vendedor ve al abrir la empresa. */

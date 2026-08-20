@@ -237,4 +237,108 @@ class ContactoRolApoyoTest {
 
         assertThat(buscarParaVincular(admin).items.first().tlf_1).isEqualTo("964415122")
     }
+
+    // ── R2 / R8: detalle ───────────────────────────────────────
+
+    private fun contactoExiste(id: Long = 1) {
+        every { contactoRepository.findById(id) } returns java.util.Optional.of(contacto(id))
+    }
+
+    private fun colaboraEn(
+        idEmpleado: Long,
+        empresas: Set<Long>,
+        contactos: List<Long>,
+    ) {
+        every { tareaService.idsEmpresasDondeColabora(idEmpleado) } returns empresas
+        if (empresas.isNotEmpty()) {
+            every { empresaContactoRepository.findByIdIdEmpresaIn(empresas) } returns
+                contactos.map { EmpresaContacto(id = EmpresaContactoId(idEmpresa = empresas.first(), idContacto = it)) }
+        }
+    }
+
+    /** IDOR (CLAUDE.md regla 14): contacto fuera de alcance -> 404, nunca 403. */
+    @Test
+    fun `el detalle de un contacto fuera de alcance devuelve 404 para un rol de apoyo`() {
+        contactoExiste(1)
+        colaboraEn(idEmpleado = 7, empresas = setOf(99L), contactos = listOf(50L))
+
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.detalle(1, analista, ContextoBusquedaContacto.listado) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+    }
+
+    @Test
+    fun `el detalle de un rol de apoyo sin colaboraciones devuelve 404`() {
+        contactoExiste(1)
+        every { tareaService.idsEmpresasDondeColabora(7) } returns emptySet()
+
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.detalle(1, analista, ContextoBusquedaContacto.listado) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+    }
+
+    @Test
+    fun `el detalle de un contacto dentro de alcance se devuelve completo`() {
+        contactoExiste(1)
+        colaboraEn(idEmpleado = 7, empresas = setOf(3L), contactos = listOf(1L))
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns emptyList()
+        every { empresaService.resumenPorIds(emptyList()) } returns emptyMap()
+        every { empresaService.segmentosPorIds(emptyList()) } returns emptyMap()
+
+        val detalle = service.detalle(1, analista, ContextoBusquedaContacto.listado)
+
+        assertThat(detalle.tlf_1).isEqualTo("964415122")
+        assertThat(detalle.email_1).isEqualTo("hugo@transportes.pe")
+    }
+
+    /** R8: en modo vincular el detalle llega, pero recortado. */
+    @Test
+    fun `en modo vincular el detalle de un contacto fuera de alcance llega reducido, no 404`() {
+        contactoExiste(1)
+
+        val detalle = service.detalle(1, analista, ContextoBusquedaContacto.vincular)
+
+        assertThat(detalle.id).isEqualTo(1)
+        assertThat(detalle.nombres).isEqualTo("Hugo")
+        assertThat(detalle.apellidos).isEqualTo("Rodríguez")
+        assertThat(detalle.tlf_1).isNull()
+        assertThat(detalle.email_1).isNull()
+        assertThat(detalle.notas).isNull()
+        assertThat(detalle.empresas).isEmpty()
+        assertThat(detalle.oportunidades).isEmpty()
+        assertThat(detalle.actividades).isEmpty()
+    }
+
+    @Test
+    fun `en modo vincular el detalle no consulta la colaboracion ni los vinculos`() {
+        contactoExiste(1)
+
+        service.detalle(1, analista, ContextoBusquedaContacto.vincular)
+
+        verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
+        verify(exactly = 0) { empresaContactoRepository.findByIdIdContacto(any()) }
+    }
+
+    /** El 404 por inexistente se mantiene en los dos modos. */
+    @Test
+    fun `en modo vincular un contacto inexistente sigue siendo 404`() {
+        every { contactoRepository.findById(99) } returns java.util.Optional.empty()
+
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.detalle(99, analista, ContextoBusquedaContacto.vincular) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.NoEncontradoException::class.java)
+    }
+
+    /** R4: un vendedor no pierde nada. */
+    @Test
+    fun `el detalle de un vendedor no consulta la colaboracion`() {
+        contactoExiste(1)
+        every { empresaContactoRepository.findByIdIdContacto(1) } returns emptyList()
+        every { empresaService.resumenPorIds(emptyList()) } returns emptyMap()
+        every { empresaService.segmentosPorIds(emptyList()) } returns emptyMap()
+
+        assertThat(service.detalle(1, vendedor, ContextoBusquedaContacto.listado).tlf_1).isEqualTo("964415122")
+
+        verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
+    }
 }
