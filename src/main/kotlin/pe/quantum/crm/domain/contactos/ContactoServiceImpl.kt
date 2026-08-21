@@ -198,6 +198,7 @@ class ContactoServiceImpl(
         request: VincularContactoRequest,
         usuario: UsuarioActual,
     ): VinculoDto {
+        rechazarSiEsApoyo(usuario)
         empresaService.vinculoVisible(idEmpresa, usuario)
         entidad(request.idContacto)
         val id = EmpresaContactoId(idEmpresa = idEmpresa, idContacto = request.idContacto)
@@ -223,6 +224,7 @@ class ContactoServiceImpl(
         request: ActualizarVinculoRequest,
         usuario: UsuarioActual,
     ): VinculoDto {
+        rechazarSiEsApoyo(usuario)
         empresaService.vinculoVisible(idEmpresa, usuario)
         val vinculo = vinculoEntidad(idEmpresa, idContacto)
         request.cargo?.let { vinculo.cargo = it }
@@ -237,6 +239,7 @@ class ContactoServiceImpl(
         idContacto: Long,
         usuario: UsuarioActual,
     ) {
+        rechazarSiEsApoyo(usuario)
         empresaService.vinculoVisible(idEmpresa, usuario)
         val vinculo = vinculoEntidad(idEmpresa, idContacto)
         empresaContactoRepository.delete(vinculo)
@@ -378,6 +381,31 @@ class ContactoServiceImpl(
         if (idContacto !in idsContactosVisiblesPara(usuario)) {
             throw PermisoInsuficienteException(
                 "Tu rol es de apoyo: solo puedes editar contactos de las empresas donde colaboras",
+            )
+        }
+    }
+
+    /**
+     * Vinculacion de contactos a empresas para un rol de apoyo: bloqueada por
+     * completo, con 403. No es un guard de alcance (como `rechazarSiFueraDeAlcance`
+     * para editar) sino un bloqueo total, igual que
+     * `OportunidadServiceImpl.vincularContacto` bloquea la vinculacion de
+     * contactos a oportunidades con `visibilidad.rechazarSiEsApoyo`.
+     *
+     * Por que bloquear en vez de acotar por alcance: `?contexto=vincular` busca
+     * deliberadamente en todo el CRM (R5, no es un descuido). Si la vinculacion en
+     * si misma solo estuviera acotada a contactos ya visibles, seguiria sin cerrar
+     * nada porque el usuario nunca intentaria vincular algo que ya ve. El riesgo
+     * real es el camino completo: buscar en todo el CRM -> vincular a una empresa
+     * donde colabora -> `GET /contactos/:id` en modo listado lo devuelve completo.
+     * Bloquear el segundo paso cierra el camino sin tocar la busqueda (R5 se
+     * mantiene: sigue sirviendo para no crear un contacto duplicado, aunque el rol
+     * de apoyo no pueda vincularlo el mismo).
+     */
+    private fun rechazarSiEsApoyo(usuario: UsuarioActual) {
+        if (usuario.esRolApoyo) {
+            throw PermisoInsuficienteException(
+                "Tu rol es de apoyo: puedes consultar este contacto, pero no puedes vincularlo a una empresa",
             )
         }
     }

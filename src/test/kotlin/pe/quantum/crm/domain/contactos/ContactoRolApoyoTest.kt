@@ -419,4 +419,102 @@ class ContactoRolApoyoTest {
 
         verify(exactly = 0) { tareaService.idsEmpresasDondeColabora(any()) }
     }
+
+    // ── bloqueo de vinculacion para roles de apoyo (hallazgo #9 de la revision final) ──
+
+    /**
+     * Cierra el camino de escalada: sin este guard, un rol de apoyo podia buscar
+     * cualquier contacto por nombre en modo vincular, vincularlo a una empresa
+     * donde colabora (sin guard aqui) y despues verlo completo por GET /contactos/:id.
+     * Bloquear la vinculacion en si misma cierra el camino en el segundo paso.
+     */
+    @Test
+    fun `un rol de apoyo no puede vincular un contacto a una empresa`() {
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                service.vincular(
+                    3,
+                    pe.quantum.crm.domain.contactos.dto.VincularContactoRequest(idContacto = 1),
+                    analista,
+                )
+            }.isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+            .hasMessageContaining("apoyo")
+
+        verify(exactly = 0) { empresaContactoRepository.save(any()) }
+    }
+
+    @Test
+    fun `el rol otro tampoco puede vincular un contacto a una empresa`() {
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                service.vincular(
+                    3,
+                    pe.quantum.crm.domain.contactos.dto.VincularContactoRequest(idContacto = 1),
+                    otro,
+                )
+            }.isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+    }
+
+    @Test
+    fun `un rol de apoyo no puede editar el vinculo de un contacto con una empresa`() {
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                service.actualizarVinculo(
+                    3,
+                    1,
+                    pe.quantum.crm.domain.contactos.dto.ActualizarVinculoRequest(cargo = "Gerente"),
+                    analista,
+                )
+            }.isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+
+        verify(exactly = 0) { empresaContactoRepository.save(any()) }
+    }
+
+    @Test
+    fun `un rol de apoyo no puede desvincular un contacto de una empresa`() {
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { service.desvincular(3, 1, analista) }
+            .isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+
+        verify(exactly = 0) { empresaContactoRepository.delete(any<EmpresaContacto>()) }
+    }
+
+    /** El guard bloquea antes de tocar la empresa: nunca llega a `empresaService.vinculoVisible`. */
+    @Test
+    fun `el bloqueo de vinculacion corre antes de resolver la visibilidad de la empresa`() {
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                service.vincular(
+                    3,
+                    pe.quantum.crm.domain.contactos.dto.VincularContactoRequest(idContacto = 1),
+                    analista,
+                )
+            }.isInstanceOf(pe.quantum.crm.shared.exception.PermisoInsuficienteException::class.java)
+
+        verify(exactly = 0) { empresaService.vinculoVisible(any(), any()) }
+    }
+
+    /** R4: el resto de roles no pierde nada. */
+    @Test
+    fun `un vendedor sigue pudiendo vincular un contacto a su empresa`() {
+        every { empresaService.vinculoVisible(3, vendedor) } returns
+            pe.quantum.crm.domain.empresas.dto.EmpresaVinculo(
+                id = 3,
+                razonSocial = "Transp. Sta. Anita S.A.",
+                idVendedor = 42,
+                estadoCartera = "prospeccion",
+            )
+        every { contactoRepository.findById(1) } returns java.util.Optional.of(contacto(1))
+        every { empresaContactoRepository.existsById(EmpresaContactoId(idEmpresa = 3, idContacto = 1)) } returns false
+        every { empresaContactoRepository.save(any()) } answers { firstArg() }
+
+        val dto =
+            service.vincular(
+                3,
+                pe.quantum.crm.domain.contactos.dto.VincularContactoRequest(idContacto = 1),
+                vendedor,
+            )
+
+        assertThat(dto.idEmpresa).isEqualTo(3)
+    }
 }
