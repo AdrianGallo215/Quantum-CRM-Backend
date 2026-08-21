@@ -774,7 +774,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 | `contexto` | Qué contactos devuelve | Qué campos devuelve |
 |---|---|---|
 | `listado` (default) | Solo los vinculados a empresas donde el usuario colabora vía tarea (`ids_colaboradores`). Un contacto sin ninguna empresa vinculada nunca aparece. | Todos, igual que el resto de roles. |
-| `vincular` | Todos los del CRM, incluidos los que no tienen empresa. | **Solo `id`, `nombres` y `apellidos`.** `email_*`, `tlf_*`, `notas`, `empresas` y `oportunidades_count` vienen vacíos/nulos. |
+| `vincular` | Todos los del CRM, incluidos los que no tienen empresa. | **Solo `id`, `nombres` y `apellidos`.** `email_*`, `tlf_*` y `notas` vienen `null`; `empresas` viene `[]`; `oportunidades_count` viene `0` (no se puede distinguir de un contacto sin oportunidades — un cliente que necesite esa distinción no debe usar este campo en este modo). |
 
 **Notas sobre `contexto`:**
 - **Es el parámetro que distingue las dos pantallas que comparten este endpoint:** la vista de listado de Contactos (`listado`) y el buscador de "vincular contacto existente" dentro de una empresa (`vincular`). Sin él, el backend no puede aplicar la regla correcta, porque son opuestas para el mismo rol.
@@ -865,7 +865,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 **Respuesta 200:** el contacto actualizado.
 
 **Notas:**
-- **`analista`/`otro` sobre un contacto fuera de su alcance:** `403 PERMISO_INSUFICIENTE`, no 404. Es una excepción deliberada al criterio IDOR del resto del contrato (§4): en `contexto=vincular` estos roles pueden ver ese mismo contacto por nombre, así que esconderlo al editar mentiría sobre algo que el sistema ya les mostró. El mensaje del error se puede mostrar tal cual al usuario.
+- **`analista`/`otro` sobre un contacto fuera de su alcance:** `403 PERMISO_INSUFICIENTE`, no 404. Es una excepción deliberada al criterio IDOR de este repo (CLAUDE.md regla 14: recurso ajeno → 404, no 403): en `contexto=vincular` estos roles pueden ver ese mismo contacto por nombre, así que esconderlo al editar mentiría sobre algo que el sistema ya les mostró. El mensaje del error se puede mostrar tal cual al usuario.
 - Un contacto inexistente devuelve `404 NO_ENCONTRADO` para todos los roles, incluidos los de apoyo: el 404 se evalúa antes que el permiso.
 
 ---
