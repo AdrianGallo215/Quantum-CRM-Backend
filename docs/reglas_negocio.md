@@ -410,7 +410,7 @@ Los hitos de prospección no son obligatorios para crear una oportunidad. Si el 
 
 Un contacto puede estar vinculado a más de una empresa. La relación vive en `empresa_contactos`. El `cargo` y `toma_decision` son atributos de la relación, no del contacto — pueden variar por empresa.
 
-Al agregar un contacto a una empresa, el frontend debe ofrecer búsqueda de contactos existentes antes de crear uno nuevo. El backend no impide la creación de contactos duplicados, pero sí provee un endpoint de búsqueda por nombre/teléfono.
+Al agregar un contacto a una empresa, el frontend debe ofrecer búsqueda de contactos existentes antes de crear uno nuevo. El backend no impide la creación de contactos duplicados, pero sí provee un endpoint de búsqueda por nombre/teléfono — con una excepción: para los roles de apoyo (`analista`/`otro`) en `contexto=vincular`, la búsqueda es solo por nombre, nunca por teléfono (`contrato_api.md` §9). Ocultar el teléfono en la respuesta no bastaría para proteger el dato: un `LIKE` sobre el número seguiría funcionando como oráculo.
 
 ### 11.2 Eliminación de contactos
 

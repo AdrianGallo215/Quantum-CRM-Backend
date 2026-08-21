@@ -1,0 +1,81 @@
+{
+  "titulo": "GET/PUT /contactos y GET /contactos/:id sin filtro de visibilidad por rol para analista/otro",
+  "origen": "auditoría de seguridad, vía equipo de frontend",
+  "fecha": "2026-08-20",
+  "problema": "Cualquier cuenta autenticada, incluidos los roles de apoyo sin cartera propia (analista, otro), puede listar nombre, teléfono y correo de todos los contactos del CRM sin relación con las empresas que gestiona o donde colabora. Riesgo concreto: una cuenta de bajo compromiso (personal temporal, soporte externo) puede extraer el teléfono del dueño de cualquier empresa sin haber colaborado nunca con ella — dato explotable para fraude o extorsión.",
+  "requisitos_cerrados": [
+    {
+      "id": "R1",
+      "pedido": "GET /contactos debe filtrar, para los roles analista y otro, a solo los contactos vinculados a empresas donde el usuario colabora vía tarea (ids_colaboradores).",
+      "segun_solicitante": "es el mismo criterio de visibilidad ya aplicado a GET /empresas y GET /oportunidades en el PR #9 (2026-08-19), donde 'otro' no tenía ninguna rama de filtro y veía todo el equipo",
+      "verificar_en_triage": true,
+      "nota": "el criterio exacto (qué cuenta como 'colabora vía ids_colaboradores' para un contacto — vía la empresa a la que está vinculado) debe reverificarse contra el código real del PR #9, no asumirse igual sin más por analogía"
+    },
+    {
+      "id": "R2",
+      "pedido": "GET /contactos/:id debe aplicar el mismo filtro: si el contacto pedido no está en el alcance de visibilidad de analista/otro, el endpoint responde 404, no 403.",
+      "nota": "consistente con la regla 14 de CLAUDE.md de este repo (IDOR: recurso ajeno → 404), no es una decisión nueva de este ticket"
+    },
+    {
+      "id": "R3",
+      "pedido": "Un contacto sin ninguna empresa vinculada (contacto huérfano) queda oculto por defecto para analista/otro, salvo que se demuestre colaboración.",
+      "segun_solicitante": "no estaba contemplado en el reporte original; decisión tomada al formalizar el ticket"
+    },
+    {
+      "id": "R4",
+      "pedido": "El resto de roles (admin, gerencia, jdv, vendedor) no cambian: siguen viendo todos los contactos como hoy.",
+      "segun_solicitante": "el reporte solo señala el hueco para analista/otro, no pide tocar la visibilidad de los demás roles"
+    },
+    {
+      "id": "R5",
+      "pedido": "Para analista/otro, en el contexto de 'vincular contacto existente' a una empresa: la búsqueda por q ve TODOS los contactos del CRM (sin el filtro de visibilidad de R1, incluidos huérfanos), pero la respuesta solo expone el nombre — no teléfono ni correo.",
+      "segun_solicitante": "respuesta directa del solicitante a P1/P2 del triage anterior",
+      "nota": "contradice a R1/R3 si se aplican al mismo endpoint sin distinguir contexto — ver R6"
+    },
+    {
+      "id": "R6",
+      "pedido": "GET /contactos necesita una forma explícita de indicar si la llamada es del listado de Contactos (aplica R1/R3, campos completos) o del buscador de vincular contacto existente (aplica R5, sin filtro de visibilidad, solo nombre). El mecanismo elegido es un nuevo parámetro de contexto en el query (p. ej. contexto=vincular), que el frontend debe empezar a enviar.",
+      "segun_solicitante": "respuesta directa del solicitante en el triage: 'nuevo parámetro de contexto'",
+      "verificar_en_triage": true,
+      "nota": "el nombre exacto del parámetro, sus valores permitidos, y si aplica también a GET /contactos/:id (donde R2 exige 404 pero el detalle desde un contexto de vinculación podría no necesitar bloquear) quedan para la sesión de implementación — ver P3"
+    },
+    {
+      "id": "R7",
+      "pedido": "PUT /contactos/:id (editar datos del contacto) entra en el alcance de este ticket: hoy no tiene ningún control de visibilidad por rol — cualquier cuenta autenticada, incluidos analista/otro, puede editar nombre/teléfono/correo de cualquier contacto del CRM sin relación con las empresas donde colabora. Debe quedar sujeto al mismo criterio de visibilidad que R1 para analista/otro.",
+      "segun_solicitante": "hallazgo del triage anterior (ContactoServiceImpl.actualizar no llama a ningún vinculoVisible), confirmado por el solicitante como dentro de alcance ('P3. Sí entra')",
+      "verificar_en_triage": true,
+      "nota": "queda pendiente si la respuesta correcta ante un contacto fuera de alcance es 404 (estilo IDOR, como R2) o 403 (estilo 'puede consultar pero no modificar', como EmpresaServiceImpl.rechazarSiEsApoyo) — resuelto en R10"
+    },
+    {
+      "id": "R8",
+      "pedido": "El parámetro de contexto de R6 aplica también a GET /contactos/:id: si la llamada viene en contexto de vinculación, un analista/otro puede ver el detalle de un contacto fuera de su alcance de R1, pero con campos reducidos (mismo criterio de R5 — nombre, sin teléfono ni correo).",
+      "segun_solicitante": "respuesta directa del solicitante: 'Correcto, lo ve reducido'",
+      "nota": "queda para la sesión de implementación decidir qué otros campos del detalle (empresas, oportunidades, actividades) se reducen u ocultan en este modo — el ticket solo fija que teléfono/correo no se exponen, igual que R5"
+    },
+    {
+      "id": "R9",
+      "pedido": "Si el request a GET /contactos o GET /contactos/:id no incluye el parámetro de contexto de R6 (frontend desactualizado, cliente API directo, etc.), el backend asume el comportamiento más restrictivo: se filtra por R1/R3, no el modo sin-filtro de R5/R8.",
+      "segun_solicitante": "respuesta directa del solicitante: 'Si no llega, se asume el comportamiento más restrictivo: No mostrar'"
+    },
+    {
+      "id": "R10",
+      "pedido": "Para R7 (PUT /contactos/:id sobre un contacto fuera del alcance de analista/otro): responde 403, no 404 — mismo criterio que EmpresaServiceImpl.rechazarSiEsApoyo ('puede consultar, no modificar').",
+      "segun_solicitante": "respuesta directa del solicitante: '403'"
+    }
+  ],
+  "preguntas_abiertas": [],
+  "areas_sospechadas": {
+    "advertencia": "sospecha del solicitante, sin verificar contra el repo",
+    "endpoints": ["GET /contactos", "GET /contactos/:id"],
+    "docs": ["contrato_api.md", "matriz_permisos.md"],
+    "referencia_pr": "PR #9 (2026-08-19) — filtro de visibilidad aplicado a GET /empresas y GET /oportunidades; y el fix del mismo día en GET /solicitudes y GET /metas-venta"
+  },
+  "impacto_esperado_en_frontend": "El frontend ya está aplicando una mitigación de UI mientras se resuelve el backend: oculta la sección 'Contactos' completa para analista/otro (no es control de acceso real, solo cierra la vía de navegación normal) y recorta el buscador de vincular contacto a mostrar únicamente el nombre para esos roles. Esta mitigación de frontend está fuera del alcance de este ticket, que es sobre el backend.",
+  "no_alcance": [
+    "No se toca la mitigación de UI ya aplicada en el frontend (repo separado).",
+    "No se toca la visibilidad de admin, gerencia, jdv ni vendedor.",
+    "No se rediseña el modelo de colaboradores (ids_colaboradores) — se reutiliza el que ya exista de PR #9.",
+    "No se toca la deriva de documentación encontrada en el triage anterior (contrato_api.md línea 855, DELETE /contactos/:id dice 'gerente' en vez de 'gerencia') — se reporta pero no es parte de este cambio salvo que se decida incluirla como corrección menor en el mismo PR."
+  ],
+  "urgencia": "alta — es un hueco de seguridad activo en producción (fuga de PII: teléfono y correo) del mismo tipo que ya se corrigió en otros dos endpoints el 2026-08-19"
+}

@@ -36,7 +36,9 @@ class ContactoServiceImplEscrituraTest {
     private val contactoRepository = mockk<ContactoRepository>()
     private val empresaContactoRepository = mockk<EmpresaContactoRepository>()
     private val empresaService = mockk<EmpresaService>()
-    private val service = ContactoServiceImpl(contactoRepository, empresaContactoRepository, empresaService)
+    private val tareaService = mockk<pe.quantum.crm.domain.tareas.TareaService>()
+    private val service =
+        ContactoServiceImpl(contactoRepository, empresaContactoRepository, empresaService, tareaService)
 
     private val usuario = UsuarioActual(id = 42, rol = "vendedor")
 

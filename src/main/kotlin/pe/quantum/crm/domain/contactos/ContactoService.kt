@@ -6,6 +6,7 @@ import pe.quantum.crm.domain.contactos.dto.ContactoDetalleDto
 import pe.quantum.crm.domain.contactos.dto.ContactoDto
 import pe.quantum.crm.domain.contactos.dto.ContactoListaDto
 import pe.quantum.crm.domain.contactos.dto.ContactoResumen
+import pe.quantum.crm.domain.contactos.dto.ContextoBusquedaContacto
 import pe.quantum.crm.domain.contactos.dto.CrearContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VincularContactoRequest
 import pe.quantum.crm.domain.contactos.dto.VinculoDto
@@ -20,6 +21,12 @@ import pe.quantum.crm.shared.security.UsuarioActual
  */
 @Suppress("TooManyFunctions", "LongParameterList")
 interface ContactoService {
+    /**
+     * Busqueda paginada de contactos. `contexto` decide el modo de visibilidad
+     * para los roles de apoyo (ver `ContextoBusquedaContacto`); el default es el
+     * restrictivo, asi que un llamante que no lo pase nunca abre la busqueda
+     * global por descuido.
+     */
     fun buscar(
         q: String?,
         idEmpresa: Long?,
@@ -28,6 +35,7 @@ interface ContactoService {
         perPage: Int?,
         sort: String?,
         dir: String?,
+        contexto: ContextoBusquedaContacto = ContextoBusquedaContacto.listado,
     ): Paginado<ContactoListaDto>
 
     /** Contacto + vinculacion a empresa en una sola transaccion (§9). */
@@ -45,8 +53,20 @@ interface ContactoService {
     /** Elimina solo si no esta vinculado a ninguna empresa (reglas §11.2). */
     fun eliminar(id: Long)
 
-    /** Detalle del contacto: empresas con segmentos. `oportunidades`/`actividades` los completa el controller. */
-    fun detalle(id: Long): ContactoDetalleDto
+    /**
+     * Detalle del contacto: empresas con segmentos. `oportunidades`/`actividades`
+     * los completa el controller.
+     *
+     * Aplica el filtro de visibilidad por rol (matriz_permisos.md §1): un rol de
+     * apoyo en contexto `listado` solo alcanza los contactos de las empresas donde
+     * colabora, y lo que queda fuera responde 404 — nunca 403 (CLAUDE.md regla 14).
+     * En contexto `vincular` alcanza todo el CRM, pero solo se le devuelve el nombre.
+     */
+    fun detalle(
+        id: Long,
+        usuario: UsuarioActual,
+        contexto: ContextoBusquedaContacto = ContextoBusquedaContacto.listado,
+    ): ContactoDetalleDto
 
     fun vincular(
         idEmpresa: Long,

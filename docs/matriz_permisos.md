@@ -27,7 +27,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | **Oportunidades** | Todas | Todas | Todas | Solo donde `oportunidades.id_vendedor = yo` | **Solo donde colabora vía tarea** (`oportunidades.id ∈ idsOportunidadesDondeColabora`) | Igual que analista |
 | **Tareas** | Todas | Todas | Todas | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` | Solo donde `tareas.id_asignado = yo` o `yo ∈ tarea_responsables` (sin cambios — este plan no tocó el módulo tareas) | Igual que analista |
 | **Eventos** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de oportunidades donde colabora (hereda de la visibilidad de oportunidades vía `vinculoVisible`, sin cambio de código propio) | Igual que analista |
-| **Contactos** | Todos | Todos | Todos | Todos (búsqueda global para vincular) | Todos (sin cambios — este plan no tocó el módulo contactos; ver nota) | Igual que analista |
+| **Contactos** | Todos | Todos | Todos | Todos (búsqueda global para vincular) | **Solo los vinculados a empresas donde colabora vía tarea** (`empresa_contactos.id_empresa ∈ idsEmpresasDondeColabora`). El contacto sin empresa (huérfano) no lo alcanza. Excepción: con `?contexto=vincular` alcanza todo el CRM pero solo ve el nombre — ver §2.3 | Igual que analista |
 | **Empleados** | Todos | Todos | Todos | Solo `GET /empleados/me` | Solo `GET /empleados/me` | Igual que analista |
 | **Financiadoras** | Todas | Todas | Todas | Todas (solo lectura) | Todas (solo lectura) | Igual que analista |
 | **Modelos** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) | Igual que analista |
@@ -36,12 +36,12 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | **Log de estados** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de oportunidades donde colabora (mismo mecanismo que Eventos) | Igual que analista |
 
 **Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente la escritura y visibilidad de `oportunidades` y `empresas`, y el guard de creación de `solicitudes` (más el filtro de colaboración expuesto por `tareas`). Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
-- **Contactos:** el permiso de vinculación de `analista`/`otro` a **empresas** sigue existiendo en código y no es inerte — al resolver visibilidad vía `EmpresaService.vinculoVisible`, hereda automáticamente la regla de colaboración (igual que Eventos, §2.5): un rol de apoyo puede vincular/desvincular contactos en toda empresa donde colabora. La vinculación a **oportunidades** sí está bloqueada con 403 (`rechazarSiEsApoyo` en `OportunidadServiceImpl`) — ver la asimetría detallada en §2.3.
+- **Contactos:** ~~el módulo no se tocó y `analista`/`otro` listaban, abrían y editaban todos los contactos del CRM~~ — **corregido 2026-08-20**: `GET /contactos`, `GET /contactos/:id` y `PUT /contactos/:id` ya aplican el filtro de colaboración; ver §2.3. El permiso de **vinculación** a empresas sigue siendo el heredado vía `EmpresaService.vinculoVisible` (igual que Eventos, §2.5) y no cambió: un rol de apoyo puede vincular/desvincular contactos en las empresas donde colabora. La vinculación a **oportunidades** sigue bloqueada con 403 (`rechazarSiEsApoyo` en `OportunidadServiceImpl`) — la asimetría de §2.3 sigue vigente y sin decidir.
 - **Solicitudes de aprobación (`SolicitudServiceImpl`):** ~~el rol `otro` no está contemplado en el filtro de bandeja~~ — **corregido 2026-08-19**: el filtro ahora usa `usuario.esRolApoyo`, que cubre `analista` y `otro` por igual; ver nota de §2.12.
 - **Metas de venta (`MetaVentaServiceImpl`):** ~~el rol `otro` tampoco está contemplado en su filtro de visibilidad del *listado* (`usuario.rol == "vendedor" || usuario.rol == "analista"`) — ve todas las metas del listado sin restricción (el detalle sí está cerrado)~~ — **corregido**: el filtro ahora usa `usuario.esRolApoyo`, mismo criterio que Solicitudes; ver nota de §2.13.
 - **Prospección (`ProspeccionServiceImpl`) e Inicio (`InicioService`):** siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración vía tarea — en la práctica devuelven vacío para un rol de apoyo (fallan cerrado), no una fuga, pero tampoco reflejan el nuevo modelo de visibilidad.
 
-Las fugas de **Solicitudes** y **Metas de venta** ya se corrigieron. Los puntos restantes (Prospección, Inicio, Contactos) quedan fuera de este cambio — candidatos a un ticket aparte vía `redactar-requerimiento`.
+Las fugas de **Solicitudes**, **Metas de venta** y **Contactos** ya se corrigieron. El punto restante es **Prospección e Inicio**, que siguen filtrando por `id_vendedor = usuario.id` en vez de por colaboración: en la práctica devuelven vacío para un rol de apoyo (fallan cerrado), así que no son una fuga, pero tampoco reflejan el modelo de visibilidad vigente — candidato a un ticket aparte vía `redactar-requerimiento`.
 
 **Asignación como dueño vs. colaborador de una tarea:** la visibilidad de un rol de apoyo sobre la empresa/oportunidad vinculada a una tarea depende únicamente de `ids_colaboradores`. Si un supervisor asigna la tarea como **dueño** (`id_asignado`) a un `analista`/`otro` sin agregarlo también como colaborador, ese usuario ve la tarea en `GET /tareas` pero no gana visibilidad de la empresa/oportunidad vinculada (`GET /empresas/:id` u `GET /oportunidades/:id` le siguen devolviendo 404). Esto es intencional, decidido durante este plan — no es un caso sin cubrir.
 
@@ -83,22 +83,25 @@ Las fugas de **Solicitudes** y **Metas de venta** ya se corrigieron. Los puntos 
 
 ### 2.3 Contactos
 
-> **Sin guard propio en este módulo (2026-08-18):** el cambio de `analista`/`otro` a rol de apoyo no tocó `ContactoServiceImpl`. Sus operaciones de vinculación resuelven visibilidad llamando a `EmpresaService.vinculoVisible`/`OportunidadService.vinculoVisible`, que **si** aplican la regla nueva — pero eso significa cosas distintas para empresas y para oportunidades, ver cada fila.
+> **Guard propio desde 2026-08-20.** El módulo dejó de heredar toda su visibilidad de otros: `ContactoServiceImpl` resuelve por su cuenta qué contactos alcanza un rol de apoyo (los vinculados a empresas donde colabora vía tarea, consultando `TareaService.idsEmpresasDondeColabora`) y lo aplica dentro de la query, en la búsqueda, el detalle y la edición. Las operaciones de **vinculación** siguen resolviendo visibilidad vía `EmpresaService.vinculoVisible`/`OportunidadService.vinculoVisible`, que significan cosas distintas para empresas y para oportunidades — ver cada fila y la nota final.
 
 | Operación | admin | gerencia | jdv | vendedor | analista | otro |
 |---|---|---|---|---|---|---|
-| Buscar contactos | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Buscar contactos (`GET /contactos`) | ✓ Todos | ✓ Todos | ✓ Todos | ✓ Todos | ✓ Solo donde colabora; con `?contexto=vincular` busca en todo el CRM pero solo recibe el nombre | Igual que analista |
+| Ver detalle de contacto (`GET /contactos/:id`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde colabora (fuera de alcance → **404**); con `?contexto=vincular` cualquiera, recortado al nombre | Igual que analista |
 | Crear contacto | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Editar contacto | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Editar contacto (`PUT /contactos/:id`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo donde colabora (fuera de alcance → **403**, no 404) | Igual que analista |
 | Eliminar contacto | ✓ | ✓ | ✓ | — | — | — |
-| Vincular contacto a empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo donde colabora (vía `vinculoVisible`, no está bloqueado) | Igual que analista |
-| Editar vínculo (cargo / toma_decision) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo donde colabora | Igual que analista |
-| Desvincular contacto de empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | ✓ Solo donde colabora | Igual que analista |
+| Vincular contacto a empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | — (bloqueado, 403 — corregido 2026-08-20) | Igual que analista |
+| Editar vínculo (cargo / toma_decision) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | — (bloqueado, 403 — corregido 2026-08-20) | Igual que analista |
+| Desvincular contacto de empresa | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo sus empresas | — (bloqueado, 403 — corregido 2026-08-20) | Igual que analista |
 | Vincular contacto a oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | — (bloqueado por `rechazarSiEsApoyo`, 403) | Igual que analista |
 | Editar rol en oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | — (bloqueado, 403) | Igual que analista |
 | Desvincular de oportunidad | ✓ | ✓ | ✓ | ✓ Solo las suyas | — (bloqueado, 403) | Igual que analista |
 
-**Nota:** la asimetría es real, no un error de esta tabla — `EmpresaServiceImpl.vinculoVisible` no tiene guard de escritura (solo resuelve visibilidad), mientras que `OportunidadServiceImpl` sí bloquea con `rechazarSiEsApoyo` en sus métodos de vinculación de contacto. Un `analista` puede hoy vincular/desvincular contactos de una empresa donde colabora, pero no de una oportunidad donde colabora. Si esta diferencia es intencional o un descuido queda para el ticket aparte de Contactos mencionado en §1.
+**Nota sobre el 403 de editar (2026-08-20):** `PUT /contactos/:id` responde **403** y no 404 sobre un contacto fuera de alcance, al revés que el `GET`. Es deliberado y aprobado por producto: en `?contexto=vincular` ese mismo usuario ve legítimamente el contacto por su nombre, así que su existencia no es secreta para él y esconderlo al editar mentiría sobre algo que el sistema ya le mostró. Es el mismo razonamiento que `EmpresaServiceImpl.rechazarSiEsApoyo` documenta para empresas. El criterio IDOR general (recurso ajeno → 404) sigue vigente en todo lo demás.
+
+**Nota sobre la asimetría de vinculación (resuelta 2026-08-20):** hasta el 2026-08-20, `EmpresaServiceImpl.vinculoVisible` no tenía guard de escritura sobre la vinculación de contactos, a diferencia de `OportunidadServiceImpl`, que sí bloqueaba con `rechazarSiEsApoyo` en sus métodos de vinculación de contacto — un `analista` podía vincular/desvincular contactos de una empresa donde colabora, pero no de una oportunidad donde colabora. Combinado con el `contexto=vincular` de `GET /contactos` (que busca deliberadamente en todo el CRM), esto abría un camino de escalada: buscar cualquier contacto por nombre → vincularlo a una empresa donde colabora → verlo completo por `GET /contactos/:id`. **Corregido**: la vinculación de contactos a empresas ahora se comporta igual que la de oportunidades — bloqueada con 403 para `analista`/`otro`, sin excepción. La asimetría ya no existe.
 
 ---
 

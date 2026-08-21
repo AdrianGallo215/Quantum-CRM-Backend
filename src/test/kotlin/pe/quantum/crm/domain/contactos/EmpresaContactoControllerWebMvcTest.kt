@@ -156,4 +156,22 @@ class EmpresaContactoControllerWebMvcTest {
             jsonPath("$.error.code") { value("NO_ENCONTRADO") }
         }
     }
+
+    /** matriz_permisos.md §2.3 (actualizado 2026-08-20): vinculacion bloqueada para roles de apoyo. */
+    @Test
+    fun `POST vincular con un rol de apoyo devuelve 403 PERMISO_INSUFICIENTE`() {
+        every { contactoService.vincular(3, any(), any()) } throws
+            pe.quantum.crm.shared.exception.PermisoInsuficienteException(
+                "Tu rol es de apoyo: puedes consultar este contacto, pero no puedes vincularlo a una empresa",
+            )
+
+        mockMvc.post("/api/v1/empresas/3/contactos") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${token(rol = "analista")}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"id_contacto":1}"""
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.error.code") { value("PERMISO_INSUFICIENTE") }
+        }
+    }
 }
