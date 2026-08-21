@@ -22,6 +22,7 @@ import pe.quantum.crm.domain.oportunidades.OportunidadService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
+import pe.quantum.crm.shared.ZONA_PERU
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -138,7 +139,14 @@ class RecordatorioJobTest {
     fun `una tarea que falla no impide procesar los eventos`() {
         every { tareaService.pendientesParaRecordatorio() } returns listOf(tareaVencida(id = 1, idAsignado = 3, idEmpresa = 10))
         every { eventoService.pendientesParaRecordatorio() } returns
-            listOf(EventoRecordatorioProyeccion(id = 4, idOportunidad = 50, idEmpresa = null, fechaEstimada = LocalDate.now().plusDays(1)))
+            listOf(
+                EventoRecordatorioProyeccion(
+                    id = 4,
+                    idOportunidad = 50,
+                    idEmpresa = null,
+                    fechaEstimada = LocalDate.now(ZONA_PERU).plusDays(1),
+                ),
+            )
         every { recordatorioEnviadoRepository.existsByOrigenAndIdOrigenAndUmbral(any(), any(), any()) } returns false
         every { empresaService.resumenPorIds(listOf(10)) } throws IllegalStateException("la empresa de la tarea reventó")
         every { oportunidadService.datosRecordatorio(50) } returns OportunidadRecordatorioDatos(idEmpresa = 11, idVendedor = 4)
@@ -165,7 +173,14 @@ class RecordatorioJobTest {
     fun `evento con fecha_estimada manana notifica umbral proximo via oportunidad`() {
         every { tareaService.pendientesParaRecordatorio() } returns emptyList()
         every { eventoService.pendientesParaRecordatorio() } returns
-            listOf(EventoRecordatorioProyeccion(id = 4, idOportunidad = 50, idEmpresa = null, fechaEstimada = LocalDate.now().plusDays(1)))
+            listOf(
+                EventoRecordatorioProyeccion(
+                    id = 4,
+                    idOportunidad = 50,
+                    idEmpresa = null,
+                    fechaEstimada = LocalDate.now(ZONA_PERU).plusDays(1),
+                ),
+            )
         every {
             recordatorioEnviadoRepository.existsByOrigenAndIdOrigenAndUmbral(OrigenRecordatorio.evento, 4, UmbralRecordatorio.proximo)
         } returns false
@@ -301,7 +316,14 @@ class RecordatorioJobTest {
     fun `un evento cuya oportunidad ya no existe se ignora sin notificar`() {
         every { tareaService.pendientesParaRecordatorio() } returns emptyList()
         every { eventoService.pendientesParaRecordatorio() } returns
-            listOf(EventoRecordatorioProyeccion(id = 4, idOportunidad = 50, idEmpresa = null, fechaEstimada = LocalDate.now().plusDays(1)))
+            listOf(
+                EventoRecordatorioProyeccion(
+                    id = 4,
+                    idOportunidad = 50,
+                    idEmpresa = null,
+                    fechaEstimada = LocalDate.now(ZONA_PERU).plusDays(1),
+                ),
+            )
         every { recordatorioEnviadoRepository.existsByOrigenAndIdOrigenAndUmbral(any(), any(), any()) } returns false
         every { oportunidadService.datosRecordatorio(50) } returns null
 
