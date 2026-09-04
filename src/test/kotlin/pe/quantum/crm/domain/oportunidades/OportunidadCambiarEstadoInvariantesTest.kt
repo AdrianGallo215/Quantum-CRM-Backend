@@ -16,13 +16,11 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.NotificacionService
-import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
-import pe.quantum.crm.shared.exception.MontoNoEditableException
 import pe.quantum.crm.shared.exception.MotivoCierreRequeridoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
@@ -54,6 +52,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -69,6 +68,7 @@ class OportunidadCambiarEstadoInvariantesTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
         )
 
     private fun oportunidad(
@@ -264,22 +264,6 @@ class OportunidadCambiarEstadoInvariantesTest {
 
         assertThat(logGuardado.captured.estadoAnterior).isEqualTo(EstadoOportunidad.evaluacion_calidda)
         assertThat(logGuardado.captured.estadoNuevo).isEqualTo(EstadoOportunidad.documentos_legales)
-    }
-
-    /**
-     * `CrearOportunidadRequest` no declara `montoTotal` (ver el comentario del
-     * DTO): un valor en el body simplemente se ignora por `@JsonIgnoreProperties`,
-     * no hay ninguna ruta de codigo que lanzar MONTO_NO_EDITABLE desde `crear`. El
-     * caso de `crear` de la tarea C.2.12 no aplica; solo `actualizar` puede
-     * recibirlo.
-     */
-    @Test
-    fun `enviar monto_total en actualizar lanza MONTO_NO_EDITABLE`() {
-        assertThatThrownBy {
-            service.actualizar(100, ActualizarOportunidadRequest(montoTotal = BigDecimal("500.00")), UsuarioActual(id = 1, rol = "admin"))
-        }.isInstanceOf(MontoNoEditableException::class.java)
-
-        verify(exactly = 0) { oportunidadRepository.save(any()) }
     }
 
     /**

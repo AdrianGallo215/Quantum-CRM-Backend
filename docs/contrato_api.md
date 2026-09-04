@@ -27,10 +27,11 @@
 19. [Notificaciones](#19-notificaciones)
 20. [Solicitudes](#20-solicitudes)
 21. [Metas de venta](#21-metas-de-venta)
-22. [Mantenimiento](#22-mantenimiento)
-23. [Enums](#23-enums)
-24. [Notas operativas — Drive](#24-notas-operativas--drive)
-25. [Changelog del contrato](#25-changelog-del-contrato)
+22. [Tipo de cambio](#22-tipo-de-cambio)
+23. [Mantenimiento](#23-mantenimiento)
+24. [Enums](#24-enums)
+25. [Notas operativas — Drive](#25-notas-operativas--drive)
+26. [Changelog del contrato](#26-changelog-del-contrato)
 
 ---
 
@@ -117,7 +118,7 @@ En caso de error, `data` es `null` y `error` contiene:
 | `CAMBIO_CONTRASENA_REQUERIDO` | 403 | La cuenta arrastra el cambio de contraseña inicial pendiente (ver abajo) |
 | `NO_ENCONTRADO` | 404 | El recurso no existe |
 | `CONTACTO_VINCULADO` | 409 | No se puede eliminar un contacto vinculado a una empresa |
-| `MONTO_NO_EDITABLE` | 400 | Se intentó enviar `monto_total` en el body |
+| `ULTIMO_ITEM_NO_ELIMINABLE` | 409 | Una oportunidad no puede quedarse sin ítems |
 | `VALIDACION` | 400 | Error genérico de validación de campos |
 | `APROBACION_REQUERIDA` | 422 | El descuento supera el límite del rol; requiere una solicitud aprobada |
 | `SOLICITUD_DUPLICADA` | 409 | Ya existe una solicitud pendiente del mismo tipo sobre esa entidad |
@@ -950,13 +951,21 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
       "vendedor": { "id": 1, "nombres": "Aldo", "apellidos": "Martínez" },
       "id_financiadora": 1,
       "financiadora": { "id": 1, "nombre": "Calidda – Fraccionamiento GNV", "monto_por_unidad": "45000.00", "plazo_meses": 48, "tea": "0.0000", "cuota_por_unidad": "937.50" },
-      "id_modelo": 1,
-      "modelo": { "id": 1, "codigo": "KinWin K12", "precio_base": "92000.00" },
       "estado": "documentos_legales",
-      "cantidad": 8,
-      "precio_unitario": "92000.00",
-      "dcto": "3.00",
-      "monto_total": "713952.00",
+      "items": [
+        {
+          "id": 501,
+          "id_modelo": 1,
+          "modelo": { "id": 1, "codigo": "KinWin K12", "precio_base": "92000.00" },
+          "cantidad": 8,
+          "precio_venta": "92000.00",
+          "descuento": "3.00",
+          "cuota_financiadora": "937.50",
+          "monto_item": "713920.00",
+          "advertencias": []
+        }
+      ],
+      "monto_total": "713920.00",
       "garantia": true,
       "finc_paralelo": false,
       "ficha_venta": null,
@@ -972,6 +981,11 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
   "meta": { "page": 1, "per_page": 20, "total": 6, "total_pages": 1 }
 }
 ```
+
+**Notas (V42 — multi-modelo):**
+- `id_modelo`, `modelo`, `cantidad`, `precio_unitario`, `dcto` **ya no viven en la raíz** de la oportunidad: cada modelo vendido es un `item` dentro de `items`. Una oportunidad con un solo modelo sigue teniendo un `items` de un solo elemento — no cambia el caso de uso simple, solo dónde vive el dato.
+- `monto_total` se queda en la raíz: es la suma de `monto_item` de todos los ítems, calculado y de solo lectura (igual que antes).
+- `sort=precio_unitario` **ya no es un valor válido** — un "precio unitario" no significa nada con varios modelos por oportunidad. `sort=cantidad` y `sort=monto_total` se mantienen: siguen siendo agregados sobre los ítems, con el mismo resultado observable que antes.
 
 ---
 
@@ -1011,7 +1025,7 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
   "id_modelo": 1,
   "id_financiadora": 1,
   "cantidad": 8,
-  "dcto": 3.00,
+  "descuento": 3.00,
   "garantia": true,
   "finc_paralelo": false,
   "ficha_venta": null,
@@ -1027,11 +1041,12 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 **Respuesta 201:** el objeto oportunidad completo.
 
 **Notas:**
+- `id_modelo`, `cantidad` y `descuento` (antes `dcto`) viajan planos en este body, igual que antes — el backend construye internamente con ellos el primer `item` de la oportunidad (`items[0]` en la respuesta). Para vender más de un modelo en la misma oportunidad, se crean ítems adicionales después con `POST /oportunidades/:id/items`.
 - `monto_total` NO se acepta en el body. Si viene, se ignora y se calcula.
-- `precio_unitario` se inicializa con `modelos.precio_base` del modelo seleccionado.
+- El `precio_venta` del ítem creado se inicializa con `modelos.precio_base` del modelo seleccionado.
 - `id_vendedor` se toma de `empresas.id_vendedor` en el momento de la creación. **Excepción:** si la empresa no tiene vendedor asignado (solo la ven roles supervisores), quien crea con `gerencia`/`admin` DEBE enviar `id_vendedor` en el body — la empresa queda asignada a ese vendedor en la misma operación. Si falta → `400 VALIDACION` (`field: "id_vendedor"`).
 - `id_financiadora` es opcional — si no viene, se usa la que tenga `es_default = true`.
-- Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: no se crea la oportunidad. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre la oportunidad ya creada.
+- Si `descuento` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: no se crea la oportunidad. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre el ítem ya creado.
 - Se inserta el primer registro en `oportunidad_estados_log`.
 - Se llama a `actualizarEstadoCartera` en la misma transacción.
 - Se crea la subcarpeta de Google Drive de la oportunidad dentro de la carpeta de su empresa, y su ID se devuelve en `drive_folder_id`. Si Drive no responde, la oportunidad **no se crea** (`502 DRIVE_NO_DISPONIBLE`).
@@ -1127,17 +1142,101 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive. No hay
 
 **Roles:** `admin` `gerencia` `jdv` `vendedor` (solo su oportunidad) — **los roles de apoyo (`analista`, `otro`) no pueden editar ninguna oportunidad: `403 PERMISO_INSUFICIENTE`** (2026-08-18).
 
-**Body:** `id_modelo`, `cantidad`, `precio_unitario`, `dcto`, `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado` — todos opcionales.
+**Body:** `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado` — todos opcionales.
 
 **Notas:**
-- `monto_total` NO se acepta. Si viene → `400 MONTO_NO_EDITABLE`.
-- `estado`, `id_empresa`, `id_vendedor` NO se aceptan en este endpoint.
-- Si `dcto` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el resto de campos puede reintentarse sin `dcto` o dentro del límite; el descuento mayor requiere una solicitud (§19).
-- Si cambia `id_modelo` y `precio_unitario` no fue editado previamente (igual al `precio_base` del modelo anterior), se actualiza automáticamente con el nuevo `precio_base`.
-- Si `precio_unitario` fue editado manualmente, el backend devuelve en la respuesta: `"advertencias": ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]`.
-- Recalcula y persiste `monto_total`.
+- Este endpoint **ya NO acepta** `id_modelo`, `cantidad`, `precio_unitario`/`precio_venta`, `dcto`/`descuento` ni `monto_total` — esos campos viven en los ítems (V42) y se editan por `POST/PUT/DELETE /oportunidades/:id/items` (abajo). Si vienen en el body, se ignoran en silencio (no hay error): el DTO simplemente no los declara.
+- `estado`, `id_empresa`, `id_vendedor` tampoco se aceptan en este endpoint.
 
 **Respuesta 200:** la oportunidad actualizada.
+
+---
+
+### POST /oportunidades/:id/items
+> Agrega un ítem (modelo + cantidad + condiciones comerciales) a una oportunidad existente. Así se vende más de un modelo en la misma oportunidad.
+
+**Roles:** los mismos que editar la oportunidad: `admin` `gerencia` `jdv` `vendedor` (solo su oportunidad) — **los roles de apoyo (`analista`, `otro`) no pueden crear ítems: `403 PERMISO_INSUFICIENTE`**.
+
+**Body:**
+```json
+{
+  "id_modelo": 1,
+  "cantidad": 4,
+  "precio_venta": 92000.00,
+  "descuento": 3.00,
+  "cuota_financiadora": 937.50
+}
+```
+
+Todos los campos son opcionales salvo `id_modelo`. Sin `precio_venta`, se inicializa con `modelos.precio_base` del modelo seleccionado (igual que en `POST /oportunidades`).
+
+**Respuesta 201:**
+```json
+{
+  "data": {
+    "id": 502,
+    "id_modelo": 1,
+    "modelo": { "id": 1, "codigo": "KinWin K12", "precio_base": "92000.00" },
+    "cantidad": 4,
+    "precio_venta": "92000.00",
+    "descuento": "3.00",
+    "cuota_financiadora": "937.50",
+    "monto_item": "356976.00",
+    "advertencias": []
+  }
+}
+```
+
+**Notas:**
+- `monto_item` es el subtotal del ítem: `cantidad × precio_venta × (1 − descuento/100)`. Calculado y de solo lectura.
+- Si `descuento` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el ítem no se crea. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre el ítem ya creado.
+- Errores: `404 NO_ENCONTRADO` (oportunidad ajena o inexistente).
+
+---
+
+### PUT /oportunidades/:id/items/:item_id
+> Actualiza un ítem existente. Todos los campos opcionales — solo se aplican los que vienen en el body.
+
+**Roles:** los mismos que `POST` de arriba.
+
+**Body:** mismos campos que `POST /oportunidades/:id/items` (`id_modelo`, `cantidad`, `precio_venta`, `descuento`, `cuota_financiadora`), todos opcionales.
+
+**Respuesta 200:**
+```json
+{
+  "data": {
+    "id": 502,
+    "id_modelo": 2,
+    "modelo": { "id": 2, "codigo": "KinWin K15", "precio_base": "98000.00" },
+    "cantidad": 4,
+    "precio_venta": "92000.00",
+    "descuento": "3.00",
+    "cuota_financiadora": "937.50",
+    "monto_item": "356976.00",
+    "advertencias": ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]
+  }
+}
+```
+
+**Notas (reglas_negocio.md §12.2, ahora a nivel de ítem):**
+- Si cambia `id_modelo` y `precio_venta` del ítem no fue editado previamente (igual al `precio_base` del modelo anterior), se actualiza automáticamente con el nuevo `precio_base`.
+- Si `precio_venta` fue editado manualmente, el backend NO lo sobreescribe y devuelve `advertencias: ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]`.
+- Si `descuento` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el resto de campos puede reintentarse sin `descuento` o dentro del límite.
+- Recalcula `monto_item` (y, en cascada, el `monto_total` de la oportunidad).
+- Errores: `404 NO_ENCONTRADO` (ítem u oportunidad ajenos o inexistentes).
+
+---
+
+### DELETE /oportunidades/:id/items/:item_id
+> Elimina un ítem de la oportunidad.
+
+**Roles:** los mismos que `POST`/`PUT` de arriba.
+
+**Respuesta 204:** sin body.
+
+**Errores:**
+- `409 ULTIMO_ITEM_NO_ELIMINABLE` — la oportunidad debe tener al menos un ítem; para reemplazar el modelo del último ítem, usar `PUT` en vez de `DELETE` + `POST`.
+- `404 NO_ENCONTRADO` (ítem u oportunidad ajenos o inexistentes).
 
 ---
 
@@ -2068,12 +2167,14 @@ Capa intermedia de aprobación: cuando `vendedor`/`jdv` intentan una acción por
 ```json
 {
   "tipo": "descuento",
-  "entidad_tipo": "oportunidad",
-  "entidad_id": 45,
+  "entidad_tipo": "oportunidad_item",
+  "entidad_id": 502,
   "dcto_solicitado": "5.00",
   "motivo": "Cliente frecuente, tercera compra del año"
 }
 ```
+
+**Nota (V42 — multi-modelo):** para `tipo: "descuento"`, `entidad_tipo` **debe** ser `oportunidad_item` — el valor `oportunidad` ya no se acepta para este tipo, porque el descuento vive en el ítem, no en la oportunidad. `entidad_id` es el `id` del **ítem** (`OportunidadItemDto.id`, el mismo que devuelve `POST/PUT /oportunidades/:id/items`), no el de la oportunidad. Un `entidad_tipo` distinto de `oportunidad_item` en una solicitud de tipo `descuento` responde `400 VALIDACION` (`field: "entidad_tipo"`).
 
 **Body (reasignación de cliente — solo `jdv`):**
 ```json
@@ -2201,7 +2302,46 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 
 ---
 
-## 22. Mantenimiento
+## 22. Tipo de cambio
+
+Tipo de cambio PEN/USD publicado por SUNAT, para el indicador permanente del layout global del CRM. No tiene relación con visibilidad de cartera: es un dato único, igual para todos los roles autenticados. Se actualiza una vez al día vía un job programado (14:30 UTC = 09:30 Lima) que consulta SUNAT y guarda la fila del día; si SUNAT no responde, el job no escribe nada y el endpoint sigue devolviendo el último valor guardado (nunca falla por eso). Detalle en `reglas_simulaciones.md §12`.
+
+### GET /tipo-cambio
+> Tipo de cambio vigente (la fila de fecha más reciente guardada).
+
+**Roles:** todos
+
+**Request:** sin body ni query params.
+
+**Respuesta 200 (con dato guardado):**
+```json
+{
+  "data": {
+    "fecha": "2026-09-01",
+    "compra": 3.750,
+    "venta": 3.756
+  },
+  "meta": null,
+  "error": null
+}
+```
+
+**Respuesta 200 (sin ningún dato guardado todavía):**
+```json
+{
+  "data": null,
+  "meta": null,
+  "error": null
+}
+```
+
+**Notas:**
+- `data: null` con status 200 (no 404) es una respuesta válida y esperada: ocurre mientras el job diario no haya poblado ninguna fila todavía, por ejemplo recién después de un deploy, antes de las 09:30 Lima del día siguiente. La ausencia del dato no es un recurso inexistente.
+- No existe endpoint de escritura: el valor lo escribe únicamente el job diario (`ActualizacionTipoCambioJob`), nunca un request de cliente.
+
+---
+
+## 23. Mantenimiento
 
 ### POST /mantenimiento/carpetas-drive
 > Crea las carpetas de Google Drive que faltan en empresas y oportunidades anteriores a la integración.
@@ -2233,7 +2373,7 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 
 ---
 
-## 23. Enums
+## 24. Enums
 
 > Valores exactos que viajan en `campos` de tipo enum, en minúscula, tal cual los define PostgreSQL (migración V1 y siguientes) y los enums Kotlin del backend. Un valor fuera de esta lista responde `400 VALIDACION`. Verificado contra el schema real de producción (Supabase) el 2026-08-17 — sin deriva respecto a las migraciones locales (V1–V39).
 >
@@ -2253,7 +2393,7 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 | `tipo_solicitud_enum` | `Solicitud.tipo_solicitud` | `descuento`, `reasignacion_cliente` |
 | `estado_solicitud_enum` | `Solicitud.estado` | `pendiente`, `aprobada`, `denegada` |
 | `aprobador_solicitud_enum` | `Solicitud.aprobador_rol` | `jdv`, `gerencia` |
-| `entidad_solicitud_enum` | `Solicitud.entidad_tipo` | `oportunidad`, `empresa` |
+| `entidad_solicitud_enum` | `Solicitud.entidad_tipo` | `oportunidad`, `empresa`, `oportunidad_item` (V42 — el valor que usa hoy `tipo: "descuento"`; `oportunidad` queda como valor legado del enum, no se acepta para ese tipo) |
 | `estado_meta_enum` | `MetaVenta.estado` | `propuesta`, `aprobada`, `rechazada` |
 | `tipo_notificacion_enum` | `Notificacion.tipo` | `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`, `solicitud_creada`, `solicitud_aprobada`, `solicitud_denegada`, `meta_propuesta`, `meta_aprobada`, `meta_rechazada`, `meta_modificada` |
 | `entidad_notificacion_enum` | `Notificacion.entidad_tipo` | `oportunidad`, `empresa`, `solicitud`, `meta_venta` |
@@ -2262,9 +2402,9 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 
 ---
 
-## 24. Notas operativas — Drive
+## 25. Notas operativas — Drive
 
-> Aclaraciones sobre el flujo de archivos de Drive (§8 Empresas, §10 Oportunidades, §22 Mantenimiento) que no se desprenden de la firma de los endpoints. El equipo de frontend las traía documentadas por separado, confirmadas de palabra con backend el 2026-07-31; quedan incorporadas aquí, en el contrato oficial, el 2026-08-17 tras verificarlas contra el código actual (`EmpresaDriveController.kt`, `OportunidadDriveController.kt`, `DriveMultipartUploader.kt`, `DriveProperties.kt`, `GlobalExceptionHandler.kt`).
+> Aclaraciones sobre el flujo de archivos de Drive (§8 Empresas, §10 Oportunidades, §23 Mantenimiento) que no se desprenden de la firma de los endpoints. El equipo de frontend las traía documentadas por separado, confirmadas de palabra con backend el 2026-07-31; quedan incorporadas aquí, en el contrato oficial, el 2026-08-17 tras verificarlas contra el código actual (`EmpresaDriveController.kt`, `OportunidadDriveController.kt`, `DriveMultipartUploader.kt`, `DriveProperties.kt`, `GlobalExceptionHandler.kt`).
 
 - **Creación de carpeta al subir sobre `drive_folder_id: null`:** `POST /empresas/:id/archivos` y `POST /oportunidades/:id/archivos` llaman primero a `asegurarCarpetaDrive`, que crea la carpeta en ese momento si `drive_folder_id` es `null` y la persiste antes de subir el archivo — no devuelve 404. El 404 solo ocurre si la entidad no existe o es ajena al usuario (chequeo de visibilidad corre antes de tocar Drive, por diseño de IDOR). Consecuencia para el cliente: tras esa primera subida, el detalle de la entidad debe refrescarse, porque `drive_folder_id` ya dejó de ser `null` en el servidor.
 - **Unidad del límite de tamaño:** el límite de archivo es `app.drive.max-file-size-bytes`, por defecto **`104_857_600` bytes exactos** (100 × 1024 × 1024 = MiB, no MB decimales — ver `DriveProperties.DEFAULT_MAX_FILE_SIZE_BYTES`). El límite se aplica sobre el stream ya desenmarcado del multipart (`StreamAcotado` envuelve `parte.inputStream`, después de que `commons-fileupload2` separa boundary/headers/CRLFs): el framing nunca cuenta contra el tope. Validar contra `file.size` en el cliente es exacto y no requiere reservar margen.
@@ -2272,13 +2412,13 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 
 ---
 
-## 25. Changelog del contrato
+## 26. Changelog del contrato
 
 > Registro de cambios a este contrato desde que la app está en producción (2026-08-18 en adelante — no se reconstruyen entradas retroactivas para lo anterior a esa fecha). **Todo PR que modifique la forma de un request/response, un código de error, la semántica de un campo, o agregue/quite un endpoint documentado aquí, agrega una entrada a esta tabla en el mismo PR.** Sin entrada, el PR no se considera completo aunque el código y los tests pasen.
 
 **Breaking vs non-breaking, para este contrato:**
 - **Breaking** — requiere que el frontend actualice código antes o al mismo tiempo del deploy: quitar o renombrar un campo de un response, cambiar el tipo/formato de un campo existente, cambiar un código de error ya usado, cambiar el status HTTP de un caso ya documentado, quitar un endpoint, agregar un campo *requerido* a un request.
-- **Non-breaking** — el frontend puede ignorarlo hasta que lo adopte: nuevo endpoint, nuevo campo *opcional* en un response, nuevo valor de enum aditivo en un campo que el cliente ya trata con un `default`/`else`, aclaración de comportamiento no observable en la firma (como las notas de §24).
+- **Non-breaking** — el frontend puede ignorarlo hasta que lo adopte: nuevo endpoint, nuevo campo *opcional* en un response, nuevo valor de enum aditivo en un campo que el cliente ya trata con un `default`/`else`, aclaración de comportamiento no observable en la firma (como las notas de §25).
 
 | Fecha | Endpoint(s) | Tipo | Cambio | Acción para frontend |
 |---|---|---|---|---|
@@ -2288,6 +2428,8 @@ Meta de unidades vendidas (no monto) por vendedor/jdv, mensual (12 meses) + anua
 | 2026-08-19 | `GET /metas-venta` | Non-breaking (fix de seguridad) | El filtro de visibilidad del listado tenía la misma falla que `GET /solicitudes`: ninguna rama para el rol `otro`, que veía todas las metas del equipo sin restricción. Corregido: `otro` ahora solo ve su propia meta, igual que `analista`. | Ninguna — el comportamiento correcto ya era el documentado; ningún cliente debía depender de la fuga. |
 | 2026-08-20 | `GET /contactos`, `GET /contactos/:id`, `PUT /contactos/:id` | **Breaking** | Cierre de la última fuga de visibilidad del cambio de roles de apoyo del 2026-08-18: el módulo `contactos` no se había tocado y `analista`/`otro` listaban, abrían y **editaban** nombre, teléfono y correo de todos los contactos del CRM. Ahora: (1) `GET /contactos` y `GET /contactos/:id` solo devuelven, para esos roles, los contactos vinculados a empresas donde colaboran vía tarea — el contacto sin empresa (huérfano) queda fuera; el que queda fuera de alcance en el detalle responde `404 NO_ENCONTRADO`. (2) Se agrega el query param `contexto` (`listado` \| `vincular`) a ambos GET: `vincular` levanta el filtro para que el buscador de "vincular contacto existente" siga alcanzando todo el CRM, pero recorta la respuesta a `id`/`nombres`/`apellidos` y hace que `q` busque solo por nombre, no por teléfono. Ausente ⇒ `listado`; valor desconocido ⇒ `400 VALIDACION`. (3) `PUT /contactos/:id` responde `403 PERMISO_INSUFICIENTE` para `analista`/`otro` sobre un contacto fuera de su alcance. El resto de roles no cambia en nada. Ver `matriz_permisos.md §1` y `§2.3`. | **Enviar `contexto=vincular` en el buscador de vincular contacto** — sin él ese buscador deja de encontrar contactos fuera del alcance del usuario de apoyo y el flujo se rompe para esos roles. La vista de listado no necesita cambios (el default ya es el correcto). Para `analista`/`otro` el cliente debe tolerar filas con `tlf_*`/`email_*` nulos y `empresas`/`oportunidades_count` vacíos en modo `vincular`, y un `403` con mensaje mostrable al editar. La mitigación de UI que ocultaba la sección Contactos para estos roles ya puede retirarse: el control ahora está en el backend. |
 | 2026-08-20 | `POST /empresas/:id/contactos`, `PUT /empresas/:id/contactos/:contacto_id`, `DELETE /empresas/:id/contactos/:contacto_id` | **Breaking** | Hallazgo de la revisión final del cambio de visibilidad de contactos: la vinculación de contactos a empresas no tenía guard de escritura para roles de apoyo (a diferencia de la vinculación a oportunidades, que sí lo tenía desde el 2026-08-18). Combinado con el nuevo `contexto=vincular` de `GET /contactos` (que busca en todo el CRM por diseño), esto abría un camino para que `analista`/`otro` vincularan cualquier contacto a una empresa donde colaboran y luego lo vieran completo. Corregido: las tres operaciones de vinculación ahora responden `403 PERMISO_INSUFICIENTE` para `analista`/`otro`, sin excepción — mismo criterio que oportunidades. | Ocultar las acciones de vincular/editar vínculo/desvincular contacto para `analista`/`otro` en el cliente; el 403 trae mensaje mostrable. |
+| 2026-09-01 | `GET /tipo-cambio` | Non-breaking | Nuevo endpoint: expone el tipo de cambio PEN/USD vigente. El dato sale de SUNAT, consultado por un job diario (09:30 Lima) que guarda una fila por fecha; si SUNAT no responde ese día, el endpoint sigue devolviendo el último valor guardado (fallback silencioso, sin error). Sin restricción de rol — visible para cualquier usuario autenticado. | Consumirlo para el indicador permanente del layout global. Tolerar `data: null` (HTTP 200) mientras el job no haya poblado la primera fila todavía — por ejemplo justo después del deploy, antes de las 09:30 Lima del día siguiente. |
+| 2026-09-03 | `GET /oportunidades`, `GET /oportunidades/:id`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /oportunidades/:id/items`, `PUT /oportunidades/:id/items/:item_id`, `DELETE /oportunidades/:id/items/:item_id`, `POST /solicitudes` | **Breaking** | Rediseño de oportunidades multi-modelo (V42, `oportunidad_items`): una oportunidad ahora puede vender varios modelos a la vez. (1) `GET/POST/PUT /oportunidades` y `GET /oportunidades/:id`: el response ya NO tiene `id_modelo`, `modelo`, `cantidad`, `precio_unitario`, `dcto` en la raíz — se movieron a `items: [OportunidadItemDto]`, uno por modelo vendido. `monto_total` se queda en la raíz, sigue siendo calculado, ahora como la suma de `monto_item` de todos los ítems. (2) `POST /oportunidades` sigue aceptando `id_modelo`, `cantidad`, `descuento` (renombrado de `dcto`) planos en el body — crea internamente el primer ítem — para no romper el flujo de alta de un solo modelo. (3) `PUT /oportunidades/:id` **ya no acepta** `id_modelo`, `cantidad`, `precio_unitario`/`precio_venta`, `dcto`/`descuento` ni `monto_total`; esos campos se ignoran en silencio si vienen (el DTO no los declara) y el error `400 MONTO_NO_EDITABLE` desaparece del contrato (el guard ya no existe: no hay campo que rechazar). Solo quedan `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado`. (4) Endpoints nuevos para editar ítems: `POST /oportunidades/:id/items` (crea uno más), `PUT /oportunidades/:id/items/:item_id` (edita uno existente — misma regla de "no pisar precio editado a mano" de `reglas_negocio.md §12.2`, ahora aplicada al ítem), `DELETE /oportunidades/:id/items/:item_id` (elimina uno — `409 ULTIMO_ITEM_NO_ELIMINABLE` si es el único ítem que le queda a la oportunidad; una oportunidad no puede quedarse sin ítems). (5) `GET /oportunidades?sort=precio_unitario` deja de ser un valor válido de `sort` — un precio unitario no significa nada con varios modelos por oportunidad; `sort=cantidad` y `sort=monto_total` se mantienen, con el mismo resultado observable de antes. (6) `POST /solicitudes` con `tipo: "descuento"`: `entidad_tipo` ahora debe ser `oportunidad_item` (no `oportunidad`) y `entidad_id` es el `id` del ítem, no de la oportunidad. Roles y visibilidad no cambian: los ítems heredan exactamente el mismo reparto de permisos que hoy tiene editar la oportunidad (ver `matriz_permisos.md §2.4`). | **Dejar de leer `id_modelo`/`modelo`/`cantidad`/`precio_unitario`/`dcto` de la raíz de la oportunidad** y leerlos de `items[]`; para una oportunidad de un solo modelo, `items` sigue teniendo un elemento. **Empezar a usar `POST/PUT/DELETE /oportunidades/:id/items` para agregar, editar o quitar modelos** — `PUT /oportunidades/:id` ya no sirve para eso. Actualizar el formulario de edición de oportunidad para no enviar los campos viejos (se ignoran, no rompen, pero ya no hacen nada). Quitar `precio_unitario` de cualquier selector de orden del listado. Para el flujo de solicitar descuento, enviar `entidad_tipo: "oportunidad_item"` con el `id` del ítem, no de la oportunidad. |
 
 ---
 

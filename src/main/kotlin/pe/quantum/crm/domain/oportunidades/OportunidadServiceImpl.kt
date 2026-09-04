@@ -21,9 +21,9 @@ import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambioEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.ContactoEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
+import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
-import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
@@ -40,7 +40,6 @@ import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.AprobacionRequeridaException
 import pe.quantum.crm.shared.exception.ConflictoException
 import pe.quantum.crm.shared.exception.EstadoInvalidoException
-import pe.quantum.crm.shared.exception.MontoNoEditableException
 import pe.quantum.crm.shared.exception.MotivoCierreRequeridoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
@@ -65,6 +64,7 @@ class OportunidadServiceImpl(
     private val notificacionService: NotificacionService,
     private val driveStorageService: DriveStorageService,
     private val visibilidad: OportunidadVisibilidad,
+    private val oportunidadItemService: OportunidadItemService,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -79,7 +79,7 @@ class OportunidadServiceImpl(
     ): OportunidadDto {
         visibilidad.rechazarSiEsApoyo(usuario)
         val empresa = empresaService.vinculoVisible(request.idEmpresa, usuario)
-        validarLimiteDescuento(request.dcto, usuario)
+        validarLimiteDescuento(request.descuento, usuario)
         // Snapshot del vendedor de la empresa (reglas §8.4). Una empresa sin vendedor
         // solo la ven roles supervisores: quien crea DEBE asignar un vendedor real
         // (gerencia/admin no pueden tener oportunidades propias). Se resuelve ANTES
@@ -109,8 +109,12 @@ class OportunidadServiceImpl(
         val financiadora =
             request.idFinanciadora?.let { financiadoraService.porId(it) }
                 ?: financiadoraService.default()
-        val precioUnitario = modelo.precioBase
         val ahora = LocalDateTime.now()
+        // Las columnas planas (`cantidad`, `precio_unitario`, `dcto`, `monto_total`) nacen
+        // vacias: las llena la sincronizacion de `OportunidadItemServiceImpl` en cuanto se
+        // crea el primer item, unos pasos mas abajo y en esta misma transaccion (D21).
+        // `id_modelo` es la excepcion: es NOT NULL, asi que se siembra con el del request
+        // y la sincronizacion lo reescribe con el mismo valor.
         val oportunidad =
             oportunidadRepository.save(
                 Oportunidad(
@@ -119,10 +123,6 @@ class OportunidadServiceImpl(
                     idFinanciadora = financiadora.id,
                     idModelo = modelo.id,
                     estado = EstadoOportunidad.evaluacion_calidda,
-                    cantidad = request.cantidad,
-                    precioUnitario = precioUnitario,
-                    dcto = request.dcto,
-                    montoTotal = MontoTotal.calcular(request.cantidad, precioUnitario, request.dcto),
                     fincParalelo = request.fincParalelo,
                     garantia = request.garantia,
                     fichaVenta = request.fichaVenta,
@@ -135,6 +135,21 @@ class OportunidadServiceImpl(
                 ),
             )
         val idOportunidad = requireNotNull(oportunidad.id)
+        // Primer item, ya con el id definitivo de la oportunidad (D17: nunca cero items).
+        // Se delega en `OportunidadItemService` para no duplicar aqui el precio por defecto
+        // ni el recalculo de montos; su `@Transactional` es REQUIRED, asi que se une a esta
+        // misma transaccion y los 8 pasos siguen siendo atomicos.
+        oportunidadItemService.crear(
+            idOportunidad,
+            CrearOportunidadItemRequest(
+                idModelo = request.idModelo,
+                cantidad = request.cantidad,
+                // `precioVenta` null a proposito: el item lo rellena con el precio base del modelo.
+                precioVenta = null,
+                descuento = request.descuento,
+            ),
+            usuario,
+        )
         // Primer registro del log: estado_anterior = NULL (reglas §4.2 paso 6).
         logRepository.save(
             OportunidadEstadoLog(
@@ -160,7 +175,7 @@ class OportunidadServiceImpl(
         // Dentro de la transaccion: si Drive falla, la oportunidad no se crea.
         oportunidad.driveFolderId =
             driveStorageService.crearCarpeta(
-                nombre = nombreCarpetaDrive(idOportunidad, modelo.codigo),
+                nombre = nombreCarpetaDrive(idOportunidad),
                 parentFolderId = empresa.driveFolderId ?: empresaService.asegurarCarpetaDrive(empresa.id),
             )
         // Misma transaccion (reglas §3.3): la empresa sube a oportunidad_activa.
@@ -169,51 +184,24 @@ class OportunidadServiceImpl(
         return toDto(oportunidad, detalle = true)
     }
 
-    /** Edicion de campos negociables (B3.4). `monto_total` en body → 400. */
+    /** Edicion de campos negociables (B3.4). Los campos de item (modelo/cantidad/precio/dcto)
+     * se editan via OportunidadItemService (B3); este metodo ya no los toca (B7). */
     @Transactional
-    @Suppress("CyclomaticComplexMethod") // Un `?.let` por campo negociable del PUT; la complejidad es la del DTO, no logica ramificada.
     override fun actualizar(
         id: Long,
         request: ActualizarOportunidadRequest,
         usuario: UsuarioActual,
     ): OportunidadDto {
         visibilidad.rechazarSiEsApoyo(usuario)
-        if (request.montoTotal != null) {
-            throw MontoNoEditableException()
-        }
-        validarLimiteDescuento(request.dcto, usuario)
         val oportunidad = visible(id, usuario)
         val advertencias = mutableListOf<String>()
 
-        // Cambio de modelo (reglas §12.2): sobreescribe el precio solo si NO fue
-        // editado manualmente (== precio_base del modelo anterior).
-        val nuevoModeloId = request.idModelo
-        if (nuevoModeloId != null && nuevoModeloId != oportunidad.idModelo) {
-            val modeloNuevo = modeloService.resumen(nuevoModeloId)
-            val precioBaseAnterior = modeloService.resumen(oportunidad.idModelo).precioBase
-            val precioNoEditado =
-                oportunidad.precioUnitario == null ||
-                    (precioBaseAnterior != null && oportunidad.precioUnitario?.compareTo(precioBaseAnterior) == 0)
-            if (precioNoEditado) {
-                oportunidad.precioUnitario = modeloNuevo.precioBase
-            } else {
-                advertencias += "El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"
-            }
-            oportunidad.idModelo = nuevoModeloId
-        }
-
-        request.cantidad?.let { oportunidad.cantidad = it }
-        request.precioUnitario?.let { oportunidad.precioUnitario = it }
-        request.dcto?.let { oportunidad.dcto = it }
         request.garantia?.let { oportunidad.garantia = it }
         request.fincParalelo?.let { oportunidad.fincParalelo = it }
         request.fichaVenta?.let { oportunidad.fichaVenta = it }
         request.notas?.let { oportunidad.notas = it }
         request.fechaCierreEstimado?.let { oportunidad.fechaCierreEstimado = it }
 
-        // Recalculo SIEMPRE en backend (reglas §7.2).
-        oportunidad.montoTotal =
-            MontoTotal.calcular(oportunidad.cantidad, oportunidad.precioUnitario, oportunidad.dcto)
         oportunidad.updatedAt = LocalDateTime.now()
         oportunidad.updatedBy = usuario.id
         oportunidadRepository.save(oportunidad)
@@ -440,29 +428,6 @@ class OportunidadServiceImpl(
         )
     }
 
-    @Transactional
-    override fun aplicarDescuentoAprobado(
-        id: Long,
-        dcto: BigDecimal,
-        idAprobador: Long,
-    ) {
-        val oportunidad =
-            oportunidadRepository.findById(id).orElseThrow {
-                ConflictoException("SOLICITUD_NO_APLICABLE", "La oportunidad de la solicitud ya no existe")
-            }
-        if (oportunidad.estado == EstadoOportunidad.cerrado || oportunidad.estado == EstadoOportunidad.facturado) {
-            throw ConflictoException(
-                "SOLICITUD_NO_APLICABLE",
-                "La oportunidad está en ${oportunidad.estado.name}; el descuento ya no aplica",
-            )
-        }
-        oportunidad.dcto = dcto
-        oportunidad.montoTotal = MontoTotal.calcular(oportunidad.cantidad, oportunidad.precioUnitario, dcto)
-        oportunidad.updatedAt = LocalDateTime.now()
-        oportunidad.updatedBy = idAprobador
-        oportunidadRepository.save(oportunidad)
-    }
-
     @Transactional(readOnly = true)
     override fun datosRecordatorio(id: Long): OportunidadRecordatorioDatos? =
         oportunidadRepository
@@ -590,10 +555,9 @@ class OportunidadServiceImpl(
         oportunidad.driveFolderId?.let { return it }
         val id = requireNotNull(oportunidad.id)
         val carpetaEmpresa = empresaService.asegurarCarpetaDrive(oportunidad.idEmpresa)
-        val codigoModelo = modeloService.resumen(oportunidad.idModelo).codigo
         val carpeta =
             driveStorageService.crearCarpeta(
-                nombre = nombreCarpetaDrive(id, codigoModelo),
+                nombre = nombreCarpetaDrive(id),
                 parentFolderId = carpetaEmpresa,
             )
         val ganada = oportunidadRepository.asignarCarpetaDriveSiFalta(id, carpeta) > 0
@@ -613,13 +577,11 @@ class OportunidadServiceImpl(
     override fun idsSinCarpetaDrive(): List<Long> = oportunidadRepository.findIdsSinCarpetaDrive()
 
     /**
-     * `OP-{id} - {codigo modelo}`: identifica la oportunidad dentro de la carpeta de
-     * la empresa sin ambiguedad, aunque haya varias del mismo modelo.
+     * `OP-{id}`: identifica la oportunidad dentro de la carpeta de la empresa.
+     * Ya no incluye el codigo de modelo: con varios modelos por oportunidad (B),
+     * un unico codigo dejo de identificar el contenido de la carpeta.
      */
-    private fun nombreCarpetaDrive(
-        idOportunidad: Long,
-        codigoModelo: String?,
-    ): String = listOfNotNull("OP-$idOportunidad", codigoModelo).joinToString(" - ")
+    private fun nombreCarpetaDrive(idOportunidad: Long): String = "OP-$idOportunidad"
 
     private fun visible(
         id: Long,
@@ -733,7 +695,9 @@ class OportunidadServiceImpl(
         val vendedores = empleadoService.resumenPorIds(oportunidades.map { it.idVendedor })
         // Terminos de la financiadora por JOIN logico, nunca copiados (reglas §9.4).
         val financiadoras = financiadoraService.porIds(oportunidades.map { it.idFinanciadora })
-        val modelos = modeloService.resumenPorIds(oportunidades.map { it.idModelo })
+        // Los items resuelven sus propios modelos por lotes; la oportunidad ya no tiene modelo propio.
+        val itemsPorOportunidad = oportunidadItemService.porOportunidades(ids)
+        val montosPorOportunidad = oportunidadItemService.montoTotalPorOportunidades(ids)
         val tareasPendientes = consultas.tareasPendientesPorOportunidad(ids)
         val eventosPendientes = consultas.eventosPendientesPorOportunidad(ids)
         return oportunidades.map { op ->
@@ -746,16 +710,10 @@ class OportunidadServiceImpl(
                 vendedor = vendedores[op.idVendedor],
                 idFinanciadora = op.idFinanciadora,
                 financiadora = financiadoras[op.idFinanciadora],
-                idModelo = op.idModelo,
-                modelo =
-                    modelos[op.idModelo]?.let {
-                        ModeloEnOportunidadDto(id = it.id, codigo = it.codigo, precioBase = it.precioBase?.toPlainString())
-                    },
                 estado = op.estado.name,
-                cantidad = op.cantidad,
-                precioUnitario = op.precioUnitario?.toPlainString(),
-                dcto = op.dcto?.toPlainString(),
-                montoTotal = op.montoTotal?.toPlainString(),
+                items = itemsPorOportunidad[opId].orEmpty(),
+                // Derivado de los items, no de la columna plana `oportunidades.monto_total` (D15/D21).
+                montoTotal = montosPorOportunidad[opId]?.toPlainString(),
                 garantia = op.garantia,
                 fincParalelo = op.fincParalelo,
                 fichaVenta = op.fichaVenta,
@@ -771,13 +729,24 @@ class OportunidadServiceImpl(
     }
 
     private companion object {
-        /** Allowlist de `sort` de GET /oportunidades; el primero es el orden por defecto. */
+        /**
+         * Allowlist de `sort` de GET /oportunidades; el primero es el orden por defecto.
+         *
+         * `precioUnitario` salio de la allowlist en B10 (D9 de
+         * `plan-03-mapa-oportunidad-items.md`): con varios modelos por oportunidad no
+         * significa nada, y la sincronizacion de `OportunidadItemServiceImpl` (D21) lo
+         * deja en null en cuanto hay 2+ items.
+         *
+         * `cantidad` y `montoTotal` si se quedan y NO necesitan subconsulta sobre
+         * `oportunidad_items`: esa misma sincronizacion mantiene las columnas planas
+         * iguales a la suma real de los items tras cada escritura, asi que la columna
+         * YA ES el agregado.
+         */
         val CAMPOS_ORDENABLES =
             CamposOrdenables(
                 "id",
                 "estado",
                 "cantidad",
-                "precioUnitario",
                 "montoTotal",
                 "fechaCierreEstimado",
                 "createdAt",

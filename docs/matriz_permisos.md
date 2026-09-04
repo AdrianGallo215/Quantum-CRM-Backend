@@ -34,6 +34,7 @@ La visibilidad define qué registros devuelven los endpoints de listado y detall
 | **Catálogo de eventos** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) | Igual que analista |
 | **Reportes** | Todos | Todos | Todos | Sin acceso | Sin acceso | Igual que analista |
 | **Log de estados** | Todos | Todos | Todos | Solo los de sus oportunidades | Solo los de oportunidades donde colabora (mismo mecanismo que Eventos) | Igual que analista |
+| **Tipo de cambio** | Todos | Todos | Todos | Todos (solo lectura) | Todos (solo lectura) | Igual que analista |
 
 **Nota (2026-08-18):** el cambio a rol de apoyo cubrió específicamente la escritura y visibilidad de `oportunidades` y `empresas`, y el guard de creación de `solicitudes` (más el filtro de colaboración expuesto por `tareas`). Quedaron sin tocar, y por lo tanto potencialmente desalineados con el nuevo modelo:
 - **Contactos:** ~~el módulo no se tocó y `analista`/`otro` listaban, abrían y editaban todos los contactos del CRM~~ — **corregido 2026-08-20**: `GET /contactos`, `GET /contactos/:id` y `PUT /contactos/:id` ya aplican el filtro de colaboración; ver §2.3. El permiso de **vinculación** a empresas sigue siendo el heredado vía `EmpresaService.vinculoVisible` (igual que Eventos, §2.5) y no cambió: un rol de apoyo puede vincular/desvincular contactos en las empresas donde colabora. La vinculación a **oportunidades** sigue bloqueada con 403 (`rechazarSiEsApoyo` en `OportunidadServiceImpl`) — la asimetría de §2.3 sigue vigente y sin decidir.
@@ -111,6 +112,7 @@ Las fugas de **Solicitudes**, **Metas de venta** y **Contactos** ya se corrigier
 |---|---|---|---|---|---|---|
 | Crear oportunidad | ✓ | ✓ (asigna vendedor si la empresa no tiene) | ✓ | ✓ Solo en sus empresas | — | — |
 | Editar campos negociables | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
+| Gestionar ítems de la oportunidad — crear/editar/eliminar (`POST/PUT/DELETE /oportunidades/:id/items`, V42) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — (bloqueado por `rechazarSiEsApoyo`, 403) | Igual que analista |
 | Ver archivos en Drive (`GET /oportunidades/:id/archivos`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | ✓ Solo donde colabora | ✓ Solo donde colabora |
 | Subir archivos / crear carpeta de Drive (`POST /oportunidades/:id/archivos`, `POST /oportunidades/:id/carpeta-drive`) | ✓ Cualquiera | ✓ Cualquiera | ✓ Cualquiera | ✓ Solo las suyas | — | — |
 | Aplicar descuento directo | Sin límite | Sin límite | Hasta 7% | Hasta 3% | Sin margen (ninguna vía) | Sin margen (ninguna vía) |

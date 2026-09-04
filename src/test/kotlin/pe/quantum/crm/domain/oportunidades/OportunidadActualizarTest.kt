@@ -17,6 +17,8 @@ import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -28,9 +30,11 @@ import java.time.LocalDateTime
 import java.util.Optional
 
 /**
- * `PUT /oportunidades/:id` (B3.4): campos negociables, recalculo obligatorio de
- * `monto_total` en backend (reglas §7.2) y la regla de cambio de modelo de §12.2
- * — el precio del modelo nuevo solo pisa al anterior si nadie lo edito a mano.
+ * `PUT /oportunidades/:id` (B3.4, reescrito en B9 tras D19): desde el rediseno
+ * multi-item este endpoint solo toca los campos negociables de la oportunidad.
+ * `id_modelo`, `cantidad`, `precio_venta` y `descuento` se editan por
+ * `PUT /oportunidades/:id/items/:itemId` (ver `OportunidadItemServiceImplTest`),
+ * y `monto_total` ya no se recalcula aqui: se deriva de los items (D15/D21).
  *
  * Archivo propio y no dentro de `OportunidadServiceImplTest` por el mismo motivo
  * que `OportunidadCambiarEstadoInvariantesTest`: juntarlos dispara `LargeClass`.
@@ -49,6 +53,7 @@ class OportunidadActualizarTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -64,6 +69,7 @@ class OportunidadActualizarTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -99,7 +105,24 @@ class OportunidadActualizarTest {
         every { contactoService.resumenPorIds(any()) } returns emptyMap()
         every { logRepository.findFirstByIdOportunidadOrderByChangedAtDescIdDesc(any()) } returns null
         every { oportunidadRepository.save(any<Oportunidad>()) } answers { firstArg() }
+        // Items y monto_total del DTO salen de OportunidadItemService (B8), no de
+        // las columnas planas de la oportunidad.
+        every { oportunidadItemService.porOportunidades(listOf(100L)) } returns mapOf(100L to listOf(itemDto()))
+        every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L)) } returns
+            mapOf(100L to BigDecimal("270.00"))
     }
+
+    private fun itemDto() =
+        OportunidadItemDto(
+            id = 500,
+            idModelo = 1,
+            modelo = ModeloEnOportunidadDto(id = 1, codigo = "BUS-X", precioBase = "100.00"),
+            cantidad = 2,
+            precioVenta = "150.00",
+            descuento = "10.00",
+            cuotaFinanciadora = "0.00",
+            montoItem = "270.00",
+        )
 
     private fun oportunidad(
         idModelo: Long = 1,
@@ -122,7 +145,7 @@ class OportunidadActualizarTest {
     )
 
     @Test
-    fun `actualizar aplica los campos negociables y recalcula monto_total en backend`() {
+    fun `actualizar aplica los campos negociables y devuelve el monto derivado de los items`() {
         val entidad = oportunidad()
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
 
@@ -130,9 +153,6 @@ class OportunidadActualizarTest {
             service.actualizar(
                 100,
                 ActualizarOportunidadRequest(
-                    cantidad = 2,
-                    precioUnitario = BigDecimal("150.00"),
-                    dcto = BigDecimal("10.00"),
                     garantia = true,
                     fincParalelo = true,
                     fichaVenta = "FV-9",
@@ -142,16 +162,17 @@ class OportunidadActualizarTest {
                 admin,
             )
 
-        assertThat(entidad.cantidad).isEqualTo(2)
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("150.00")
-        assertThat(entidad.dcto).isEqualByComparingTo("10.00")
         assertThat(entidad.garantia).isTrue()
         assertThat(entidad.fincParalelo).isTrue()
         assertThat(entidad.fichaVenta).isEqualTo("FV-9")
         assertThat(entidad.notas).isEqualTo("Negociando plazo")
         assertThat(entidad.fechaCierreEstimado).isEqualTo(LocalDate.of(2026, 3, 1))
-        // 2 x 150.00 x (1 - 10/100) = 270.00
-        assertThat(entidad.montoTotal).isEqualByComparingTo("270.00")
+        // 2 x 150.00 x (1 - 10/100) = 270.00. La formula la aplica el item
+        // (OportunidadItemServiceImplTest); aqui se fija que el PUT devuelve el
+        // total derivado de los items y no la columna plana de la oportunidad.
+        assertThat(dto.items.single().cantidad).isEqualTo(2)
+        assertThat(dto.items.single().precioVenta).isEqualTo("150.00")
+        assertThat(dto.items.single().descuento).isEqualTo("10.00")
         assertThat(dto.montoTotal).isEqualTo("270.00")
         assertThat(dto.advertencias).isEmpty()
         assertThat(entidad.updatedBy).isEqualTo(1)
@@ -167,94 +188,26 @@ class OportunidadActualizarTest {
         service.actualizar(100, ActualizarOportunidadRequest(), admin)
 
         assertThat(entidad.notas).isEqualTo("Original")
-        assertThat(entidad.cantidad).isEqualTo(1)
-        assertThat(entidad.montoTotal).isEqualByComparingTo("100.00")
-    }
-
-    @Test
-    fun `cambiar de modelo sobreescribe el precio si nadie lo habia editado a mano`() {
-        val entidad = oportunidad(idModelo = 1, precioUnitario = BigDecimal("100.00"))
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { modeloService.resumen(2) } returns busY
-        every { modeloService.resumen(1) } returns busX
-
-        val dto = service.actualizar(100, ActualizarOportunidadRequest(idModelo = 2), admin)
-
-        assertThat(entidad.idModelo).isEqualTo(2)
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("200.00")
-        assertThat(entidad.montoTotal).isEqualByComparingTo("200.00")
-        assertThat(dto.advertencias).isEmpty()
-    }
-
-    @Test
-    fun `cambiar de modelo conserva el precio editado a mano y devuelve advertencia`() {
-        val entidad = oportunidad(idModelo = 1, precioUnitario = BigDecimal("123.45"))
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { modeloService.resumen(2) } returns busY
-        every { modeloService.resumen(1) } returns busX
-
-        val dto = service.actualizar(100, ActualizarOportunidadRequest(idModelo = 2), admin)
-
-        assertThat(entidad.idModelo).isEqualTo(2)
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("123.45")
-        assertThat(dto.advertencias)
-            .containsExactly("El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo")
-    }
-
-    /** Sin precio previo no hay nada que preservar: el del modelo nuevo entra sin advertencia. */
-    @Test
-    fun `cambiar de modelo con precio nulo toma el precio base del modelo nuevo`() {
-        val entidad = oportunidad(idModelo = 1, precioUnitario = null)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { modeloService.resumen(2) } returns busY
-        every { modeloService.resumen(1) } returns busX
-
-        val dto = service.actualizar(100, ActualizarOportunidadRequest(idModelo = 2), admin)
-
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("200.00")
-        assertThat(dto.advertencias).isEmpty()
+        assertThat(entidad.garantia).isNull()
+        assertThat(entidad.fichaVenta).isNull()
     }
 
     /**
-     * Modelo anterior sin `precio_base`: no hay con que comparar, asi que el precio
-     * cuenta como editado a mano y se conserva (fail-safe: nunca se pisa un importe
-     * negociado por no poder demostrar que venia del catalogo).
+     * D19: los campos de item ya no viajan en este body. `ActualizarOportunidadRequest`
+     * no los declara y `@JsonIgnoreProperties(ignoreUnknown = true)` los descarta, asi
+     * que un PUT de oportunidad no puede tocar el item por accidente.
      */
     @Test
-    fun `cambiar desde un modelo sin precio base conserva el precio y advierte`() {
-        val entidad = oportunidad(idModelo = 1, precioUnitario = BigDecimal("100.00"))
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { modeloService.resumen(2) } returns busY
-        every { modeloService.resumen(1) } returns busX.copy(precioBase = null)
-
-        val dto = service.actualizar(100, ActualizarOportunidadRequest(idModelo = 2), admin)
-
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("100.00")
-        assertThat(dto.advertencias).hasSize(1)
-    }
-
-    @Test
-    fun `reenviar el mismo id_modelo no consulta el catalogo de modelos`() {
-        val entidad = oportunidad(idModelo = 1)
+    fun `actualizar no toca los campos de item de la oportunidad`() {
+        val entidad = oportunidad()
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
 
-        service.actualizar(100, ActualizarOportunidadRequest(idModelo = 1), admin)
+        service.actualizar(100, ActualizarOportunidadRequest(notas = "solo notas"), admin)
 
         assertThat(entidad.idModelo).isEqualTo(1)
+        assertThat(entidad.cantidad).isEqualTo(1)
+        assertThat(entidad.precioUnitario).isEqualByComparingTo("100.00")
         verify(exactly = 0) { modeloService.resumen(any()) }
-    }
-
-    /** El precio explicito del body gana sobre el precio base del modelo nuevo. */
-    @Test
-    fun `el precio del body pisa al del modelo nuevo en la misma peticion`() {
-        val entidad = oportunidad(idModelo = 1, precioUnitario = BigDecimal("100.00"))
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { modeloService.resumen(2) } returns busY
-        every { modeloService.resumen(1) } returns busX
-
-        service.actualizar(100, ActualizarOportunidadRequest(idModelo = 2, precioUnitario = BigDecimal("77.00")), admin)
-
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("77.00")
     }
 
     /** IDOR (regla 14): oportunidad ajena para un vendedor → 404, no 403, y sin escribir. */
@@ -263,7 +216,7 @@ class OportunidadActualizarTest {
         every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
 
         assertThatThrownBy {
-            service.actualizar(100, ActualizarOportunidadRequest(cantidad = 3), UsuarioActual(id = 77, rol = "vendedor"))
+            service.actualizar(100, ActualizarOportunidadRequest(notas = "x"), UsuarioActual(id = 77, rol = "vendedor"))
         }.isInstanceOf(NoEncontradoException::class.java)
 
         verify(exactly = 0) { oportunidadRepository.save(any<Oportunidad>()) }
@@ -273,19 +226,19 @@ class OportunidadActualizarTest {
     fun `actualizar una oportunidad inexistente responde 404`() {
         every { oportunidadRepository.findById(999) } returns Optional.empty()
 
-        assertThatThrownBy { service.actualizar(999, ActualizarOportunidadRequest(cantidad = 3), admin) }
+        assertThatThrownBy { service.actualizar(999, ActualizarOportunidadRequest(notas = "x"), admin) }
             .isInstanceOf(NoEncontradoException::class.java)
     }
 
-    /** Sin cantidad no hay formula posible: `monto_total` queda en null (reglas §7.2). */
+    /** Una oportunidad cuyos items no dan total (sin cantidad) devuelve `monto_total` null (reglas §7.2). */
     @Test
-    fun `actualizar una oportunidad sin cantidad deja monto_total en null`() {
-        val entidad = oportunidad().apply { cantidad = null }
+    fun `actualizar una oportunidad sin monto derivable deja monto_total en null`() {
+        val entidad = oportunidad()
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L)) } returns emptyMap()
 
         val dto = service.actualizar(100, ActualizarOportunidadRequest(notas = "sin cantidad"), admin)
 
-        assertThat(entidad.montoTotal).isNull()
         assertThat(dto.montoTotal).isNull()
     }
 }

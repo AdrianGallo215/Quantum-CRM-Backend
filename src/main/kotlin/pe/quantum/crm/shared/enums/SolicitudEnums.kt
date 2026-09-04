@@ -27,4 +27,5 @@ enum class AprobadorSolicitud {
 enum class EntidadSolicitud {
     oportunidad,
     empresa,
+    oportunidad_item,
 }

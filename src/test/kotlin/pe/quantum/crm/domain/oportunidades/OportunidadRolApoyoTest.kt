@@ -44,6 +44,7 @@ class OportunidadRolApoyoTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -59,7 +60,15 @@ class OportunidadRolApoyoTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
         )
+
+    init {
+        // `toDtos()` pide items y monto al OportunidadItemService (B8); estos
+        // escenarios solo verifican visibilidad por rol, no los items.
+        every { oportunidadItemService.porOportunidades(any()) } returns emptyMap()
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
+    }
 
     private val analista = UsuarioActual(id = 7L, rol = "analista")
     private val otro = UsuarioActual(id = 8L, rol = "otro")

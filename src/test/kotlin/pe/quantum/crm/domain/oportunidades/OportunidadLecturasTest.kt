@@ -19,7 +19,9 @@ import pe.quantum.crm.domain.financiadoras.dto.FinanciadoraDto
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -49,6 +51,7 @@ class OportunidadLecturasTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -64,6 +67,7 @@ class OportunidadLecturasTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -89,6 +93,18 @@ class OportunidadLecturasTest {
         updatedBy = 5,
     )
 
+    private fun itemDto() =
+        OportunidadItemDto(
+            id = 500,
+            idModelo = 1,
+            modelo = ModeloEnOportunidadDto(id = 1, codigo = "BUS-X", precioBase = "100.00"),
+            cantidad = 2,
+            precioVenta = "100.00",
+            descuento = "0.00",
+            cuotaFinanciadora = "0.00",
+            montoItem = "200.00",
+        )
+
     // ── GET /oportunidades ────────────────────────────────────
 
     @Test
@@ -102,6 +118,11 @@ class OportunidadLecturasTest {
         every { financiadoraService.porIds(any()) } returns mapOf(1L to calidda())
         every { modeloService.resumenPorIds(any()) } returns
             mapOf(1L to ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal("100.00")))
+        // Modelo y monto ya no salen de la oportunidad: los aporta OportunidadItemService (B8).
+        every { oportunidadItemService.porOportunidades(listOf(100L, 101L)) } returns
+            mapOf(100L to listOf(itemDto()), 101L to listOf(itemDto()))
+        every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L, 101L)) } returns
+            mapOf(100L to BigDecimal("200.00"), 101L to BigDecimal("200.00"))
         every { consultas.tareasPendientesPorOportunidad(listOf(100L, 101L)) } returns mapOf(100L to 3)
         every { consultas.eventosPendientesPorOportunidad(listOf(100L, 101L)) } returns mapOf(101L to 1)
 
@@ -111,8 +132,8 @@ class OportunidadLecturasTest {
         assertThat(paginado.items[0].empresa?.razonSocial).isEqualTo("Kincar S.A.C.")
         assertThat(paginado.items[0].vendedor?.nombres).isEqualTo("Ana")
         assertThat(paginado.items[0].financiadora?.nombre).isEqualTo("Calidda")
-        assertThat(paginado.items[0].modelo?.codigo).isEqualTo("BUS-X")
-        assertThat(paginado.items[0].modelo?.precioBase).isEqualTo("100.00")
+        assertThat(paginado.items[0].items.single().modelo?.codigo).isEqualTo("BUS-X")
+        assertThat(paginado.items[0].items.single().modelo?.precioBase).isEqualTo("100.00")
         assertThat(paginado.items[0].montoTotal).isEqualTo("200.00")
         assertThat(paginado.items[0].tareasPendientesCount).isEqualTo(3)
         assertThat(paginado.items[0].eventosPendientesCount).isZero()
@@ -242,16 +263,6 @@ class OportunidadLecturasTest {
         assertThat(service.tieneOportunidadesActivas(10)).isTrue()
 
         verify { oportunidadRepository.existsByIdEmpresaAndEstadoIn(10, EstadoCarteraService.ESTADOS_ACTIVOS) }
-    }
-
-    /** La solicitud de descuento se resuelve sobre una oportunidad que ya no existe. */
-    @Test
-    fun `aplicarDescuentoAprobado sobre una oportunidad borrada es SOLICITUD_NO_APLICABLE`() {
-        every { oportunidadRepository.findById(999) } returns Optional.empty()
-
-        assertThatThrownBy { service.aplicarDescuentoAprobado(999, BigDecimal("5.00"), idAprobador = 2) }
-            .isInstanceOf(pe.quantum.crm.shared.exception.ConflictoException::class.java)
-            .hasMessageContaining("ya no existe")
     }
 
     private fun calidda() =

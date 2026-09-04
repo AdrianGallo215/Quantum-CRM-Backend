@@ -89,18 +89,6 @@ interface OportunidadService {
     fun datosRecordatorio(id: Long): OportunidadRecordatorioDatos?
 
     /**
-     * Aplica un descuento ya aprobado por solicitud (modulo solicitudes): setea
-     * `dcto`, recalcula `monto_total` y audita con el aprobador. NO valida limites
-     * de rol (la aprobacion ES la autorizacion). 409 SOLICITUD_NO_APLICABLE si la
-     * oportunidad no existe o ya salio del pipeline activo.
-     */
-    fun aplicarDescuentoAprobado(
-        id: Long,
-        dcto: java.math.BigDecimal,
-        idAprobador: Long,
-    )
-
-    /**
      * Elimina definitivamente la oportunidad (hard delete, exclusivo admin —
      * verificado en el controller). Cascada de base de datos (V29): arrastra
      * su log de estados, sus vinculos de contacto, sus eventos y sus tareas.

@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.notificaciones.NotificacionService
-import pe.quantum.crm.domain.oportunidades.OportunidadService
-import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
+import pe.quantum.crm.domain.oportunidades.OportunidadItemService
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemVinculo
 import pe.quantum.crm.domain.solicitudes.dto.CrearSolicitudRequest
 import pe.quantum.crm.shared.enums.AprobadorSolicitud
 import pe.quantum.crm.shared.enums.EntidadSolicitud
@@ -34,12 +34,12 @@ import java.util.Optional
  */
 class SolicitudValidacionServiceTest {
     private val solicitudRepository = mockk<SolicitudRepository>()
-    private val oportunidadService = mockk<OportunidadService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val empresaService = mockk<EmpresaService>()
     private val empleadoService = mockk<EmpleadoService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val service =
-        SolicitudServiceImpl(solicitudRepository, oportunidadService, empresaService, empleadoService, notificacionService)
+        SolicitudServiceImpl(solicitudRepository, oportunidadItemService, empresaService, empleadoService, notificacionService)
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
     private val gerencia = UsuarioActual(id = 2, rol = "gerencia")
@@ -57,7 +57,7 @@ class SolicitudValidacionServiceTest {
         tipo = tipo,
         rolAprobador = rolAprobador,
         idSolicitante = idSolicitante,
-        entidadTipo = if (tipo == TipoSolicitud.descuento) EntidadSolicitud.oportunidad else EntidadSolicitud.empresa,
+        entidadTipo = if (tipo == TipoSolicitud.descuento) EntidadSolicitud.oportunidad_item else EntidadSolicitud.empresa,
         entidadId = entidadId,
         entidadDescripcion = "ABC S.A.",
         motivo = "Cliente frecuente",
@@ -68,7 +68,7 @@ class SolicitudValidacionServiceTest {
     // ── validarDescuento ──────────────────────────────────────
 
     @Test
-    fun `un descuento sobre algo que no es una oportunidad es VALIDACION`() {
+    fun `un descuento sobre algo que no es un item de oportunidad es VALIDACION`() {
         val request =
             CrearSolicitudRequest(
                 tipo = TipoSolicitud.descuento,
@@ -87,45 +87,45 @@ class SolicitudValidacionServiceTest {
         val request =
             CrearSolicitudRequest(
                 tipo = TipoSolicitud.descuento,
-                entidadTipo = EntidadSolicitud.oportunidad,
-                entidadId = 45,
+                entidadTipo = EntidadSolicitud.oportunidad_item,
+                entidadId = 91,
                 motivo = "x",
                 dctoSolicitado = null,
             )
 
         assertThat(campoDe { service.crear(request, vendedor) }).isEqualTo("dcto_solicitado")
-        verify(exactly = 0) { oportunidadService.vinculoVisible(any(), any()) }
+        verify(exactly = 0) { oportunidadItemService.vinculoVisible(any(), any()) }
     }
 
     @Test
-    fun `un descuento sobre una oportunidad ajena responde 404 desde vinculoVisible`() {
+    fun `un descuento sobre un item ajeno responde 404 desde vinculoVisible`() {
         val request =
             CrearSolicitudRequest(
                 tipo = TipoSolicitud.descuento,
-                entidadTipo = EntidadSolicitud.oportunidad,
-                entidadId = 45,
+                entidadTipo = EntidadSolicitud.oportunidad_item,
+                entidadId = 91,
                 motivo = "x",
                 dctoSolicitado = BigDecimal("8.00"),
             )
-        every { oportunidadService.vinculoVisible(45, vendedor) } throws NoEncontradoException("La oportunidad no existe")
+        every { oportunidadItemService.vinculoVisible(91, vendedor) } throws NoEncontradoException("El ítem no existe")
 
         assertThatThrownBy { service.crear(request, vendedor) }
             .isInstanceOf(NoEncontradoException::class.java)
     }
 
     @Test
-    fun `si la empresa de la oportunidad no se resuelve la descripcion cae al literal Empresa`() {
+    fun `si la empresa del item no se resuelve la descripcion cae al literal Empresa`() {
         val request =
             CrearSolicitudRequest(
                 tipo = TipoSolicitud.descuento,
-                entidadTipo = EntidadSolicitud.oportunidad,
-                entidadId = 45,
+                entidadTipo = EntidadSolicitud.oportunidad_item,
+                entidadId = 91,
                 motivo = "Cliente frecuente",
                 dctoSolicitado = BigDecimal("8.00"),
             )
-        every { oportunidadService.vinculoVisible(45, vendedor) } returns
-            OportunidadVinculo(id = 45, idEmpresa = 10, idVendedor = 5, estado = "evaluacion_calidda")
-        // La empresa fue borrada entre el alta de la oportunidad y esta solicitud.
+        every { oportunidadItemService.vinculoVisible(91, vendedor) } returns
+            OportunidadItemVinculo(id = 91, idOportunidad = 45, idEmpresa = 10, descuento = null)
+        // La empresa fue borrada entre el alta del item y esta solicitud.
         every { empresaService.resumenPorIds(listOf(10L)) } returns emptyMap()
         every { solicitudRepository.existsByTipoAndEntidadTipoAndEntidadIdAndEstado(any(), any(), any(), any()) } returns false
         val guardada = slot<Solicitud>()
@@ -137,7 +137,7 @@ class SolicitudValidacionServiceTest {
 
         // Un 8% desde vendedor supera incluso el limite del jdv: lo aprueba gerencia.
         assertThat(guardada.captured.rolAprobador).isEqualTo(AprobadorSolicitud.gerencia)
-        assertThat(guardada.captured.entidadDescripcion).isEqualTo("Empresa — Oportunidad #45")
+        assertThat(guardada.captured.entidadDescripcion).isEqualTo("Empresa — Oportunidad #45 (ítem #91)")
     }
 
     // ── validarReasignacion ───────────────────────────────────

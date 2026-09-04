@@ -131,8 +131,8 @@ class FormatoFechasContratoTest {
         val dto =
             OportunidadDto(
                 id = 1, idEmpresa = 3, empresa = null, idVendedor = 7, vendedor = null,
-                idFinanciadora = 1, financiadora = null, idModelo = null, modelo = null,
-                estado = "evaluacion_calidda", cantidad = null, precioUnitario = null, dcto = null,
+                idFinanciadora = 1, financiadora = null,
+                estado = "evaluacion_calidda", items = emptyList(),
                 montoTotal = null, garantia = null, fincParalelo = null, fichaVenta = null,
                 driveFolderId = null, notas = null, motivoCierre = null, fechaCierreEstimado = DIA,
                 createdAt = TS, entradaEtapaActual = TS,

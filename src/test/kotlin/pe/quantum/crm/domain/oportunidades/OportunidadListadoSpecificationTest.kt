@@ -25,6 +25,7 @@ import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.math.BigDecimal
 
 /**
  * Tests de la Specification de `GET /oportunidades` contra el metamodelo REAL de JPA.
@@ -55,6 +56,7 @@ class OportunidadListadoSpecificationTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -70,6 +72,7 @@ class OportunidadListadoSpecificationTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -207,6 +210,55 @@ class OportunidadListadoSpecificationTest {
         }
     }
 
+    /**
+     * B10 / D9 de `plan-03-mapa-oportunidad-items.md`: con varios modelos por
+     * oportunidad, `precio_unitario` a nivel de oportunidad ya no significa nada
+     * (la sincronizacion de D21 lo deja en null en cuanto hay 2+ items), asi que
+     * ordenar por el es un sinsentido. Sale de la allowlist: pedirlo es 400.
+     */
+    @Test
+    fun `precio_unitario ya no es un campo ordenable`() {
+        assertThat(camposOrdenablesPermitidos()).doesNotContain("precio_unitario")
+
+        val ex = assertThrows<ValidacionException> { listar(OportunidadFiltros(), admin, sort = "precio_unitario") }
+
+        assertThat(ex.field).isEqualTo("sort")
+    }
+
+    /**
+     * B10, nucleo de la tarea: `cantidad` y `monto_total` se ordenan por las
+     * columnas planas de `oportunidades`, sin subconsulta sobre `oportunidad_items`,
+     * porque la sincronizacion de `OportunidadItemServiceImpl` (D21/B3) las mantiene
+     * iguales a la suma real de los items tras cada escritura. Este test lo verifica
+     * de punta a punta: construye dos oportunidades con DISTINTO numero de items,
+     * les pone los valores que la sincronizacion dejaria (suma de cantidades y
+     * `MontoTotal.sumarItems`), y ordena por la property que el `PageRequest`
+     * realmente resuelve.
+     */
+    @Test
+    fun `ordenar por cantidad y monto_total usa la columna sincronizada y respeta el agregado de los items`() {
+        // Una oportunidad con 1 item: 2 x 100 000 = 200 000.
+        val unItem = listOf(item(cantidad = 2, precio = "100000"))
+        // Otra con 2 items: 3 x 90 000 + 1 x 50 000 = 320 000, y 4 buses en total.
+        val dosItems = listOf(item(cantidad = 3, precio = "90000"), item(cantidad = 1, precio = "50000"))
+
+        val pequena = sincronizada(id = 1, items = unItem)
+        val grande = sincronizada(id = 2, items = dosItems)
+
+        // La sincronizacion dejo las columnas planas como el agregado real de los items.
+        assertThat(pequena.cantidad).isEqualTo(2)
+        assertThat(grande.cantidad).isEqualTo(4)
+        assertThat(pequena.montoTotal).isEqualByComparingTo(BigDecimal("200000"))
+        assertThat(grande.montoTotal).isEqualByComparingTo(BigDecimal("320000"))
+        // Con 2+ items `precio_unitario` es null: por eso salio de la allowlist.
+        assertThat(grande.precioUnitario).isNull()
+
+        assertThat(ordenadasPor("cantidad", "desc", listOf(pequena, grande))).containsExactly(grande, pequena)
+        assertThat(ordenadasPor("cantidad", "asc", listOf(grande, pequena))).containsExactly(pequena, grande)
+        assertThat(ordenadasPor("monto_total", "desc", listOf(pequena, grande))).containsExactly(grande, pequena)
+        assertThat(ordenadasPor("monto_total", "asc", listOf(grande, pequena))).containsExactly(pequena, grande)
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     private fun listar(
@@ -248,6 +300,75 @@ class OportunidadListadoSpecificationTest {
             }.exceptionOrNull()
         return (error as ValidacionException).message.substringAfter("Campos permitidos: ").split(", ")
     }
+
+    /**
+     * Ordena `oportunidades` por el mismo `Sort` que el servicio le pasa al
+     * repositorio para ese `sort`/`dir`: la property se lee del `PageRequest` real,
+     * no se hardcodea aqui, para que un cambio en `CAMPOS_ORDENABLES` se note.
+     */
+    private fun ordenadasPor(
+        sort: String,
+        dir: String,
+        oportunidades: List<Oportunidad>,
+    ): List<Oportunidad> {
+        val orden = pageRequestDe(sort, dir).sort.single()
+        val valor = { o: Oportunidad ->
+            Oportunidad::class.java
+                .getMethod("get" + orden.property.replaceFirstChar { it.uppercase() })
+                .invoke(o) as Comparable<Any>
+        }
+        val comparador = compareBy(valor)
+        return oportunidades.sortedWith(if (orden.isAscending) comparador else comparador.reversed())
+    }
+
+    /** El `PageRequest` que `listar` construye de verdad para esos query params. */
+    private fun pageRequestDe(
+        sort: String,
+        dir: String,
+    ): PageRequest {
+        lateinit var capturado: PageRequest
+        every { oportunidadRepository.findAll(any<Specification<Oportunidad>>(), any<PageRequest>()) } answers {
+            capturado = secondArg()
+            PageImpl(emptyList(), PageRequest.of(0, 20), 0)
+        }
+        service.listar(OportunidadFiltros(), admin, page = null, perPage = null, sort = sort, dir = dir)
+        return capturado
+    }
+
+    private fun item(
+        cantidad: Int,
+        precio: String,
+    ) = OportunidadItem(
+        idOportunidad = 1,
+        idModelo = 1,
+        cantidad = cantidad,
+        precioVenta = BigDecimal(precio),
+        createdBy = 1,
+        updatedBy = 1,
+    )
+
+    /**
+     * Oportunidad con las columnas planas puestas como las deja
+     * `OportunidadItemServiceImpl.sincronizarColumnasViejas` (D21): `cantidad` es la
+     * suma de las cantidades de los items, `monto_total` es `MontoTotal.sumarItems`,
+     * y `precio_unitario` solo sobrevive cuando hay exactamente un item.
+     */
+    private fun sincronizada(
+        id: Long,
+        items: List<OportunidadItem>,
+    ) = Oportunidad(
+        id = id,
+        idEmpresa = 1,
+        idVendedor = 7,
+        idFinanciadora = 1,
+        idModelo = 1,
+        cantidad = items.mapNotNull { it.cantidad }.takeIf { it.isNotEmpty() }?.sum(),
+        precioUnitario = items.singleOrNull()?.precioVenta,
+        dcto = items.singleOrNull()?.descuento,
+        montoTotal = MontoTotal.sumarItems(items),
+        createdBy = 1,
+        updatedBy = 1,
+    )
 
     companion object {
         /**

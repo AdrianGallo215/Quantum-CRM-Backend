@@ -51,9 +51,9 @@ class SolicitudControllerWebMvcTest {
             tipo = "descuento",
             estado = estado,
             rolAprobador = "jdv",
-            entidadTipo = "oportunidad",
-            entidadId = 45,
-            entidadDescripcion = "ABC — Oportunidad #45",
+            entidadTipo = "oportunidad_item",
+            entidadId = 91,
+            entidadDescripcion = "ABC — Oportunidad #45 (ítem #91)",
             dctoSolicitado = "5.00",
             idVendedorNuevo = null,
             vendedorNuevo = null,
@@ -72,7 +72,7 @@ class SolicitudControllerWebMvcTest {
             header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
             contentType = MediaType.APPLICATION_JSON
             content =
-                """{"tipo":"descuento","entidad_tipo":"oportunidad","entidad_id":45,
+                """{"tipo":"descuento","entidad_tipo":"oportunidad_item","entidad_id":91,
                    "dcto_solicitado":"5.00","motivo":"Cliente frecuente"}"""
         }.andExpect {
             status { isCreated() }
@@ -86,7 +86,7 @@ class SolicitudControllerWebMvcTest {
         mockMvc.post("/api/v1/solicitudes") {
             header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
             contentType = MediaType.APPLICATION_JSON
-            content = """{"tipo":"descuento","entidad_tipo":"oportunidad","entidad_id":45,"dcto_solicitado":"5.00"}"""
+            content = """{"tipo":"descuento","entidad_tipo":"oportunidad_item","entidad_id":91,"dcto_solicitado":"5.00"}"""
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("VALIDACION") }

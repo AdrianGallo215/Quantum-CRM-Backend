@@ -31,15 +31,6 @@ class ModeloSinAplicacionesException :
         field = "aplicaciones",
     )
 
-/** `monto_total` vino en el body: es calculado y de solo lectura (reglas §7.2). */
-class MontoNoEditableException :
-    ApiException(
-        code = "MONTO_NO_EDITABLE",
-        message = "monto_total es calculado por el sistema y no se acepta como entrada",
-        status = HttpStatus.BAD_REQUEST,
-        field = "monto_total",
-    )
-
 /**
  * El RUC ya existe y pertenece a otro vendedor. No expone a quien (reglas §2.1).
  * El mensaje evita culpar al usuario: registrar un RUC que otro ya trabaja no es
@@ -102,5 +93,19 @@ class FinanciadoraDefaultInexistenteException :
     ApiException(
         code = "FINANCIADORA_DEFAULT_INEXISTENTE",
         message = "No hay financiadora default configurada en el sistema",
+        status = HttpStatus.INTERNAL_SERVER_ERROR,
+    )
+
+/**
+ * El saldo final del ultimo mes no coincide con `valor_residual`
+ * (reglas_simulaciones.md §3.5). Con precision completa el residuo es del orden
+ * de 1e-30, asi que superar la tolerancia de 0.01 significa que hay un bug en el
+ * motor: se devuelve error, nunca un cronograma silenciosamente incorrecto.
+ */
+class CronogramaInconsistenteException(
+    message: String,
+) : ApiException(
+        code = "CRONOGRAMA_INCONSISTENTE",
+        message = message,
         status = HttpStatus.INTERNAL_SERVER_ERROR,
     )
