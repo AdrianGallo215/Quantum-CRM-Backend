@@ -38,7 +38,9 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
         val version = int("SELECT MAX(version::int) FROM flyway_schema_history WHERE success")
         val aplicadas = int("SELECT COUNT(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")
         val fallidas = int("SELECT COUNT(*) FROM flyway_schema_history WHERE NOT success")
-        assertThat(version).isEqualTo(SeedFixtures.MIGRACIONES_TOTAL)
+        // Version maxima y cantidad de migraciones son dos hechos distintos: no coinciden
+        // desde que la numeracion tiene un hueco (no existe V40). Ver SeedFixtures.
+        assertThat(version).isEqualTo(SeedFixtures.MIGRACION_VERSION_MAX)
         assertThat(aplicadas).isEqualTo(SeedFixtures.MIGRACIONES_TOTAL)
         assertThat(fallidas).isZero()
     }
