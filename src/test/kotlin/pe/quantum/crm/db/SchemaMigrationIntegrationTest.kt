@@ -44,7 +44,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
     }
 
     @Test
-    fun `el schema crea las 20 tablas de dominio`() {
+    fun `el schema crea las 24 tablas de dominio`() {
         val tablas = strList("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'")
         assertThat(tablas).containsExactlyInAnyOrder(
             "empleados",
@@ -58,6 +58,7 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
             "oportunidades",
             "oportunidad_estados_log",
             "oportunidad_contactos",
+            "oportunidad_items",
             "catalogo_eventos",
             "eventos",
             "tareas",
@@ -67,11 +68,14 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
             "recordatorios_enviados",
             "metas_venta",
             "solicitudes",
+            "simulaciones",
+            "simulacion_log",
+            "tipo_cambio",
         )
     }
 
     @Test
-    fun `los 19 enums de dominio existen`() {
+    fun `los 21 enums de dominio existen`() {
         val enums = strList("SELECT typname FROM pg_type WHERE typtype = 'e'")
         assertThat(enums).containsExactlyInAnyOrder(
             "rol_empleado",
@@ -93,6 +97,8 @@ class SchemaMigrationIntegrationTest : IntegrationTestBase() {
             "estado_solicitud_enum",
             "aprobador_solicitud_enum",
             "entidad_solicitud_enum",
+            "modo_simulacion_enum",
+            "tipo_evento_simulacion_enum",
         )
     }
 
