@@ -39,12 +39,8 @@ data class OportunidadDto(
     val vendedor: EmpleadoResumen?,
     val idFinanciadora: Long,
     val financiadora: FinanciadoraDto?,
-    val idModelo: Long?,
-    val modelo: ModeloEnOportunidadDto?,
     val estado: String,
-    val cantidad: Int?,
-    val precioUnitario: String?,
-    val dcto: String?,
+    val items: List<OportunidadItemDto>,
     val montoTotal: String?,
     val garantia: Boolean?,
     val fincParalelo: Boolean?,
@@ -82,12 +78,14 @@ data class OportunidadDto(
  * GET siguiente "2.99". Se rechaza en el borde en vez de aceptar en silencio un
  * valor distinto del enviado. Los digitos son los de V10, no una eleccion:
  * NUMERIC(5,2) = 3 enteros + 2 decimales; NUMERIC(12,2) = 10 + 2.
+ *
+ * Los limites de `precio_venta`/`cuota_financiadora` ya no viven aqui: desde
+ * D19 esos campos son de los items, y sus constantes estan en
+ * `OportunidadItemDtos.kt`.
  */
 private const val DCTO_MIN = "0.0"
 private const val DCTO_MAX = "100.0"
-private const val PRECIO_MIN = "0.0"
 private const val DCTO_DIGITOS_ENTEROS = 3
-private const val PRECIO_DIGITOS_ENTEROS = 10
 private const val DECIMALES_MONETARIOS = 2
 private const val MAX_TEXTO_CORTO = 255
 private const val MAX_TEXTO_MEDIO = 1000
@@ -95,8 +93,9 @@ private const val MAX_TEXTO_LARGO = 5000
 
 /**
  * Body de `POST /oportunidades`. `monto_total` NO se declara: si viene en el
- * body simplemente se ignora (contrato §10). `precio_unitario` se inicializa
- * con el precio base del modelo.
+ * body simplemente se ignora (contrato §10). Los campos del item viajan planos
+ * (D19): `crear()` construye con ellos un unico `OportunidadItem`, cuyo
+ * `precio_venta` se inicializa con el precio base del modelo.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class CrearOportunidadRequest(
@@ -108,14 +107,14 @@ data class CrearOportunidadRequest(
     val idFinanciadora: Long? = null,
     @field:Positive(message = "cantidad debe ser mayor a 0")
     val cantidad: Int? = null,
-    @field:DecimalMin(value = DCTO_MIN, message = "dcto no puede ser negativo")
-    @field:DecimalMax(value = DCTO_MAX, message = "dcto no puede superar 100")
+    @field:DecimalMin(value = DCTO_MIN, message = "descuento no puede ser negativo")
+    @field:DecimalMax(value = DCTO_MAX, message = "descuento no puede superar 100")
     @field:Digits(
         integer = DCTO_DIGITOS_ENTEROS,
         fraction = DECIMALES_MONETARIOS,
-        message = "dcto admite como maximo 2 decimales",
+        message = "descuento admite como maximo 2 decimales",
     )
-    val dcto: BigDecimal? = null,
+    val descuento: BigDecimal? = null,
     val garantia: Boolean? = null,
     val fincParalelo: Boolean? = null,
     @field:Size(max = MAX_TEXTO_MEDIO, message = "ficha_venta supera la longitud maxima")
@@ -157,30 +156,15 @@ data class ActualizarRolContactoRequest(
 )
 
 /**
- * Body de `PUT /oportunidades/:id`. `montoTotal` se declara SOLO para detectarlo
- * y rechazarlo con `400 MONTO_NO_EDITABLE` (contrato §10): por eso NO lleva
- * anotaciones de rango, el rechazo es por presencia, no por valor.
+ * Body de `PUT /oportunidades/:id` (D19 del plan 05). Ya NO acepta `id_modelo`,
+ * `cantidad`, `precio_venta`/`precio_unitario`, `descuento`/`dcto` ni
+ * `monto_total`: esos campos viven en los items y se editan por
+ * `PUT /oportunidades/:id/items/:itemId`. Al no estar declarados,
+ * `@JsonIgnoreProperties(ignoreUnknown = true)` los ignora en silencio; ya no
+ * hace falta el guard de presencia de `montoTotal`.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class ActualizarOportunidadRequest(
-    @field:Positive(message = "id_modelo debe ser un identificador valido")
-    val idModelo: Long? = null,
-    @field:Positive(message = "cantidad debe ser mayor a 0")
-    val cantidad: Int? = null,
-    @field:DecimalMin(value = PRECIO_MIN, message = "precio_unitario no puede ser negativo")
-    @field:Digits(
-        integer = PRECIO_DIGITOS_ENTEROS,
-        fraction = DECIMALES_MONETARIOS,
-        message = "precio_unitario admite como maximo 10 digitos enteros y 2 decimales",
-    )
-    val precioUnitario: BigDecimal? = null,
-    @field:DecimalMin(value = DCTO_MIN, message = "dcto no puede ser negativo")
-    @field:DecimalMax(value = DCTO_MAX, message = "dcto no puede superar 100")
-    @field:Digits(
-        integer = DCTO_DIGITOS_ENTEROS,
-        fraction = DECIMALES_MONETARIOS,
-        message = "dcto admite como maximo 2 decimales",
-    )
-    val dcto: BigDecimal? = null,
     val garantia: Boolean? = null,
     val fincParalelo: Boolean? = null,
     @field:Size(max = MAX_TEXTO_MEDIO, message = "ficha_venta supera la longitud maxima")
@@ -188,7 +172,6 @@ data class ActualizarOportunidadRequest(
     @field:Size(max = MAX_TEXTO_LARGO, message = "notas supera la longitud maxima")
     val notas: String? = null,
     val fechaCierreEstimado: LocalDate? = null,
-    val montoTotal: BigDecimal? = null,
 )
 
 /**

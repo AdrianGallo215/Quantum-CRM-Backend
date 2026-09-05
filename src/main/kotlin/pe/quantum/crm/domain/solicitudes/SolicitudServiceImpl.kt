@@ -11,7 +11,7 @@ import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
-import pe.quantum.crm.domain.oportunidades.OportunidadService
+import pe.quantum.crm.domain.oportunidades.OportunidadItemService
 import pe.quantum.crm.domain.solicitudes.dto.CrearSolicitudRequest
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudDto
 import pe.quantum.crm.domain.solicitudes.dto.SolicitudFiltros
@@ -34,7 +34,7 @@ import pe.quantum.crm.shared.security.UsuarioActual
 @Suppress("TooManyFunctions") // Modulo de solicitudes: crear/listar/detalle/aprobar/denegar + privados de cada rama.
 class SolicitudServiceImpl(
     private val solicitudRepository: SolicitudRepository,
-    private val oportunidadService: OportunidadService,
+    private val oportunidadItemService: OportunidadItemService,
     private val empresaService: EmpresaService,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
@@ -91,29 +91,33 @@ class SolicitudServiceImpl(
         val descripcion: String,
     )
 
-    /** Descuento: solo sobre oportunidades visibles, y solo si excede el limite propio. */
+    /**
+     * Descuento: solo sobre items de oportunidad visibles, y solo si excede el
+     * limite propio. Desde el rediseno multi-modelo el descuento vive en el item,
+     * no en la oportunidad: `entidad_id` es el id del item (V44, decision D12).
+     */
     @Suppress("ThrowsCount") // Guard clauses de validacion; dividir la funcion no mejora la legibilidad.
     private fun validarDescuento(
         request: CrearSolicitudRequest,
         usuario: UsuarioActual,
     ): Contexto {
-        if (request.entidadTipo != EntidadSolicitud.oportunidad) {
-            throw ValidacionException("Una solicitud de descuento aplica sobre una oportunidad", field = "entidad_tipo")
+        if (request.entidadTipo != EntidadSolicitud.oportunidad_item) {
+            throw ValidacionException("Una solicitud de descuento aplica sobre un ítem de oportunidad", field = "entidad_tipo")
         }
         val dcto =
             request.dctoSolicitado
                 ?: throw ValidacionException("dcto_solicitado es obligatorio", field = "dcto_solicitado")
         // IDOR: si no es visible para el solicitante, 404 desde vinculoVisible.
-        val oportunidad = oportunidadService.vinculoVisible(requireNotNull(request.entidadId), usuario)
+        val item = oportunidadItemService.vinculoVisible(requireNotNull(request.entidadId), usuario)
         val aprobador =
             PoliticaDescuento.aprobadorPara(usuario.rol, dcto)
                 ?: throw ValidacionException(
                     "Un descuento de ${dcto.toPlainString()}% está dentro de tu límite: aplícalo directamente",
                     field = "dcto_solicitado",
                 )
-        val empresa = empresaService.resumenPorIds(listOf(oportunidad.idEmpresa))[oportunidad.idEmpresa]
-        val descripcion = "${empresa?.razonSocial ?: "Empresa"} — Oportunidad #${oportunidad.id}"
-        return Contexto(aprobador, EntidadSolicitud.oportunidad, descripcion)
+        val empresa = empresaService.resumenPorIds(listOf(item.idEmpresa))[item.idEmpresa]
+        val descripcion = "${empresa?.razonSocial ?: "Empresa"} — Oportunidad #${item.idOportunidad} (ítem #${item.id})"
+        return Contexto(aprobador, EntidadSolicitud.oportunidad_item, descripcion)
     }
 
     /** Reasignacion: solo la solicita el jdv y siempre la aprueba gerencia. */
@@ -277,7 +281,7 @@ class SolicitudServiceImpl(
         // El efecto corre en ESTA transaccion: si falla, la solicitud sigue pendiente.
         when (solicitud.tipo) {
             TipoSolicitud.descuento ->
-                oportunidadService.aplicarDescuentoAprobado(
+                oportunidadItemService.aplicarDescuentoAprobado(
                     solicitud.entidadId,
                     requireNotNull(solicitud.dctoSolicitado),
                     usuario.id,

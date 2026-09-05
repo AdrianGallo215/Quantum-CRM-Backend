@@ -19,7 +19,10 @@ import pe.quantum.crm.domain.financiadoras.dto.FinanciadoraDto
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -49,6 +52,8 @@ class OportunidadCrearTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -64,6 +69,8 @@ class OportunidadCrearTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
+            listadoDao,
         )
 
     private val busX = ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal("92000.00"))
@@ -104,7 +111,24 @@ class OportunidadCrearTest {
         every { contactoOportunidadRepository.findByIdIdOportunidad(any()) } returns emptyList()
         every { contactoService.resumenPorIds(any()) } returns emptyMap()
         every { logRepository.findFirstByIdOportunidadOrderByChangedAtDescIdDesc(any()) } returns null
+        // Los campos de item ya no se escriben aqui: `crear()` delega el primer item
+        // en OportunidadItemService (B6), y `toDtos` lee de el los items y el total.
+        every { oportunidadItemService.crear(any(), any(), any()) } returns itemDto()
+        every { oportunidadItemService.porOportunidades(any()) } returns mapOf(100L to listOf(itemDto()))
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
     }
+
+    private fun itemDto() =
+        OportunidadItemDto(
+            id = 500,
+            idModelo = 1,
+            modelo = ModeloEnOportunidadDto(id = 1, codigo = "BUS-X", precioBase = "92000.00"),
+            cantidad = 8,
+            precioVenta = "92000.00",
+            descuento = "3.00",
+            cuotaFinanciadora = "0.00",
+            montoItem = "713920.00",
+        )
 
     /** `save` devuelve una copia con id, como haria JPA al persistir. */
     private fun stubSave(guardada: CapturingSlot<Oportunidad>) {
@@ -115,12 +139,7 @@ class OportunidadCrearTest {
                 idEmpresa = original.idEmpresa,
                 idVendedor = original.idVendedor,
                 idFinanciadora = original.idFinanciadora,
-                idModelo = original.idModelo,
                 estado = original.estado,
-                cantidad = original.cantidad,
-                precioUnitario = original.precioUnitario,
-                dcto = original.dcto,
-                montoTotal = original.montoTotal,
                 fincParalelo = original.fincParalelo,
                 garantia = original.garantia,
                 fichaVenta = original.fichaVenta,
@@ -144,10 +163,17 @@ class OportunidadCrearTest {
         )
 
     @Test
-    fun `crear toma el precio del modelo, calcula monto_total y arranca en evaluacion_calidda`() {
+    fun `crear delega el primer item con los campos del body y arranca en evaluacion_calidda`() {
         every { empresaService.vinculoVisible(10, any()) } returns empresaConVendedor(5)
         val guardada = slot<Oportunidad>()
         stubSave(guardada)
+        val itemPedido = slot<CrearOportunidadItemRequest>()
+        every { oportunidadItemService.crear(100, capture(itemPedido), any()) } returns itemDto()
+        // 8 x 92000.00 x (1 - 3/100) = 713920.00. La formula y el precio base del
+        // modelo son ahora del item (ver OportunidadItemServiceImplTest); aqui se
+        // fija que el total del DTO sale de el y no de la columna plana (D15/D21).
+        every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L)) } returns
+            mapOf(100L to BigDecimal("713920.00"))
 
         val dto =
             service.crear(
@@ -155,7 +181,7 @@ class OportunidadCrearTest {
                     idEmpresa = 10,
                     idModelo = 1,
                     cantidad = 8,
-                    dcto = BigDecimal("3.00"),
+                    descuento = BigDecimal("3.00"),
                     garantia = true,
                     fincParalelo = false,
                     fichaVenta = "FV-1",
@@ -166,11 +192,15 @@ class OportunidadCrearTest {
             )
 
         assertThat(guardada.captured.estado).isEqualTo(EstadoOportunidad.evaluacion_calidda)
-        assertThat(guardada.captured.precioUnitario).isEqualByComparingTo("92000.00")
-        // 8 x 92000.00 x (1 - 3/100) = 713920.00
-        assertThat(guardada.captured.montoTotal).isEqualByComparingTo("713920.00")
         assertThat(guardada.captured.createdBy).isEqualTo(5)
+        assertThat(itemPedido.captured.idModelo).isEqualTo(1)
+        assertThat(itemPedido.captured.cantidad).isEqualTo(8)
+        assertThat(itemPedido.captured.descuento).isEqualByComparingTo("3.00")
+        // precio_venta va null a proposito: lo rellena el item con el precio base
+        // del modelo (92000.00), en vez de duplicar aqui esa resolucion.
+        assertThat(itemPedido.captured.precioVenta).isNull()
         assertThat(dto.estado).isEqualTo("evaluacion_calidda")
+        assertThat(dto.items.single().precioVenta).isEqualTo("92000.00")
         assertThat(dto.montoTotal).isEqualTo("713920.00")
     }
 
@@ -248,14 +278,14 @@ class OportunidadCrearTest {
     fun `crear en una empresa sin carpeta de Drive la crea primero y anida la de la oportunidad`() {
         every { empresaService.vinculoVisible(10, any()) } returns empresaConVendedor(5).copy(driveFolderId = null)
         every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa-nueva"
-        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa-nueva") } returns "carpeta-op"
+        every { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa-nueva") } returns "carpeta-op"
         val guardada = slot<Oportunidad>()
         stubSave(guardada)
 
         val dto = service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1), UsuarioActual(id = 5, rol = "vendedor"))
 
         assertThat(dto.driveFolderId).isEqualTo("carpeta-op")
-        verify { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa-nueva") }
+        verify { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa-nueva") }
     }
 
     /** `created_at` y `updated_at` de una oportunidad recien creada son el mismo instante. */

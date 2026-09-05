@@ -21,15 +21,15 @@ class SolicitudRepositoryTest
     constructor(
         private val repository: SolicitudRepository,
     ) : IntegrationTestBase() {
-        // id_solicitante=1 es el admin seed de V19.
+        // id_solicitante=1 es el admin seed de V19; `entidadId` es el id de un item (V44).
         private fun solicitudDescuento(entidadId: Long = 999) =
             Solicitud(
                 tipo = TipoSolicitud.descuento,
                 rolAprobador = AprobadorSolicitud.jdv,
                 idSolicitante = 1,
-                entidadTipo = EntidadSolicitud.oportunidad,
+                entidadTipo = EntidadSolicitud.oportunidad_item,
                 entidadId = entidadId,
-                entidadDescripcion = "Empresa X — Oportunidad #$entidadId",
+                entidadDescripcion = "Empresa X — Oportunidad #1 (ítem #$entidadId)",
                 motivo = "Cliente recurrente",
                 dctoSolicitado = BigDecimal("5.00"),
             )
@@ -58,7 +58,7 @@ class SolicitudRepositoryTest
             assertThat(
                 repository.existsByTipoAndEntidadTipoAndEntidadIdAndEstado(
                     TipoSolicitud.descuento,
-                    EntidadSolicitud.oportunidad,
+                    EntidadSolicitud.oportunidad_item,
                     555,
                     EstadoSolicitud.pendiente,
                 ),

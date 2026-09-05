@@ -6,7 +6,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
-import pe.quantum.crm.domain.modelos.ModeloService
+import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.math.BigDecimal
 import java.time.LocalDateTime
@@ -24,13 +25,13 @@ class OportunidadesDeContactoImplTest {
     private val oportunidadRepository = mockk<OportunidadRepository>()
     private val contactoOportunidadRepository = mockk<OportunidadContactoRepository>()
     private val empresaService = mockk<EmpresaService>()
-    private val modeloService = mockk<ModeloService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val service =
         OportunidadesDeContactoImpl(
             oportunidadRepository,
             contactoOportunidadRepository,
             empresaService,
-            modeloService,
+            oportunidadItemService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -44,19 +45,24 @@ class OportunidadesDeContactoImplTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = BigDecimal.TEN,
-        dcto = BigDecimal.ZERO,
-        montoTotal = BigDecimal.TEN,
         createdAt = LocalDateTime.now(),
         createdBy = 1,
         updatedAt = LocalDateTime.now(),
         updatedBy = 1,
     )
 
-    private fun busX() = pe.quantum.crm.domain.modelos.dto.ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal.TEN)
+    private fun itemDto(idOportunidad: Long) =
+        OportunidadItemDto(
+            id = idOportunidad * 10,
+            idModelo = 1,
+            modelo = ModeloEnOportunidadDto(id = 1, codigo = "BUS-X", precioBase = "10"),
+            cantidad = 1,
+            precioVenta = "10",
+            descuento = null,
+            cuotaFinanciadora = "0",
+            montoItem = "10",
+        )
 
     private fun vinculo(
         idOportunidad: Long,
@@ -66,7 +72,10 @@ class OportunidadesDeContactoImplTest {
     private fun stubResumenes() {
         every { empresaService.resumenPorIds(any()) } returns
             mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Transp. Sta. Anita S.A.", distrito = null))
-        every { modeloService.resumenPorIds(any()) } returns mapOf(1L to busX())
+        every { oportunidadItemService.porOportunidades(any()) } returns
+            mapOf(100L to listOf(itemDto(100)), 200L to listOf(itemDto(200)))
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns
+            mapOf(100L to BigDecimal.TEN, 200L to BigDecimal.TEN)
     }
 
     @Test
@@ -98,6 +107,24 @@ class OportunidadesDeContactoImplTest {
         assertThat(dto.modelo?.codigo).isEqualTo("BUS-X")
         assertThat(dto.montoTotal).isEqualTo("10")
         assertThat(dto.rolEnOportunidad).isEqualTo("Contacto Principal")
+    }
+
+    /**
+     * D19: el monto sale de los items, nunca de la columna plana. Si todos los items
+     * estan incompletos no hay suma y el DTO devuelve `null`, sin caer a `op.montoTotal`.
+     */
+    @Test
+    fun `listar devuelve monto nulo si ningun item aporta suma`() {
+        every { contactoOportunidadRepository.findByIdIdContacto(5) } returns listOf(vinculo(100))
+        every { oportunidadRepository.findAllById(listOf(100L)) } returns listOf(oportunidad(id = 100))
+        every { empresaService.resumenPorIds(any()) } returns
+            mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Transp. Sta. Anita S.A.", distrito = null))
+        every { oportunidadItemService.porOportunidades(any()) } returns mapOf(100L to listOf(itemDto(100)))
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
+
+        val resultado = service.listar(5, admin)
+
+        assertThat(resultado.first().montoTotal).isNull()
     }
 
     @Test

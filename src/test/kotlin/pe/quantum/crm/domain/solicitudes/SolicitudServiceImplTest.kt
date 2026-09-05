@@ -17,8 +17,8 @@ import pe.quantum.crm.domain.empresas.dto.EmpresaVinculo
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
-import pe.quantum.crm.domain.oportunidades.OportunidadService
-import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
+import pe.quantum.crm.domain.oportunidades.OportunidadItemService
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemVinculo
 import pe.quantum.crm.domain.solicitudes.dto.CrearSolicitudRequest
 import pe.quantum.crm.shared.enums.EntidadSolicitud
 import pe.quantum.crm.shared.enums.EstadoSolicitud
@@ -31,12 +31,12 @@ import java.math.BigDecimal
 
 class SolicitudServiceImplTest {
     private val solicitudRepository = mockk<SolicitudRepository>()
-    private val oportunidadService = mockk<OportunidadService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
     private val empresaService = mockk<EmpresaService>()
     private val empleadoService = mockk<EmpleadoService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val service =
-        SolicitudServiceImpl(solicitudRepository, oportunidadService, empresaService, empleadoService, notificacionService)
+        SolicitudServiceImpl(solicitudRepository, oportunidadItemService, empresaService, empleadoService, notificacionService)
 
     private val vendedor = UsuarioActual(id = 5, rol = "vendedor")
     private val jdv = UsuarioActual(id = 2, rol = "jdv")
@@ -59,23 +59,23 @@ class SolicitudServiceImplTest {
     private fun requestDescuento(dcto: String = "5.00") =
         CrearSolicitudRequest(
             tipo = TipoSolicitud.descuento,
-            entidadTipo = EntidadSolicitud.oportunidad,
-            entidadId = 45,
+            entidadTipo = EntidadSolicitud.oportunidad_item,
+            entidadId = 91,
             motivo = "Cliente frecuente",
             dctoSolicitado = BigDecimal(dcto),
         )
 
     @Test
     fun `crear descuento 5 pct de vendedor deriva aprobador jdv y notifica a los jdv activos`() {
-        every { oportunidadService.vinculoVisible(45, vendedor) } returns
-            OportunidadVinculo(id = 45, idEmpresa = 10, idVendedor = 5, estado = "evaluacion_calidda")
+        every { oportunidadItemService.vinculoVisible(91, vendedor) } returns
+            OportunidadItemVinculo(id = 91, idOportunidad = 45, idEmpresa = 10, descuento = null)
         every { empresaService.resumenPorIds(listOf(10)) } returns
             mapOf(10L to EmpresaResumen(id = 10, razonSocial = "Transportes Lima Norte S.A.C.", distrito = null))
         every {
             solicitudRepository.existsByTipoAndEntidadTipoAndEntidadIdAndEstado(
                 TipoSolicitud.descuento,
-                EntidadSolicitud.oportunidad,
-                45,
+                EntidadSolicitud.oportunidad_item,
+                91,
                 EstadoSolicitud.pendiente,
             )
         } returns false
@@ -102,16 +102,16 @@ class SolicitudServiceImplTest {
 
     @Test
     fun `crear descuento dentro del limite propio es VALIDACION - no necesita solicitud`() {
-        every { oportunidadService.vinculoVisible(45, vendedor) } returns
-            OportunidadVinculo(id = 45, idEmpresa = 10, idVendedor = 5, estado = "evaluacion_calidda")
+        every { oportunidadItemService.vinculoVisible(91, vendedor) } returns
+            OportunidadItemVinculo(id = 91, idOportunidad = 45, idEmpresa = 10, descuento = null)
         assertThatThrownBy { service.crear(requestDescuento("2.00"), vendedor) }
             .isInstanceOf(ValidacionException::class.java)
     }
 
     @Test
     fun `crear con pendiente duplicada es 409 SOLICITUD_DUPLICADA`() {
-        every { oportunidadService.vinculoVisible(45, vendedor) } returns
-            OportunidadVinculo(id = 45, idEmpresa = 10, idVendedor = 5, estado = "evaluacion_calidda")
+        every { oportunidadItemService.vinculoVisible(91, vendedor) } returns
+            OportunidadItemVinculo(id = 91, idOportunidad = 45, idEmpresa = 10, descuento = null)
         every { empresaService.resumenPorIds(listOf(10)) } returns
             mapOf(10L to EmpresaResumen(id = 10, razonSocial = "ABC", distrito = null))
         every {
@@ -170,9 +170,9 @@ class SolicitudServiceImplTest {
             tipo = TipoSolicitud.descuento,
             rolAprobador = pe.quantum.crm.shared.enums.AprobadorSolicitud.jdv,
             idSolicitante = idSolicitante,
-            entidadTipo = EntidadSolicitud.oportunidad,
-            entidadId = 45,
-            entidadDescripcion = "X — Oportunidad #45",
+            entidadTipo = EntidadSolicitud.oportunidad_item,
+            entidadId = 91,
+            entidadDescripcion = "X — Oportunidad #45 (ítem #91)",
             motivo = "m",
             dctoSolicitado = BigDecimal("5"),
         )
@@ -214,9 +214,9 @@ class SolicitudServiceImplTest {
             tipo = TipoSolicitud.descuento,
             rolAprobador = rolAprobador,
             idSolicitante = 5,
-            entidadTipo = EntidadSolicitud.oportunidad,
-            entidadId = 45,
-            entidadDescripcion = "Transportes Lima Norte S.A.C. — Oportunidad #45",
+            entidadTipo = EntidadSolicitud.oportunidad_item,
+            entidadId = 91,
+            entidadDescripcion = "Transportes Lima Norte S.A.C. — Oportunidad #45 (ítem #91)",
             motivo = "Cliente frecuente",
             dctoSolicitado = BigDecimal("8.00"),
         )
@@ -226,14 +226,14 @@ class SolicitudServiceImplTest {
         val gerencia = UsuarioActual(id = 1, rol = "gerencia")
         val pendiente = solicitudDescuentoPendiente(pe.quantum.crm.shared.enums.AprobadorSolicitud.gerencia)
         every { solicitudRepository.findParaResolver(9) } returns pendiente
-        every { oportunidadService.aplicarDescuentoAprobado(45, BigDecimal("8.00"), 1) } just Runs
+        every { oportunidadItemService.aplicarDescuentoAprobado(91, BigDecimal("8.00"), 1) } just Runs
         every { solicitudRepository.save(any()) } answers { firstArg() }
         every { empleadoService.resumenPorIds(any()) } returns emptyMap()
 
         val dto = service.aprobar(9, gerencia)
 
         assertThat(dto.estado).isEqualTo("aprobada")
-        verify { oportunidadService.aplicarDescuentoAprobado(45, BigDecimal("8.00"), 1) }
+        verify { oportunidadItemService.aplicarDescuentoAprobado(91, BigDecimal("8.00"), 1) }
         verify {
             notificacionService.notificar(
                 destinatarios = setOf(5L),

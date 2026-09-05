@@ -48,8 +48,8 @@ class EmpresaEliminacionCascadaIntegrationTest : IntegrationTestBase() {
         val oportunidad =
             id(
                 """
-                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, created_by, updated_by)
-                VALUES ($empresa, $admin, $financiadora, $modelo, 'evaluacion_calidda', $admin, $admin)
+                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, estado, created_by, updated_by)
+                VALUES ($empresa, $admin, $financiadora, 'evaluacion_calidda', $admin, $admin)
                 RETURNING id
                 """.trimIndent(),
             )

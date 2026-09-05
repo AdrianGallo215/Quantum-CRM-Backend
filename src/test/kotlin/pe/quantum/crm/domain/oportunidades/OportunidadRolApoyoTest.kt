@@ -26,7 +26,6 @@ import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
-import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -44,6 +43,8 @@ class OportunidadRolApoyoTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -59,7 +60,16 @@ class OportunidadRolApoyoTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
+            listadoDao,
         )
+
+    init {
+        // `toDtos()` pide items y monto al OportunidadItemService (B8); estos
+        // escenarios solo verifican visibilidad por rol, no los items.
+        every { oportunidadItemService.porOportunidades(any()) } returns emptyMap()
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
+    }
 
     private val analista = UsuarioActual(id = 7L, rol = "analista")
     private val otro = UsuarioActual(id = 8L, rol = "otro")
@@ -72,12 +82,7 @@ class OportunidadRolApoyoTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = BigDecimal.TEN,
-        dcto = BigDecimal.ZERO,
-        montoTotal = BigDecimal.TEN,
         createdAt = LocalDateTime.now(),
         createdBy = idVendedor,
         updatedAt = LocalDateTime.now(),

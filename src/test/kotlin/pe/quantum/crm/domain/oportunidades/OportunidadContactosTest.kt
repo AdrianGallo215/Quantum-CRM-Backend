@@ -24,6 +24,7 @@ import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -54,6 +55,8 @@ class OportunidadContactosTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -69,6 +72,8 @@ class OportunidadContactosTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
+            listadoDao,
         )
 
     private val vendedor = UsuarioActual(id = 5, rol = "vendedor")
@@ -95,7 +100,28 @@ class OportunidadContactosTest {
         every { consultas.tareasPendientesPorOportunidad(any()) } returns emptyMap()
         every { consultas.eventosPendientesPorOportunidad(any()) } returns emptyMap()
         every { logRepository.findFirstByIdOportunidadOrderByChangedAtDescIdDesc(any()) } returns null
+        every { oportunidadItemService.crear(any(), any(), any()) } returns itemDtoNeutro()
+        every { oportunidadItemService.porOportunidades(any()) } returns emptyMap()
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
     }
+
+    /**
+     * Item neutro: estos escenarios no verifican nada de los items, pero
+     * `crear()` delega en OportunidadItemService (B6) y `toDtos()` le pide items
+     * y monto (B8). Lo que si comprueban los items esta en
+     * OportunidadItemServiceImplTest.
+     */
+    private fun itemDtoNeutro() =
+        OportunidadItemDto(
+            id = 500,
+            idModelo = 1,
+            modelo = null,
+            cantidad = 1,
+            precioVenta = "100.00",
+            descuento = "0.00",
+            cuotaFinanciadora = "0.00",
+            montoItem = "100.00",
+        )
 
     private fun oportunidad() =
         Oportunidad(
@@ -103,12 +129,7 @@ class OportunidadContactosTest {
             idEmpresa = 10,
             idVendedor = 5,
             idFinanciadora = 1,
-            idModelo = 1,
             estado = EstadoOportunidad.evaluacion_calidda,
-            cantidad = 1,
-            precioUnitario = BigDecimal("100.00"),
-            dcto = BigDecimal.ZERO,
-            montoTotal = BigDecimal("100.00"),
             createdAt = LocalDateTime.now(),
             createdBy = 5,
             updatedAt = LocalDateTime.now(),

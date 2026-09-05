@@ -55,6 +55,8 @@ class OportunidadListadoSpecificationTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -70,11 +72,22 @@ class OportunidadListadoSpecificationTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
+            listadoDao,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
     private val vendedor = UsuarioActual(id = 7, rol = "vendedor")
     private val analista = UsuarioActual(id = 7, rol = "analista")
+
+    init {
+        // `cantidad`/`monto_total` desvian el listado a la rama nativa (D29), que aqui
+        // no se ejercita: esta clase compila Specifications contra el metamodelo, no
+        // SQL. Ese camino se verifica en OportunidadListadoSortNativoIntegrationTest.
+        every {
+            listadoDao.paginaOrdenadaPorAgregado(any(), any(), any(), any(), any(), any(), any())
+        } returns PaginaOrdenada(emptyList(), 0)
+    }
 
     /** HQL efectivo de la query y numero de predicados que la Specification apilo. */
     private data class Compilada(
@@ -194,6 +207,12 @@ class OportunidadListadoSpecificationTest {
      * path de la entidad al ejecutar la query, asi que un campo de la allowlist que
      * no exista seria un 500 por otra puerta. Los campos permitidos se leen del
      * propio mensaje de error para no duplicar la lista aqui.
+     *
+     * `cantidad` y `monto_total` ya no siguen ese camino (D29): son agregados de
+     * `oportunidad_items` y desvian el listado a una consulta nativa, que aqui solo
+     * ve un mock. Que ORDENEN bien se verifica contra Postgres real en
+     * `OportunidadListadoSortNativoIntegrationTest`; lo unico que este test sigue
+     * cubriendo para ellos es que pedirlos no sea un 400 ni reviente.
      */
     @Test
     fun `todos los campos ordenables de la allowlist existen en la entidad`() {
@@ -205,6 +224,21 @@ class OportunidadListadoSpecificationTest {
                 .describedAs("el campo ordenable '%s' no existe en Oportunidad", campo)
                 .doesNotThrowAnyException()
         }
+    }
+
+    /**
+     * B10 / D9 de `plan-03-mapa-oportunidad-items.md`: con varios modelos por
+     * oportunidad, `precio_unitario` a nivel de oportunidad ya no significa nada
+     * (no hay un unico precio por oportunidad en cuanto hay 2+ items), asi que
+     * ordenar por el es un sinsentido. Sale de la allowlist: pedirlo es 400.
+     */
+    @Test
+    fun `precio_unitario ya no es un campo ordenable`() {
+        assertThat(camposOrdenablesPermitidos()).doesNotContain("precio_unitario")
+
+        val ex = assertThrows<ValidacionException> { listar(OportunidadFiltros(), admin, sort = "precio_unitario") }
+
+        assertThat(ex.field).isEqualTo("sort")
     }
 
     // ── privados ───────────────────────────────────────────────

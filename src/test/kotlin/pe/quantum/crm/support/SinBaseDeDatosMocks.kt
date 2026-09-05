@@ -22,10 +22,12 @@ import pe.quantum.crm.domain.notificaciones.NotificacionRepository
 import pe.quantum.crm.domain.notificaciones.RecordatorioEnviadoRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadContactoRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadEstadoLogRepository
+import pe.quantum.crm.domain.oportunidades.OportunidadItemRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadRepository
 import pe.quantum.crm.domain.solicitudes.SolicitudRepository
 import pe.quantum.crm.domain.tareas.TareaRepository
 import pe.quantum.crm.domain.tareas.TareaResponsableRepository
+import pe.quantum.crm.domain.tipocambio.TipoCambioRepository
 
 /**
  * Mocks de la capa de datos para los tests de contexto que corren SIN base de
@@ -65,6 +67,9 @@ class SinBaseDeDatosMocks {
     fun oportunidadContactoRepository(): OportunidadContactoRepository = mockk(relaxed = true)
 
     @Bean
+    fun oportunidadItemRepository(): OportunidadItemRepository = mockk(relaxed = true)
+
+    @Bean
     fun eventoRepository(): EventoRepository = mockk(relaxed = true)
 
     @Bean
@@ -84,6 +89,9 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun metaVentaRepository(): MetaVentaRepository = mockk(relaxed = true)
+
+    @Bean
+    fun tipoCambioRepository(): TipoCambioRepository = mockk(relaxed = true)
 
     @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mockk(relaxed = true)

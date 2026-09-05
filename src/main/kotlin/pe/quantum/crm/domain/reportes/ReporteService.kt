@@ -79,6 +79,12 @@ class ReporteService(
      * oportunidad `facturado` sin fila en el log desaparecia del reporte en
      * silencio, y gerencia veia una cifra distinta de la del vendedor. Ademas
      * `facturado_en` esta indexada (idx_oportunidades_facturado_en).
+     *
+     * Desde plan-07 (D22/D23/D25) la consulta devuelve UNA FILA POR ITEM
+     * (`oportunidad_items`), no por oportunidad: `monto`, `cantidad` y `dcto`
+     * salen del item y `porModelo` agrupa por el modelo de cada item. Lo que
+     * cuenta oportunidades (`operacionesCount`, `porMes.operaciones`) deduplica
+     * por `o.id`.
      */
     @Transactional(readOnly = true)
     fun ventas(
@@ -89,13 +95,23 @@ class ReporteService(
             buildString {
                 append(
                     """
-                    SELECT o.id, COALESCE(o.monto_total, 0) AS monto, COALESCE(o.cantidad, 0) AS cantidad, o.dcto,
+                    SELECT o.id,
+                           -- Formula de dinero duplicada en SQL a proposito (plan-07 D22). La
+                           -- FUENTE DE VERDAD es MontoTotal.calcular (domain.oportunidades):
+                           -- este modulo es SQL nativo y no puede cruzar de modulo (regla 12).
+                           -- Si cambia alla, cambia aqui.
+                           COALESCE(
+                               ROUND(i.cantidad * i.precio_venta * (1 - COALESCE(i.descuento, 0) / 100), 2),
+                               0
+                           ) AS monto,
+                           COALESCE(i.cantidad, 0) AS cantidad, i.descuento AS dcto,
                            to_char(o.facturado_en, 'YYYY-MM') AS mes,
                            o.id_vendedor, CONCAT(e.nombres, ' ', e.apellidos) AS vendedor,
                            m.codigo AS modelo
                     FROM oportunidades o
+                    JOIN oportunidad_items i ON i.id_oportunidad = o.id
                     LEFT JOIN empleados e ON e.id = o.id_vendedor
-                    LEFT JOIN modelos m ON m.id = o.id_modelo
+                    JOIN modelos m ON m.id = i.id_modelo
                     WHERE o.estado = 'facturado'
                       AND o.facturado_en >= :desde AND o.facturado_en < :hasta
                     """.trimIndent(),
@@ -118,15 +134,19 @@ class ReporteService(
                 )
             }
         val montoTotal = rows.sumMonto { it.monto }
+        // plan-07 D23: una "operacion" es un trato comercial (una oportunidad), no una
+        // unidad vendida. Las filas son de ITEM, asi que contar oportunidades exige
+        // deduplicar por o.id; monto y unidades si suman sobre los items.
+        val operaciones = rows.map { it.id }.distinct().size
         return ReporteVentasDto(
             montoTotal = montoTotal.toPlainString(),
             unidadesTotal = rows.sumOf { it.cantidad },
-            operacionesCount = rows.size,
+            operacionesCount = operaciones,
             ticketPromedio =
-                if (rows.isEmpty()) {
+                if (operaciones == 0) {
                     null
                 } else {
-                    montoTotal.divide(BigDecimal(rows.size), 2, RoundingMode.HALF_UP).toPlainString()
+                    montoTotal.divide(BigDecimal(operaciones), 2, RoundingMode.HALF_UP).toPlainString()
                 },
             dctoPromedio = promedio(rows.mapNotNull { it.dcto })?.toPlainString(),
             porMes =
@@ -135,7 +155,8 @@ class ReporteService(
                         mes = mes,
                         monto = grupo.sumMonto { it.monto }.toPlainString(),
                         unidades = grupo.sumOf { it.cantidad },
-                        operaciones = grupo.size,
+                        // D23 otra vez: operaciones = oportunidades distintas, no filas de item.
+                        operaciones = grupo.map { it.id }.distinct().size,
                     )
                 },
             porVendedor =
@@ -176,7 +197,16 @@ class ReporteService(
         val rows =
             jdbc.query(
                 """
-                SELECT o.id, o.estado::text AS estado, o.monto_total, emp.razon_social,
+                SELECT o.id, o.estado::text AS estado,
+                       -- plan-07 D22/D23: el monto sale de los items, pero la oportunidad
+                       -- sigue siendo UNA fila (no se aplana), asi que se agrega en una
+                       -- subconsulta correlacionada. Formula duplicada a proposito; la
+                       -- fuente de verdad es MontoTotal.calcular (domain.oportunidades).
+                       COALESCE((
+                           SELECT SUM(ROUND(i.cantidad * i.precio_venta * (1 - COALESCE(i.descuento, 0) / 100), 2))
+                           FROM oportunidad_items i WHERE i.id_oportunidad = o.id
+                       ), 0) AS monto_total,
+                       emp.razon_social,
                        CONCAT(e.nombres, ' ', e.apellidos) AS vendedor,
                        COALESCE(fin.es_default, false) AS es_calidda,
                        COALESCE(
@@ -270,10 +300,21 @@ class ReporteService(
         val activas =
             agrupadoPorVendedor(
                 """
-                SELECT id_vendedor AS clave, COUNT(*) AS n, COALESCE(SUM(monto_total), 0) AS monto, AVG(dcto) AS extra
-                FROM oportunidades
-                WHERE estado IN ('evaluacion_calidda', 'documentos_legales')
-                GROUP BY id_vendedor
+                -- plan-07 D22/D23: monto y dctoPromedio salen de los items; `n`
+                -- (oportunidadesActivas) sigue contando OPORTUNIDADES, de ahi el
+                -- COUNT(DISTINCT o.id) sobre el LEFT JOIN. El LEFT JOIN evita que una
+                -- oportunidad todavia sin items desaparezca del conteo.
+                -- Formula duplicada a proposito; fuente de verdad: MontoTotal.calcular.
+                SELECT o.id_vendedor AS clave, COUNT(DISTINCT o.id) AS n,
+                       COALESCE(
+                           SUM(ROUND(i.cantidad * i.precio_venta * (1 - COALESCE(i.descuento, 0) / 100), 2)),
+                           0
+                       ) AS monto,
+                       AVG(i.descuento) AS extra
+                FROM oportunidades o
+                LEFT JOIN oportunidad_items i ON i.id_oportunidad = o.id
+                WHERE o.estado IN ('evaluacion_calidda', 'documentos_legales')
+                GROUP BY o.id_vendedor
                 """.trimIndent(),
                 MapSqlParameterSource(),
             )
@@ -283,7 +324,15 @@ class ReporteService(
         val cerradas =
             agrupadoPorVendedor(
                 """
-                SELECT o.id_vendedor AS clave, COUNT(*) AS n, COALESCE(SUM(o.monto_total), 0) AS monto,
+                -- plan-07 D22/D23: el monto se agrega por subconsulta correlacionada para
+                -- NO aplanar a una fila por item; asi COUNT(*) sigue contando oportunidades
+                -- y el AVG de dias no queda ponderado por el numero de items.
+                -- Formula duplicada a proposito; fuente de verdad: MontoTotal.calcular.
+                SELECT o.id_vendedor AS clave, COUNT(*) AS n,
+                       COALESCE(SUM(COALESCE((
+                           SELECT SUM(ROUND(i.cantidad * i.precio_venta * (1 - COALESCE(i.descuento, 0) / 100), 2))
+                           FROM oportunidad_items i WHERE i.id_oportunidad = o.id
+                       ), 0)), 0) AS monto,
                        AVG(EXTRACT(EPOCH FROM (o.facturado_en - o.created_at)) / 86400.0) AS extra
                 FROM oportunidades o
                 WHERE o.estado = 'facturado' AND o.facturado_en >= :desde AND o.facturado_en < :hasta
@@ -482,13 +531,22 @@ class ReporteService(
         val dcto: BigDecimal?,
     )
 
+    /**
+     * Descuentos aplicados. Desde plan-07 (D24) la unidad de analisis es EL ITEM,
+     * no la oportunidad: dos modelos de la misma oportunidad pueden llevar
+     * descuentos distintos y promediarlos antes ocultaria el patron que este
+     * reporte vigila. Se preservan exactos: el filtro `o.estado != 'cerrado'`
+     * (ahora sobre la oportunidad duena del item) y el trato de `descuento` NULL
+     * como 0 en el promedio (no se excluye) — comportamiento intencional.
+     */
     @Transactional(readOnly = true)
     fun descuentos(periodo: PeriodoReporte): ReporteDescuentosDto {
         val rows =
             jdbc.query(
                 """
-                SELECT CONCAT(e.nombres, ' ', e.apellidos) AS vendedor, o.dcto
-                FROM oportunidades o
+                SELECT CONCAT(e.nombres, ' ', e.apellidos) AS vendedor, i.descuento AS dcto
+                FROM oportunidad_items i
+                JOIN oportunidades o ON o.id = i.id_oportunidad
                 LEFT JOIN empleados e ON e.id = o.id_vendedor
                 WHERE o.estado != 'cerrado' AND o.created_at >= :desde AND o.created_at < :hasta
                 """.trimIndent(),

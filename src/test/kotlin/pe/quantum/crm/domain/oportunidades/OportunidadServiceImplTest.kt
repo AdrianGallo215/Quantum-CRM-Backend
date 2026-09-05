@@ -22,9 +22,9 @@ import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.notificaciones.TipoNotificacion
-import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -49,6 +49,8 @@ class OportunidadServiceImplTest {
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
+    private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -64,13 +66,36 @@ class OportunidadServiceImplTest {
             notificacionService,
             driveStorageService,
             OportunidadVisibilidad(tareaService),
+            oportunidadItemService,
+            listadoDao,
         )
 
     init {
         // Toda creacion de oportunidad abre su carpeta en Drive. Los escenarios que
         // verifican ese comportamiento lo re-declaran con valores concretos.
         every { empresaService.asegurarCarpetaDrive(any()) } returns "carpeta-empresa"
+        every { oportunidadItemService.crear(any(), any(), any()) } returns itemDtoNeutro()
+        every { oportunidadItemService.porOportunidades(any()) } returns emptyMap()
+        every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
     }
+
+    /**
+     * Item neutro: estos escenarios no verifican nada de los items, pero
+     * `crear()` delega en OportunidadItemService (B6) y `toDtos()` le pide items
+     * y monto (B8). Lo que si comprueban los items esta en
+     * OportunidadItemServiceImplTest.
+     */
+    private fun itemDtoNeutro() =
+        OportunidadItemDto(
+            id = 500,
+            idModelo = 1,
+            modelo = null,
+            cantidad = 1,
+            precioVenta = "100.00",
+            descuento = "0.00",
+            cuotaFinanciadora = "0.00",
+            montoItem = "100.00",
+        )
 
     private fun oportunidad(
         id: Long = 100,
@@ -80,12 +105,7 @@ class OportunidadServiceImplTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = java.math.BigDecimal.TEN,
-        dcto = java.math.BigDecimal.ZERO,
-        montoTotal = java.math.BigDecimal.TEN,
         createdAt = LocalDateTime.now(),
         createdBy = 1,
         updatedAt = LocalDateTime.now(),
@@ -115,12 +135,7 @@ class OportunidadServiceImplTest {
             idEmpresa = idEmpresa,
             idVendedor = idVendedor,
             idFinanciadora = idFinanciadora,
-            idModelo = idModelo,
             estado = estado,
-            cantidad = cantidad,
-            precioUnitario = precioUnitario,
-            dcto = dcto,
-            montoTotal = montoTotal,
             fincParalelo = fincParalelo,
             garantia = garantia,
             fichaVenta = fichaVenta,
@@ -224,6 +239,8 @@ class OportunidadServiceImplTest {
                 notificacionServiceReal,
                 driveStorageService,
                 OportunidadVisibilidad(tareaService),
+                oportunidadItemService,
+                listadoDao,
             )
         val entidad = oportunidad(idVendedor = 1)
         every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
@@ -287,7 +304,7 @@ class OportunidadServiceImplTest {
                 idEmpresa = 10,
                 idModelo = 1,
                 cantidad = 1,
-                dcto = java.math.BigDecimal.ZERO,
+                descuento = java.math.BigDecimal.ZERO,
             ),
             UsuarioActual(id = 3, rol = "vendedor"),
         )
@@ -304,54 +321,14 @@ class OportunidadServiceImplTest {
         }
     }
 
-    /**
-     * F1 (docs/plan-ejecucion-subagentes.md): `id_modelo` es NOT NULL en la tabla
-     * desde su creacion; la entidad debe dejar de declararlo opcional. La garantia
-     * real la da el tipo de la propiedad (Long, no Long?), asi que se verifica por
-     * reflexion: mientras `idModelo` sea nullable en la entidad, esta asercion
-     * falla aunque el valor concreto que viaja a `save` nunca sea null en la
-     * practica (siempre viene de `CrearOportunidadRequest.idModelo`, que ya es
-     * `Long` no-nulo).
-     */
     @Test
-    fun `toda oportunidad persistida lleva id_modelo`() {
-        stubsDeCreacion(driveFolderIdEmpresa = "carpeta-empresa")
-        val guardada = slot<Oportunidad>()
-        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(100) }
-
-        service.crear(
-            CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, dcto = BigDecimal.ZERO),
-            UsuarioActual(id = 3, rol = "vendedor"),
-        )
-
-        assertThat(guardada.captured.idModelo).isNotNull()
-        val propiedadIdModelo = Oportunidad::class.members.first { it.name == "idModelo" }
-        assertThat(propiedadIdModelo.returnType.isMarkedNullable)
-            .describedAs("idModelo debe ser NOT NULL en la entidad (F1)")
-            .isFalse()
-    }
-
-    @Test
-    fun `actualizar con dcto sobre el limite del rol lanza APROBACION_REQUERIDA sin guardar`() {
-        val vendedor = UsuarioActual(id = 5, rol = "vendedor")
-        val entidad = oportunidad(idVendedor = 5)
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-
-        assertThatThrownBy {
-            service.actualizar(100, ActualizarOportunidadRequest(dcto = BigDecimal("5.00")), vendedor)
-        }.isInstanceOf(AprobacionRequeridaException::class.java)
-
-        verify(exactly = 0) { oportunidadRepository.save(any()) }
-    }
-
-    @Test
-    fun `crear con dcto sobre el limite lanza APROBACION_REQUERIDA`() {
+    fun `crear con descuento sobre el limite lanza APROBACION_REQUERIDA`() {
         val vendedor = UsuarioActual(id = 5, rol = "vendedor")
         every { empresaService.vinculoVisible(10, vendedor) } returns
             EmpresaVinculo(id = 10, razonSocial = "ABC", idVendedor = 5, estadoCartera = "prospeccion")
 
         assertThatThrownBy {
-            service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, dcto = BigDecimal("4.00")), vendedor)
+            service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, descuento = BigDecimal("4.00")), vendedor)
         }.isInstanceOf(AprobacionRequeridaException::class.java)
     }
 
@@ -421,31 +398,6 @@ class OportunidadServiceImplTest {
         val dto = service.crear(CrearOportunidadRequest(idEmpresa = 10, idModelo = 1), gerencia)
 
         assertThat(dto.idVendedor).isEqualTo(5)
-    }
-
-    @Test
-    fun `aplicarDescuentoAprobado setea dcto y recalcula monto_total`() {
-        val entidad =
-            oportunidad(idVendedor = 5).apply {
-                cantidad = 2
-                precioUnitario = BigDecimal("100.00")
-            }
-        every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
-
-        service.aplicarDescuentoAprobado(100, BigDecimal("5.00"), idAprobador = 2)
-
-        assertThat(entidad.dcto).isEqualByComparingTo(BigDecimal("5.00"))
-        assertThat(entidad.montoTotal).isEqualByComparingTo(BigDecimal("190.00"))
-        assertThat(entidad.updatedBy).isEqualTo(2)
-    }
-
-    @Test
-    fun `aplicarDescuentoAprobado sobre oportunidad cerrada es SOLICITUD_NO_APLICABLE`() {
-        val cerrada = oportunidad(idVendedor = 5).apply { estado = pe.quantum.crm.shared.enums.EstadoOportunidad.cerrado }
-        every { oportunidadRepository.findById(100) } returns Optional.of(cerrada)
-        assertThatThrownBy { service.aplicarDescuentoAprobado(100, BigDecimal("5.00"), 2) }
-            .isInstanceOf(pe.quantum.crm.shared.exception.ConflictoException::class.java)
     }
 
     @Test
@@ -545,15 +497,15 @@ class OportunidadServiceImplTest {
     @Test
     fun `crear abre la subcarpeta de Drive dentro de la carpeta de la empresa`() {
         stubsDeCreacion(driveFolderIdEmpresa = "carpeta-empresa")
-        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") } returns "carpeta-op"
+        every { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa") } returns "carpeta-op"
 
         val dto =
             service.crear(
-                CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, dcto = BigDecimal.ZERO),
+                CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, descuento = BigDecimal.ZERO),
                 UsuarioActual(id = 3, rol = "vendedor"),
             )
 
-        verify { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") }
+        verify { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa") }
         assertThat(dto.driveFolderId).isEqualTo("carpeta-op")
     }
 
@@ -561,15 +513,15 @@ class OportunidadServiceImplTest {
     fun `crear abre primero la carpeta de la empresa si esta aun no tiene`() {
         stubsDeCreacion(driveFolderIdEmpresa = null)
         every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa-nueva"
-        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa-nueva") } returns "carpeta-op"
+        every { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa-nueva") } returns "carpeta-op"
 
         service.crear(
-            CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, dcto = BigDecimal.ZERO),
+            CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, descuento = BigDecimal.ZERO),
             UsuarioActual(id = 3, rol = "vendedor"),
         )
 
         verify { empresaService.asegurarCarpetaDrive(10) }
-        verify { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa-nueva") }
+        verify { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa-nueva") }
     }
 
     @Test
@@ -636,7 +588,6 @@ class OportunidadServiceImplTest {
             idEmpresa = 10,
             idVendedor = idVendedor,
             idFinanciadora = 1,
-            idModelo = 1,
             createdBy = idVendedor,
             updatedBy = idVendedor,
         )
@@ -724,7 +675,7 @@ class OportunidadServiceImplTest {
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
         every { empresaService.asegurarCarpetaDrive(10) } returns "carpeta-empresa"
         every { modeloService.resumen(1) } returns busX()
-        every { driveStorageService.crearCarpeta("OP-100 - BUS-X", "carpeta-empresa") } returns "carpeta-op"
+        every { driveStorageService.crearCarpeta("OP-100", "carpeta-empresa") } returns "carpeta-op"
         every { oportunidadRepository.asignarCarpetaDriveSiFalta(100, "carpeta-op") } returns 1
 
         assertThat(service.asegurarCarpetaDrive(100)).isEqualTo("carpeta-op")

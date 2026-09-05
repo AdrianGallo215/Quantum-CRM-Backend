@@ -155,7 +155,7 @@ Al crear una oportunidad, el backend:
 1. Verifica que la empresa exista.
 2. Copia `empresas.id_vendedor` al campo `oportunidades.id_vendedor` (snapshot).
 3. Asigna `id_financiadora` a la financiadora con `es_default = true` si no se especifica otra.
-4. Calcula `monto_total` = `cantidad × precio_unitario × (1 − dcto/100)`. Ver sección 7.
+4. Crea el primer ítem (`oportunidad_items`) con `id_modelo`, `cantidad` y `descuento` del body; `precio_venta` se inicializa con `modelos.precio_base`. `monto_total` de la oportunidad se deriva como la suma de los ítems. Ver sección 7.
 5. Establece `estado = 'evaluacion_calidda'`.
 6. Inserta el primer registro en `oportunidad_estados_log` con `estado_anterior = NULL` y `estado_nuevo = 'evaluacion_calidda'`.
 7. Llama a `actualizarEstadoCartera(id_empresa)`.
@@ -278,27 +278,30 @@ El contador parte desde la primera vez que la oportunidad llega a `documentos_le
 
 ## 7. Monto total y precio unitario
 
-### 7.1 Precio unitario
+> **V42 (multi-modelo):** `precio_unitario`, `cantidad` y `dcto` viven únicamente en `oportunidad_items`, uno por modelo vendido dentro de la oportunidad (una oportunidad puede tener varios ítems, uno por modelo). `oportunidades` ya no tiene columnas planas para estos campos — `reportes` e `inicio` leen `oportunidad_items` directamente (V46). La fórmula y la regla de "no pisar un precio editado a mano" no cambian, solo el sujeto: donde antes decía "la oportunidad", ahora es "el ítem". `oportunidades.monto_total` ya no existe como columna — se deriva siempre como la **suma** de `monto_item` de todos los ítems.
 
-`precio_unitario` en `oportunidades` es editable. Al crear la oportunidad, se inicializa automáticamente con `modelos.precio_base` del modelo seleccionado.
+### 7.1 Precio de venta del ítem
+
+`precio_venta` en `oportunidad_items` es editable. Al crear el ítem, se inicializa automáticamente con `modelos.precio_base` del modelo seleccionado.
 
 ```
-oportunidades.precio_unitario = modelos.precio_base  (al crear)
+oportunidad_items.precio_venta = modelos.precio_base  (al crear el ítem)
 ```
 
-El vendedor puede modificarlo en casos excepcionales (raros). Cuando se modifica `id_modelo`, el backend no sobreescribe automáticamente un `precio_unitario` que ya fue editado por el usuario — se requiere confirmación explícita.
+El vendedor puede modificarlo en casos excepcionales (raros). Cuando se modifica `id_modelo` de un ítem, el backend no sobreescribe automáticamente un `precio_venta` que ya fue editado por el usuario — se requiere confirmación explícita (§12.2).
 
 ### 7.2 Monto total
 
-`monto_total` es **calculado y de solo lectura**. Ningún endpoint acepta `monto_total` como campo de entrada. Si viene en el body, se ignora.
+`monto_item` de cada ítem es **calculado y de solo lectura**. Ningún endpoint acepta `monto_item` (ni `monto_total`) como campo de entrada. Si viene en el body, se ignora.
 
 ```
-monto_total = cantidad × precio_unitario × (1 − dcto / 100)
+monto_item = cantidad × precio_venta × (1 − descuento / 100)      (por ítem)
+monto_total = Σ monto_item de todos los ítems de la oportunidad    (por oportunidad)
 ```
 
-Se recalcula y persiste en el backend cada vez que cambia `cantidad`, `precio_unitario` o `dcto`. La UI lo muestra como campo no editable.
+Se recalcula y persiste en el backend cada vez que cambia `cantidad`, `precio_venta` o `descuento` de cualquier ítem de la oportunidad. La UI lo muestra como campo no editable.
 
-Si `dcto` es `NULL`, se trata como `0`. Si `cantidad` es `NULL`, `monto_total` es `NULL`.
+Si el `descuento` de un ítem es `NULL`, se trata como `0`. Si su `cantidad` o `precio_venta` es `NULL`, `monto_item` de ese ítem es `NULL` y aporta `0` a la suma — un ítem incompleto no anula el `monto_total` de los demás ítems que sí están completos. `monto_total` solo es `NULL` si ningún ítem de la oportunidad tiene datos completos (o si, en un estado transitorio, no queda ninguno).
 
 ---
 
@@ -426,16 +429,18 @@ La tabla `oportunidad_contactos` registra qué contactos están involucrados en 
 
 ## 12. Modelos de bus
 
-### 12.1 id_modelo en oportunidades
+> **V42 (multi-modelo):** `id_modelo` vive únicamente en `oportunidad_items`. Una oportunidad tiene uno o más ítems, cada uno con su propio `id_modelo`; §12.1 y §12.2 se aplican por ítem. `oportunidades` ya no tiene columna plana `id_modelo` (V46) — `reportes` e `inicio` leen `oportunidad_items` directamente.
 
-`id_modelo` en `oportunidades` es obligatorio. No se puede guardar una oportunidad sin modelo seleccionado.
+### 12.1 id_modelo en el ítem
+
+`id_modelo` en `oportunidad_items` es obligatorio. No se puede guardar un ítem sin modelo seleccionado, y una oportunidad no puede quedarse sin ítems: eliminar el último devuelve `409 ULTIMO_ITEM_NO_ELIMINABLE` (`contrato_api.md §10`), así que siempre tiene al menos uno.
 
 ### 12.2 Cambio de modelo
 
-Si se cambia `id_modelo` en una oportunidad existente:
-1. El backend actualiza `precio_unitario` con el nuevo `modelos.precio_base` **solo si** el `precio_unitario` actual es igual al `precio_base` del modelo anterior (es decir, no fue editado manualmente).
+Si se cambia `id_modelo` en un ítem existente:
+1. El backend actualiza `precio_venta` del ítem con el nuevo `modelos.precio_base` **solo si** el `precio_venta` actual es igual al `precio_base` del modelo anterior (es decir, no fue editado manualmente).
 2. Si fue editado manualmente, el backend devuelve una advertencia y no sobreescribe el precio.
-3. Recalcula `monto_total`.
+3. Recalcula `monto_item` del ítem y, en cascada, `monto_total` de la oportunidad.
 
 ### 12.3 Contrato tripartito
 

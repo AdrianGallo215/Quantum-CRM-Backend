@@ -27,6 +27,7 @@ import pe.quantum.crm.domain.oportunidades.dto.ContactoVinculoRequest
 import pe.quantum.crm.domain.oportunidades.dto.LogEstadoDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.shared.PageMeta
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.exception.NoEncontradoException
@@ -35,7 +36,7 @@ import java.time.Instant
 
 /**
  * Tests de `DELETE /oportunidades/:id` (contrato_api.md §10, exclusivo admin, sin cuerpo)
- * y de la validacion de los campos numericos del body (dcto, cantidad, precio_unitario).
+ * y de la validacion de los campos numericos del body del POST (descuento, cantidad).
  */
 @SpringBootTest(
     properties = [
@@ -97,12 +98,15 @@ class OportunidadControllerWebMvcTest {
     }
 
     // ---------------------------------------------------------------------
-    // Validacion de campos numericos del body.
+    // Validacion de campos numericos del body del POST.
     //
-    // Un dcto negativo invierte el factor de descuento en MontoTotal.calcular
+    // Un descuento negativo invierte el factor de descuento en MontoTotal.calcular
     // (1 - (-100/100) = 2) y duplica el monto_total, ademas de colarse por
-    // PoliticaDescuento.excedeLimite, que solo compara dcto > limite. Debe
+    // PoliticaDescuento.excedeLimite, que solo compara descuento > limite. Debe
     // rechazarse en el borde, antes de llegar al servicio.
+    //
+    // Los mismos campos en el PUT viven ahora en `/oportunidades/:id/items/:itemId`
+    // (D19): su validacion de borde esta en OportunidadItemControllerWebMvcTest.
     // ---------------------------------------------------------------------
 
     private fun tokenVendedor() = jwtService.generateAccessToken(empleadoId = 7, rol = "vendedor")
@@ -110,9 +114,22 @@ class OportunidadControllerWebMvcTest {
     private fun oportunidadDto() =
         OportunidadDto(
             id = 50, idEmpresa = 3, empresa = null, idVendedor = 7, vendedor = null,
-            idFinanciadora = 1, financiadora = null, idModelo = 1, modelo = null,
-            estado = "evaluacion_calidda", cantidad = 8, precioUnitario = "92000.00",
-            dcto = "3.00", montoTotal = "714080.00", garantia = true, fincParalelo = false,
+            idFinanciadora = 1, financiadora = null,
+            estado = "evaluacion_calidda",
+            items =
+                listOf(
+                    OportunidadItemDto(
+                        id = 5,
+                        idModelo = 1,
+                        modelo = null,
+                        cantidad = 8,
+                        precioVenta = "92000.00",
+                        descuento = "3.00",
+                        cuotaFinanciadora = "0.00",
+                        montoItem = "714080.00",
+                    ),
+                ),
+            montoTotal = "714080.00", garantia = true, fincParalelo = false,
             fichaVenta = null, driveFolderId = null, notas = null, motivoCierre = null,
             fechaCierreEstimado = null, createdAt = Instant.now(),
         )
@@ -124,29 +141,22 @@ class OportunidadControllerWebMvcTest {
             content = cuerpo
         }
 
-    private fun putOportunidad(cuerpo: String) =
-        mockMvc.put("/api/v1/oportunidades/50") {
-            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenVendedor()}")
-            contentType = MediaType.APPLICATION_JSON
-            content = cuerpo
-        }
-
     @Test
-    fun `POST oportunidades con dcto negativo devuelve 400 VALIDACION`() {
-        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"dcto":-100}""").andExpect {
+    fun `POST oportunidades con descuento negativo devuelve 400 VALIDACION`() {
+        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"descuento":-100}""").andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("VALIDACION") }
-            jsonPath("$.error.field") { value("dcto") }
+            jsonPath("$.error.field") { value("descuento") }
         }
         verify(exactly = 0) { oportunidadService.crear(any(), any()) }
     }
 
     @Test
-    fun `POST oportunidades con dcto mayor a 100 devuelve 400 VALIDACION`() {
-        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"dcto":150}""").andExpect {
+    fun `POST oportunidades con descuento mayor a 100 devuelve 400 VALIDACION`() {
+        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"descuento":150}""").andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("VALIDACION") }
-            jsonPath("$.error.field") { value("dcto") }
+            jsonPath("$.error.field") { value("descuento") }
         }
         verify(exactly = 0) { oportunidadService.crear(any(), any()) }
     }
@@ -168,62 +178,6 @@ class OportunidadControllerWebMvcTest {
             jsonPath("$.error.code") { value("VALIDACION") }
         }
         verify(exactly = 0) { oportunidadService.crear(any(), any()) }
-    }
-
-    @Test
-    fun `PUT oportunidades con dcto negativo devuelve 400 VALIDACION`() {
-        putOportunidad("""{"dcto":-100}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.error.code") { value("VALIDACION") }
-            jsonPath("$.error.field") { value("dcto") }
-        }
-        verify(exactly = 0) { oportunidadService.actualizar(any(), any(), any()) }
-    }
-
-    @Test
-    fun `PUT oportunidades con dcto mayor a 100 devuelve 400 VALIDACION`() {
-        putOportunidad("""{"dcto":100.01}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.error.code") { value("VALIDACION") }
-        }
-        verify(exactly = 0) { oportunidadService.actualizar(any(), any(), any()) }
-    }
-
-    @Test
-    fun `PUT oportunidades con cantidad cero devuelve 400 VALIDACION`() {
-        putOportunidad("""{"cantidad":0}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.error.code") { value("VALIDACION") }
-        }
-        verify(exactly = 0) { oportunidadService.actualizar(any(), any(), any()) }
-    }
-
-    @Test
-    fun `PUT oportunidades con precio_unitario negativo devuelve 400 VALIDACION`() {
-        putOportunidad("""{"precio_unitario":-1}""").andExpect {
-            status { isBadRequest() }
-            jsonPath("$.error.code") { value("VALIDACION") }
-        }
-        verify(exactly = 0) { oportunidadService.actualizar(any(), any(), any()) }
-    }
-
-    @Test
-    fun `PUT oportunidades con valores en rango sigue llegando al servicio`() {
-        every { oportunidadService.actualizar(50, any(), any()) } returns oportunidadDto()
-
-        putOportunidad("""{"cantidad":8,"precio_unitario":92000.00,"dcto":3.00}""").andExpect {
-            status { isOk() }
-            jsonPath("$.data.id") { value(50) }
-        }
-        verify { oportunidadService.actualizar(50, any(), any()) }
-    }
-
-    @Test
-    fun `PUT oportunidades acepta los extremos del rango de dcto`() {
-        every { oportunidadService.actualizar(50, any(), any()) } returns oportunidadDto()
-
-        putOportunidad("""{"dcto":0}""").andExpect { status { isOk() } }
-        putOportunidad("""{"dcto":100}""").andExpect { status { isOk() } }
     }
 
     /**
@@ -368,7 +322,7 @@ class OportunidadControllerWebMvcTest {
     fun `POST oportunidades valido devuelve 201`() {
         every { oportunidadService.crear(any(), any()) } returns oportunidadDto()
 
-        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"dcto":3.00}""").andExpect {
+        postOportunidad("""{"id_empresa":3,"id_modelo":1,"cantidad":8,"descuento":3.00}""").andExpect {
             status { isCreated() }
             jsonPath("$.data.id") { value(50) }
         }

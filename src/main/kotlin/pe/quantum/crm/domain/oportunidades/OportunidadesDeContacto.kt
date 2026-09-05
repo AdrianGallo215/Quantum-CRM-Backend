@@ -3,8 +3,6 @@ package pe.quantum.crm.domain.oportunidades
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.empresas.EmpresaService
-import pe.quantum.crm.domain.modelos.ModeloService
-import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadResumenParaContacto
 import pe.quantum.crm.shared.security.UsuarioActual
 
@@ -46,7 +44,7 @@ class OportunidadesDeContactoImpl(
     private val oportunidadRepository: OportunidadRepository,
     private val contactoOportunidadRepository: OportunidadContactoRepository,
     private val empresaService: EmpresaService,
-    private val modeloService: ModeloService,
+    private val oportunidadItemService: OportunidadItemService,
 ) : OportunidadesDeContacto {
     @Transactional(readOnly = true)
     override fun contar(
@@ -81,18 +79,22 @@ class OportunidadesDeContactoImpl(
         val visibles = oportunidadRepository.findAllById(idsOportunidad).filter { usuario.alcanza(it.idVendedor) }
         val oportunidades = visibles.associateBy { requireNotNull(it.id) }
         val empresas = empresaService.resumenPorIds(oportunidades.values.map { it.idEmpresa })
-        val modelos = modeloService.resumenPorIds(oportunidades.values.map { it.idModelo })
+        // Item mas antiguo por oportunidad = el modelo "principal" a mostrar:
+        // `porOportunidades` ya viene ordenado por id ascendente.
+        val itemsPorOportunidad = oportunidadItemService.porOportunidades(oportunidades.keys)
+        val montosPorOportunidad = oportunidadItemService.montoTotalPorOportunidades(oportunidades.keys)
         return vinculos.mapNotNull { vinculo ->
             oportunidades[vinculo.id.idOportunidad]?.let { op ->
+                val idOp = requireNotNull(op.id)
                 OportunidadResumenParaContacto(
-                    id = requireNotNull(op.id),
+                    id = idOp,
                     empresa = empresas[op.idEmpresa],
-                    modelo =
-                        modelos[op.idModelo]?.let {
-                            ModeloEnOportunidadDto(id = it.id, codigo = it.codigo, precioBase = it.precioBase?.toPlainString())
-                        },
+                    modelo = itemsPorOportunidad[idOp]?.firstOrNull()?.modelo,
                     estado = op.estado.name,
-                    montoTotal = op.montoTotal?.toPlainString(),
+                    // D19: `monto_total` es la suma de los items, nunca la columna plana.
+                    // Si todos los items estan incompletos no hay monto: `null`, igual
+                    // que `OportunidadServiceImpl.toDtos()`.
+                    montoTotal = montosPorOportunidad[idOp]?.toPlainString(),
                     fechaCierreEstimado = op.fechaCierreEstimado,
                     rolEnOportunidad = vinculo.rolEnOportunidad,
                 )

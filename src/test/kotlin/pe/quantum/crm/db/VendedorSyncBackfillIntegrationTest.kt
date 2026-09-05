@@ -37,13 +37,6 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
                     "VALUES ('Luis', 'Soto', 'luis.backfill@quantum.pe', 'vendedor') RETURNING id",
                 Long::class.java,
             )!!
-        // `oportunidades.id_modelo` es NOT NULL desde V10; sin un modelo real los
-        // INSERT de abajo fallan con violacion de integridad.
-        val modelo =
-            jdbcTemplate.queryForObject(
-                "INSERT INTO modelos (codigo) VALUES ('BACKFILL-TEST') RETURNING id",
-                Long::class.java,
-            )!!
         val financiadora =
             jdbcTemplate.queryForObject(
                 "INSERT INTO financiadoras (nombre) VALUES ('Financiadora backfill test') RETURNING id",
@@ -63,8 +56,8 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
         val activa =
             jdbcTemplate.queryForObject(
                 """
-                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, created_by, updated_by)
-                VALUES ($empresa, $vendedorA, $financiadora, $modelo, 'evaluacion_calidda', $vendedorA, $vendedorA)
+                INSERT INTO oportunidades (id_empresa, id_vendedor, id_financiadora, estado, created_by, updated_by)
+                VALUES ($empresa, $vendedorA, $financiadora, 'evaluacion_calidda', $vendedorA, $vendedorA)
                 RETURNING id
                 """.trimIndent(),
                 Long::class.java,
@@ -73,8 +66,8 @@ class VendedorSyncBackfillIntegrationTest : IntegrationTestBase() {
             jdbcTemplate.queryForObject(
                 """
                 INSERT INTO oportunidades
-                    (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, motivo_cierre, created_by, updated_by)
-                VALUES ($empresa, $vendedorA, $financiadora, $modelo, 'cerrado', 'Cliente declino', $vendedorA, $vendedorA)
+                    (id_empresa, id_vendedor, id_financiadora, estado, motivo_cierre, created_by, updated_by)
+                VALUES ($empresa, $vendedorA, $financiadora, 'cerrado', 'Cliente declino', $vendedorA, $vendedorA)
                 RETURNING id
                 """.trimIndent(),
                 Long::class.java,
