@@ -73,7 +73,6 @@ class OportunidadItemServiceImpl(
             )
         request.cuotaFinanciadora?.let { item.cuotaFinanciadora = it }
         val guardado = itemRepository.save(item)
-        sincronizarColumnasViejas(oportunidad, usuario.id)
         return guardado.aDto(modelo)
     }
 
@@ -84,7 +83,7 @@ class OportunidadItemServiceImpl(
         usuario: UsuarioActual,
     ): OportunidadItemDto {
         visibilidad.rechazarSiEsApoyo(usuario)
-        val (item, oportunidad) = itemVisible(idItem, usuario)
+        val (item, _) = itemVisible(idItem, usuario)
         validarLimiteDescuento(request.descuento, usuario)
         val advertencias = mutableListOf<String>()
 
@@ -115,7 +114,6 @@ class OportunidadItemServiceImpl(
         item.updatedBy = usuario.id
 
         val guardado = itemRepository.save(item)
-        sincronizarColumnasViejas(oportunidad, usuario.id)
         return guardado.aDto(modeloService.resumen(guardado.idModelo), advertencias)
     }
 
@@ -125,14 +123,13 @@ class OportunidadItemServiceImpl(
         usuario: UsuarioActual,
     ) {
         visibilidad.rechazarSiEsApoyo(usuario)
-        val (item, oportunidad) = itemVisible(idItem, usuario)
+        val (item, _) = itemVisible(idItem, usuario)
         // D17: una oportunidad no puede quedarse sin items. Se cuenta ANTES de borrar.
         val items = itemRepository.findByIdOportunidadOrderByIdAsc(item.idOportunidad)
         if (items.size <= 1) {
             throw ConflictoException("ULTIMO_ITEM_NO_ELIMINABLE", "La oportunidad debe tener al menos un ítem")
         }
         itemRepository.delete(item)
-        sincronizarColumnasViejas(oportunidad, usuario.id)
     }
 
     @Transactional(readOnly = true)
@@ -193,50 +190,6 @@ class OportunidadItemServiceImpl(
         item.updatedAt = LocalDateTime.now()
         item.updatedBy = idAprobador
         itemRepository.save(item)
-        // B12: el bug que cierra esta tarea. Antes se escribia `monto_total` desde
-        // las columnas planas (`precioUnitario` es NULL con 2+ items ⇒ monto NULL);
-        // ahora se recalcula como la suma real de los items.
-        sincronizarColumnasViejas(oportunidad, idAprobador)
-    }
-
-    /**
-     * CODIGO PUENTE — se retira por completo al cerrar el Plan C
-     * (plan-05-mapa-migrar-items.md, decision D21). NO es arquitectura final.
-     *
-     * Mientras `reportes` e `inicio` sigan leyendo las columnas planas de
-     * `oportunidades` (`id_modelo`, `cantidad`, `precio_unitario`, `dcto`,
-     * `monto_total`), cada escritura sobre un item las recalcula desde el estado
-     * resultante de TODOS los items, dentro de la misma transaccion, para que esos
-     * modulos no muestren numeros desactualizados en el hueco entre planes. Cuando
-     * lean `oportunidad_items` directamente y las columnas se retiren, esta funcion
-     * y sus llamadas desaparecen.
-     *
-     * Formula exacta de D21:
-     * - `cantidad` = suma de las cantidades de los items.
-     * - `monto_total` = [MontoTotal.sumarItems].
-     * - `precio_unitario` / `dcto` = los del unico item si hay exactamente uno; si
-     *   hay dos o mas, NULL: un "precio unitario" no significa nada con varios
-     *   modelos, y NULL es honesto — nunca se inventa un promedio que reportes
-     *   leeria como si fuera un precio real.
-     * - `id_modelo` = el del item de MENOR id (el primero creado, estable ante
-     *   ediciones posteriores). Es la unica columna NOT NULL del grupo, y por eso
-     *   solo se toca cuando queda al menos un item; el guard de D17 garantiza que
-     *   ese sea siempre el caso.
-     */
-    private fun sincronizarColumnasViejas(
-        oportunidad: Oportunidad,
-        idUsuario: Long,
-    ) {
-        val items = itemRepository.findByIdOportunidadOrderByIdAsc(requireNotNull(oportunidad.id))
-        val unico = items.singleOrNull()
-        oportunidad.cantidad = items.mapNotNull { it.cantidad }.takeIf { it.isNotEmpty() }?.sum()
-        oportunidad.montoTotal = MontoTotal.sumarItems(items)
-        oportunidad.precioUnitario = unico?.precioVenta
-        oportunidad.dcto = unico?.descuento
-        items.firstOrNull()?.let { oportunidad.idModelo = it.idModelo }
-        oportunidad.updatedAt = LocalDateTime.now()
-        oportunidad.updatedBy = idUsuario
-        oportunidadRepository.save(oportunidad)
     }
 
     /** Descuento sobre el limite del rol: 422, el cambio requiere solicitud (mismo criterio que `OportunidadServiceImpl`). */

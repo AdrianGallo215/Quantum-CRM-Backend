@@ -53,9 +53,9 @@ interface OportunidadItemService {
 
     /**
      * Aplica sobre un item un descuento ya aprobado por solicitud (modulo
-     * solicitudes): setea `descuento`, audita con el aprobador y resincroniza las
-     * columnas viejas de la oportunidad dueña, de modo que `monto_total` queda como
-     * la suma real de TODOS sus items (B12).
+     * solicitudes): setea `descuento` y audita con el aprobador. `monto_total` no
+     * es una columna de la oportunidad: se deriva de sus items en el momento de
+     * leerlo (ver [montoTotalPorOportunidades]).
      *
      * NO valida limites de rol ni visibilidad: la aprobacion ES la autorizacion, y
      * el limite ya se verifico al crear la solicitud.

@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.oportunidades
 
 import jakarta.persistence.criteria.Predicate
 import org.springframework.context.event.EventListener
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -65,6 +66,9 @@ class OportunidadServiceImpl(
     private val driveStorageService: DriveStorageService,
     private val visibilidad: OportunidadVisibilidad,
     private val oportunidadItemService: OportunidadItemService,
+    // Solo para la rama de orden por agregado del listado (D29); todo lo demas
+    // del servicio sigue pasando por JPA.
+    private val listadoDao: OportunidadListadoDao,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -105,23 +109,21 @@ class OportunidadServiceImpl(
                     destino
                 }
             }
-        val modelo = modeloService.resumen(request.idModelo)
+        // Valida que el modelo exista antes de crear nada (falla rapido con 404).
+        // Ya no se guarda en la oportunidad: el modelo vive en el item.
+        modeloService.resumen(request.idModelo)
         val financiadora =
             request.idFinanciadora?.let { financiadoraService.porId(it) }
                 ?: financiadoraService.default()
         val ahora = LocalDateTime.now()
-        // Las columnas planas (`cantidad`, `precio_unitario`, `dcto`, `monto_total`) nacen
-        // vacias: las llena la sincronizacion de `OportunidadItemServiceImpl` en cuanto se
-        // crea el primer item, unos pasos mas abajo y en esta misma transaccion (D21).
-        // `id_modelo` es la excepcion: es NOT NULL, asi que se siembra con el del request
-        // y la sincronizacion lo reescribe con el mismo valor.
+        // Los montos y el modelo no se guardan aqui: viven en `oportunidad_items`,
+        // que se crea unos pasos mas abajo en esta misma transaccion.
         val oportunidad =
             oportunidadRepository.save(
                 Oportunidad(
                     idEmpresa = empresa.id,
                     idVendedor = idVendedorSnapshot,
                     idFinanciadora = financiadora.id,
-                    idModelo = modelo.id,
                     estado = EstadoOportunidad.evaluacion_calidda,
                     fincParalelo = request.fincParalelo,
                     garantia = request.garantia,
@@ -336,12 +338,57 @@ class OportunidadServiceImpl(
         sort: String?,
         dir: String?,
     ): Paginado<OportunidadDto> {
+        // El PageRequest se construye igual para las dos ramas: normaliza page/per_page
+        // y valida `sort` contra la allowlist en un solo sitio. De el sale tambien el
+        // campo ya resuelto y la direccion, que es lo que decide la rama.
         val pageRequest = Paginacion.pageRequest(page, perPage, sort, dir, CAMPOS_ORDENABLES)
+        val orden = pageRequest.sort.first()
         val estado = estadoFiltro(filtros.estado)
+        if (orden.property in CAMPOS_AGREGADOS) {
+            return listarOrdenandoPorAgregado(filtros, estado, usuario, pageRequest, orden.property, orden.isAscending)
+        }
         val resultado = oportunidadRepository.findAll(especificacion(filtros, estado, usuario), pageRequest)
         val items = toDtos(resultado.content)
         val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, resultado.totalElements)
         return Paginado(items, meta)
+    }
+
+    /**
+     * Rama de consulta nativa del listado (D29 de `plan-07-mapa-retirar-columnas.md`):
+     * `cantidad` y `monto_total` ya no son columnas de `oportunidades` mantenidas al
+     * dia por la sincronizacion de D21, son agregados de `oportunidad_items`, y su
+     * orden lo resuelve [OportunidadListadoDao] en SQL nativo.
+     *
+     * Aqui solo se rehidratan por JPA los ids que devolvio, REORDENADOS segun ese
+     * orden (`findAllById` no lo garantiza), y se pasan por el mismo `toDtos()` de
+     * siempre: la construccion del DTO no se duplica.
+     */
+    private fun listarOrdenandoPorAgregado(
+        filtros: OportunidadFiltros,
+        estado: EstadoOportunidad?,
+        usuario: UsuarioActual,
+        pageRequest: PageRequest,
+        campo: String,
+        ascendente: Boolean,
+    ): Paginado<OportunidadDto> {
+        val pagina =
+            listadoDao.paginaOrdenadaPorAgregado(
+                filtros = filtros,
+                estado = estado,
+                usuario = usuario,
+                campo = campo,
+                ascendente = ascendente,
+                limite = pageRequest.pageSize,
+                desplazamiento = pageRequest.offset,
+            )
+        val meta = Paginacion.meta(pageRequest.pageNumber + 1, pageRequest.pageSize, pagina.total)
+        val porId =
+            if (pagina.ids.isEmpty()) {
+                emptyMap()
+            } else {
+                oportunidadRepository.findAllById(pagina.ids).associateBy { requireNotNull(it.id) }
+            }
+        return Paginado(toDtos(pagina.ids.map { porId.getValue(it) }), meta)
     }
 
     @Transactional(readOnly = true)
@@ -734,13 +781,13 @@ class OportunidadServiceImpl(
          *
          * `precioUnitario` salio de la allowlist en B10 (D9 de
          * `plan-03-mapa-oportunidad-items.md`): con varios modelos por oportunidad no
-         * significa nada, y la sincronizacion de `OportunidadItemServiceImpl` (D21) lo
-         * deja en null en cuanto hay 2+ items.
+         * significa nada, y ya no es ni siquiera una columna de `oportunidades`
+         * (retirada por V46) — vive por item en `oportunidad_items`.
          *
-         * `cantidad` y `montoTotal` si se quedan y NO necesitan subconsulta sobre
-         * `oportunidad_items`: esa misma sincronizacion mantiene las columnas planas
-         * iguales a la suma real de los items tras cada escritura, asi que la columna
-         * YA ES el agregado.
+         * `cantidad` y `montoTotal` si se quedan, pero ya NO son columnas de
+         * `oportunidades`: al retirarse la sincronizacion de D21 pasan a ser agregados
+         * de `oportunidad_items` y se ordenan por la rama de consulta nativa
+         * ([CAMPOS_AGREGADOS], D29 de `plan-07-mapa-retirar-columnas.md`).
          */
         val CAMPOS_ORDENABLES =
             CamposOrdenables(
@@ -752,5 +799,12 @@ class OportunidadServiceImpl(
                 "createdAt",
                 "updatedAt",
             )
+
+        /**
+         * Campos de [CAMPOS_ORDENABLES] que NO son una columna de `oportunidades` sino
+         * un agregado de sus items: pedirlos desvia el listado a la rama de consulta
+         * nativa. El resto sigue por `Specification` + `Sort` de Spring Data.
+         */
+        val CAMPOS_AGREGADOS = setOf("cantidad", "montoTotal")
     }
 }

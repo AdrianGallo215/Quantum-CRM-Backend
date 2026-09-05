@@ -56,6 +56,7 @@ class OportunidadContactosTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -72,6 +73,7 @@ class OportunidadContactosTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     private val vendedor = UsuarioActual(id = 5, rol = "vendedor")
@@ -127,12 +129,7 @@ class OportunidadContactosTest {
             idEmpresa = 10,
             idVendedor = 5,
             idFinanciadora = 1,
-            idModelo = 1,
             estado = EstadoOportunidad.evaluacion_calidda,
-            cantidad = 1,
-            precioUnitario = BigDecimal("100.00"),
-            dcto = BigDecimal.ZERO,
-            montoTotal = BigDecimal("100.00"),
             createdAt = LocalDateTime.now(),
             createdBy = 5,
             updatedAt = LocalDateTime.now(),

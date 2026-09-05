@@ -52,6 +52,7 @@ class OportunidadLecturasTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -68,6 +69,7 @@ class OportunidadLecturasTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -81,12 +83,7 @@ class OportunidadLecturasTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = EstadoOportunidad.documentos_legales,
-        cantidad = 2,
-        precioUnitario = BigDecimal("100.00"),
-        dcto = BigDecimal.ZERO,
-        montoTotal = BigDecimal("200.00"),
         createdAt = LocalDateTime.of(2026, 1, 15, 9, 30),
         createdBy = 5,
         updatedAt = LocalDateTime.now(),

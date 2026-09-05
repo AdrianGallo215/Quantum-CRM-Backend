@@ -54,6 +54,7 @@ class OportunidadActualizarTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -70,6 +71,7 @@ class OportunidadActualizarTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -124,25 +126,18 @@ class OportunidadActualizarTest {
             montoItem = "270.00",
         )
 
-    private fun oportunidad(
-        idModelo: Long = 1,
-        precioUnitario: BigDecimal? = BigDecimal("100.00"),
-    ) = Oportunidad(
-        id = 100,
-        idEmpresa = 10,
-        idVendedor = 5,
-        idFinanciadora = 1,
-        idModelo = idModelo,
-        estado = EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = precioUnitario,
-        dcto = BigDecimal.ZERO,
-        montoTotal = precioUnitario,
-        createdAt = LocalDateTime.now(),
-        createdBy = 5,
-        updatedAt = LocalDateTime.now().minusDays(1),
-        updatedBy = 5,
-    )
+    private fun oportunidad() =
+        Oportunidad(
+            id = 100,
+            idEmpresa = 10,
+            idVendedor = 5,
+            idFinanciadora = 1,
+            estado = EstadoOportunidad.evaluacion_calidda,
+            createdAt = LocalDateTime.now(),
+            createdBy = 5,
+            updatedAt = LocalDateTime.now().minusDays(1),
+            updatedBy = 5,
+        )
 
     @Test
     fun `actualizar aplica los campos negociables y devuelve el monto derivado de los items`() {
@@ -204,9 +199,6 @@ class OportunidadActualizarTest {
 
         service.actualizar(100, ActualizarOportunidadRequest(notas = "solo notas"), admin)
 
-        assertThat(entidad.idModelo).isEqualTo(1)
-        assertThat(entidad.cantidad).isEqualTo(1)
-        assertThat(entidad.precioUnitario).isEqualByComparingTo("100.00")
         verify(exactly = 0) { modeloService.resumen(any()) }
     }
 

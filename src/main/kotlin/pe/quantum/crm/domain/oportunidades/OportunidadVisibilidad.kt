@@ -83,4 +83,31 @@ class OportunidadVisibilidad(
             usuario.visibilidadRestringida -> cb.equal(root.get<Long>("idVendedor"), usuario.id)
             else -> null
         }
+
+    /**
+     * La MISMA regla que [predicadoVisibilidad], escrita como fragmento SQL para
+     * el camino de consulta nativa del listado (D29 de
+     * `plan-07-mapa-retirar-columnas.md`): ordenar por `cantidad`/`monto_total`
+     * exige agregar `oportunidad_items` en una subconsulta correlacionada, algo
+     * que no se expresa con Criteria, asi que esa rama de `listar()` construye el
+     * WHERE en SQL.
+     *
+     * Vive aqui, pegado al predicado de Criteria y con las MISMAS tres ramas en el
+     * mismo orden, para que las dos representaciones de la regla se lean de un
+     * vistazo y ningun cambio futuro actualice solo una de las dos. `null` cuando
+     * el usuario ve todo (supervisor), igual que [predicadoVisibilidad].
+     *
+     * Los parametros nombrados que devuelve (`:idsColaboracion`, `:idUsuario`) los
+     * enlaza el llamador; la tabla se alias como `o`.
+     */
+    fun filtroVisibilidadSql(
+        idsColaboracion: Set<Long>?,
+        usuario: UsuarioActual,
+    ): String? =
+        when {
+            idsColaboracion != null ->
+                if (idsColaboracion.isEmpty()) "1 <> 1" else "o.id IN (:idsColaboracion)"
+            usuario.visibilidadRestringida -> "o.id_vendedor = :idUsuario"
+            else -> null
+        }
 }

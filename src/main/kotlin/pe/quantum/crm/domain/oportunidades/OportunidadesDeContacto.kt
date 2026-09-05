@@ -79,9 +79,8 @@ class OportunidadesDeContactoImpl(
         val visibles = oportunidadRepository.findAllById(idsOportunidad).filter { usuario.alcanza(it.idVendedor) }
         val oportunidades = visibles.associateBy { requireNotNull(it.id) }
         val empresas = empresaService.resumenPorIds(oportunidades.values.map { it.idEmpresa })
-        // Item mas antiguo por oportunidad = el modelo "principal" a mostrar (mismo
-        // criterio que D21 para las columnas viejas: `porOportunidades` ya viene
-        // ordenado por id ascendente).
+        // Item mas antiguo por oportunidad = el modelo "principal" a mostrar:
+        // `porOportunidades` ya viene ordenado por id ascendente.
         val itemsPorOportunidad = oportunidadItemService.porOportunidades(oportunidades.keys)
         val montosPorOportunidad = oportunidadItemService.montoTotalPorOportunidades(oportunidades.keys)
         return vinculos.mapNotNull { vinculo ->

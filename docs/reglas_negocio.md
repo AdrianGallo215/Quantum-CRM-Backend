@@ -278,7 +278,7 @@ El contador parte desde la primera vez que la oportunidad llega a `documentos_le
 
 ## 7. Monto total y precio unitario
 
-> **V42 (multi-modelo):** `precio_unitario`, `cantidad` y `dcto` ya **no son la fuente de verdad** de `oportunidades` — viven en `oportunidad_items`, uno por modelo vendido dentro de la oportunidad (una oportunidad puede tener varios ítems, uno por modelo). Las columnas planas de `oportunidades` siguen existiendo mientras `reportes`/`inicio` no migren a leer ítems directamente: una sincronización interna las mantiene como el agregado de los ítems (código puente, se retira cuando esos módulos migren). La fórmula y la regla de "no pisar un precio editado a mano" no cambian, solo el sujeto: donde antes decía "la oportunidad", ahora es "el ítem". `oportunidades.monto_total` ya no se calcula ahí — se deriva como la **suma** de `monto_item` de todos los ítems.
+> **V42 (multi-modelo):** `precio_unitario`, `cantidad` y `dcto` viven únicamente en `oportunidad_items`, uno por modelo vendido dentro de la oportunidad (una oportunidad puede tener varios ítems, uno por modelo). `oportunidades` ya no tiene columnas planas para estos campos — `reportes` e `inicio` leen `oportunidad_items` directamente (V46). La fórmula y la regla de "no pisar un precio editado a mano" no cambian, solo el sujeto: donde antes decía "la oportunidad", ahora es "el ítem". `oportunidades.monto_total` ya no existe como columna — se deriva siempre como la **suma** de `monto_item` de todos los ítems.
 
 ### 7.1 Precio de venta del ítem
 
@@ -429,7 +429,7 @@ La tabla `oportunidad_contactos` registra qué contactos están involucrados en 
 
 ## 12. Modelos de bus
 
-> **V42 (multi-modelo):** `id_modelo` ya no es la fuente de verdad de `oportunidades` — vive en `oportunidad_items`. Una oportunidad tiene uno o más ítems, cada uno con su propio `id_modelo`; §12.1 y §12.2 se aplican por ítem. La columna plana de `oportunidades.id_modelo` sigue existiendo mientras `reportes`/`inicio` no migren (sincronizada al ítem de menor id, código puente).
+> **V42 (multi-modelo):** `id_modelo` vive únicamente en `oportunidad_items`. Una oportunidad tiene uno o más ítems, cada uno con su propio `id_modelo`; §12.1 y §12.2 se aplican por ítem. `oportunidades` ya no tiene columna plana `id_modelo` (V46) — `reportes` e `inicio` leen `oportunidad_items` directamente.
 
 ### 12.1 id_modelo en el ítem
 

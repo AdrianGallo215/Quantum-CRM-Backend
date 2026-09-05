@@ -9,7 +9,6 @@ import jakarta.persistence.Table
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import pe.quantum.crm.shared.enums.EstadoOportunidad
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -18,8 +17,8 @@ import java.time.LocalDateTime
  *
  * - `id_vendedor` es snapshot de `empresas.id_vendedor` al crear; solo muta en un
  *   traspaso explicito (reglas_negocio.md §8).
- * - `monto_total` es CALCULADO (cantidad × precio_unitario × (1 − dcto/100));
- *   nunca se acepta como input (§7.2).
+ * - Los montos y el modelo viven en `oportunidad_items`; esta tabla ya no
+ *   tiene columnas planas para ellos.
  * - `motivo_cierre` obligatorio cuando estado = 'cerrado' (CHECK + backend, §4.4).
  */
 @Entity
@@ -35,19 +34,9 @@ class Oportunidad(
     var idVendedor: Long,
     @Column(name = "id_financiadora", nullable = false)
     var idFinanciadora: Long,
-    // NOT NULL en la tabla desde su creacion; la entidad lo declaraba opcional y
-    // varios puntos de lectura lo trataban como tal. La columna manda.
-    @Column(name = "id_modelo", nullable = false)
-    var idModelo: Long,
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "estado_op_enum")
     var estado: EstadoOportunidad = EstadoOportunidad.evaluacion_calidda,
-    var cantidad: Int? = null,
-    @Column(name = "precio_unitario")
-    var precioUnitario: BigDecimal? = null,
-    var dcto: BigDecimal? = null,
-    @Column(name = "monto_total")
-    var montoTotal: BigDecimal? = null,
     @Column(name = "finc_paralelo")
     var fincParalelo: Boolean? = null,
     var garantia: Boolean? = null,

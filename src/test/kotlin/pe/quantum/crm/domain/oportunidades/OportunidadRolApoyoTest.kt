@@ -26,7 +26,6 @@ import pe.quantum.crm.shared.enums.EstadoOportunidad
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
-import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -45,6 +44,7 @@ class OportunidadRolApoyoTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -61,6 +61,7 @@ class OportunidadRolApoyoTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     init {
@@ -81,12 +82,7 @@ class OportunidadRolApoyoTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = BigDecimal.TEN,
-        dcto = BigDecimal.ZERO,
-        montoTotal = BigDecimal.TEN,
         createdAt = LocalDateTime.now(),
         createdBy = idVendedor,
         updatedAt = LocalDateTime.now(),

@@ -96,24 +96,34 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
         creadaEn: String,
         estado: String = "facturado",
         facturadoEn: String? = null,
-        montoTotal: String = "100000.00",
         cantidad: Int = 2,
         dcto: String? = "0.00",
         motivoCierre: String? = null,
-    ): Long =
-        id(
+    ): Long {
+        val idOportunidad =
+            id(
+                """
+                INSERT INTO oportunidades
+                    (id_empresa, id_vendedor, id_financiadora, estado, facturado_en, motivo_cierre,
+                     created_at, created_by, updated_by)
+                VALUES
+                    ($idEmpresa, $idVendedor, $idFinanciadora, '$estado',
+                     ${facturadoEn?.let { "TIMESTAMP '$it'" } ?: "NULL"},
+                     ${motivoCierre?.let { "'$it'" } ?: "NULL"},
+                     TIMESTAMP '$creadaEn', $idVendedor, $idVendedor)
+                RETURNING id
+                """.trimIndent(),
+            )
+        jdbcTemplate.update(
             """
-            INSERT INTO oportunidades
-                (id_empresa, id_vendedor, id_financiadora, id_modelo, estado, cantidad, precio_unitario,
-                 dcto, monto_total, facturado_en, motivo_cierre, created_at, created_by, updated_by)
+            INSERT INTO oportunidad_items
+                (id_oportunidad, id_modelo, cantidad, precio_venta, descuento, created_at, created_by, updated_at, updated_by)
             VALUES
-                ($idEmpresa, $idVendedor, $idFinanciadora, $idModelo, '$estado', $cantidad, 50000.00,
-                 ${dcto ?: "NULL"}, $montoTotal, ${facturadoEn?.let { "TIMESTAMP '$it'" } ?: "NULL"},
-                 ${motivoCierre?.let { "'$it'" } ?: "NULL"},
-                 TIMESTAMP '$creadaEn', $idVendedor, $idVendedor)
-            RETURNING id
+                ($idOportunidad, $idModelo, $cantidad, 50000.00, ${dcto ?: "NULL"}, TIMESTAMP '$creadaEn', $idVendedor, TIMESTAMP '$creadaEn', $idVendedor)
             """.trimIndent(),
         )
+        return idOportunidad
+    }
 
     private fun logFacturado(
         idOportunidad: Long,
@@ -172,7 +182,6 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
                 idModelo = modelo,
                 creadaEn = "2019-04-01 09:00:00",
                 facturadoEn = "2019-05-15 12:00:00",
-                montoTotal = "150000.00",
                 cantidad = 3,
             )
         logFacturado(dentro, vendedor, "2019-05-15 12:00:00")
@@ -186,7 +195,6 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
                 idModelo = modelo,
                 creadaEn = "2019-03-01 09:00:00",
                 facturadoEn = "2019-04-20 12:00:00",
-                montoTotal = "999999.00",
                 cantidad = 9,
             )
         logFacturado(fuera, vendedor, "2019-04-20 12:00:00")
@@ -213,7 +221,6 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
                 idModelo = crearModelo("V2"),
                 creadaEn = "2019-04-05 09:00:00",
                 facturadoEn = "2019-05-20 08:00:00",
-                montoTotal = "80000.00",
                 cantidad = 1,
             )
         // Deliberadamente SIN logFacturado(oportunidad, ...): antes del fix, el
@@ -231,7 +238,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
         val reporte = reporteService.ventas(periodoMayo2019, vendedor)
 
         assertThat(reporte.operacionesCount).isEqualTo(1)
-        assertThat(reporte.montoTotal).isEqualTo("80000.00")
+        assertThat(reporte.montoTotal).isEqualTo("50000.00")
     }
 
     // ── 3. /reportes/equipo con desglose por vendedor ────────────
@@ -251,7 +258,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
                 idModelo = crearModelo("E1"),
                 creadaEn = "2019-05-01 00:00:00",
                 facturadoEn = "2019-05-11 00:00:00",
-                montoTotal = "200000.00",
+                cantidad = 4,
             )
         logFacturado(oportunidadA, vendedorA, "2019-05-11 00:00:00")
 
@@ -263,7 +270,7 @@ class ReporteServiceSqlIntegrationTest : IntegrationTestBase() {
                 idModelo = crearModelo("E2"),
                 creadaEn = "2019-05-01 00:00:00",
                 facturadoEn = "2019-05-21 00:00:00",
-                montoTotal = "50000.00",
+                cantidad = 1,
             )
         logFacturado(oportunidadB, vendedorB, "2019-05-21 00:00:00")
 

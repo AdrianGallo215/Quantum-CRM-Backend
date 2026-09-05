@@ -50,6 +50,7 @@ class OportunidadServiceImplTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -66,6 +67,7 @@ class OportunidadServiceImplTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     init {
@@ -103,12 +105,7 @@ class OportunidadServiceImplTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = pe.quantum.crm.shared.enums.EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = java.math.BigDecimal.TEN,
-        dcto = java.math.BigDecimal.ZERO,
-        montoTotal = java.math.BigDecimal.TEN,
         createdAt = LocalDateTime.now(),
         createdBy = 1,
         updatedAt = LocalDateTime.now(),
@@ -138,12 +135,7 @@ class OportunidadServiceImplTest {
             idEmpresa = idEmpresa,
             idVendedor = idVendedor,
             idFinanciadora = idFinanciadora,
-            idModelo = idModelo,
             estado = estado,
-            cantidad = cantidad,
-            precioUnitario = precioUnitario,
-            dcto = dcto,
-            montoTotal = montoTotal,
             fincParalelo = fincParalelo,
             garantia = garantia,
             fichaVenta = fichaVenta,
@@ -248,6 +240,7 @@ class OportunidadServiceImplTest {
                 driveStorageService,
                 OportunidadVisibilidad(tareaService),
                 oportunidadItemService,
+                listadoDao,
             )
         val entidad = oportunidad(idVendedor = 1)
         every { oportunidadRepository.findByIdBloqueando(100) } returns entidad
@@ -326,33 +319,6 @@ class OportunidadServiceImplTest {
                 entidadId = 100L,
             )
         }
-    }
-
-    /**
-     * F1 (docs/plan-ejecucion-subagentes.md): `id_modelo` es NOT NULL en la tabla
-     * desde su creacion; la entidad debe dejar de declararlo opcional. La garantia
-     * real la da el tipo de la propiedad (Long, no Long?), asi que se verifica por
-     * reflexion: mientras `idModelo` sea nullable en la entidad, esta asercion
-     * falla aunque el valor concreto que viaja a `save` nunca sea null en la
-     * practica (siempre viene de `CrearOportunidadRequest.idModelo`, que ya es
-     * `Long` no-nulo).
-     */
-    @Test
-    fun `toda oportunidad persistida lleva id_modelo`() {
-        stubsDeCreacion(driveFolderIdEmpresa = "carpeta-empresa")
-        val guardada = slot<Oportunidad>()
-        every { oportunidadRepository.save(capture(guardada)) } answers { guardada.captured.conId(100) }
-
-        service.crear(
-            CrearOportunidadRequest(idEmpresa = 10, idModelo = 1, cantidad = 1, descuento = BigDecimal.ZERO),
-            UsuarioActual(id = 3, rol = "vendedor"),
-        )
-
-        assertThat(guardada.captured.idModelo).isNotNull()
-        val propiedadIdModelo = Oportunidad::class.members.first { it.name == "idModelo" }
-        assertThat(propiedadIdModelo.returnType.isMarkedNullable)
-            .describedAs("idModelo debe ser NOT NULL en la entidad (F1)")
-            .isFalse()
     }
 
     @Test
@@ -622,7 +588,6 @@ class OportunidadServiceImplTest {
             idEmpresa = 10,
             idVendedor = idVendedor,
             idFinanciadora = 1,
-            idModelo = 1,
             createdBy = idVendedor,
             updatedBy = idVendedor,
         )

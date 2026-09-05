@@ -73,13 +73,32 @@ class InicioDao(
     fun resumenPipeline(idVendedor: Long?): List<EtapaPipelineRow> {
         val sql =
             buildString {
-                append("SELECT estado, COUNT(*) AS total, COALESCE(SUM(monto_total), 0) AS valor, ")
-                append("COALESCE(SUM(cantidad), 0) AS unidades ")
-                append("FROM oportunidades WHERE estado != 'cerrado' ")
+                append(
+                    """
+                    SELECT o.estado, COUNT(*) AS total,
+                           COALESCE(SUM(it.monto), 0) AS valor,
+                           COALESCE(SUM(it.cantidad), 0) AS unidades
+                    FROM oportunidades o
+                    -- plan-08 C2: monto y unidades salen de `oportunidad_items`, pero el
+                    -- agregado sigue siendo por ETAPA con UNA fila por oportunidad, asi
+                    -- que los items se suman antes en un LATERAL y despues se agrupa.
+                    -- Formula de dinero duplicada en SQL a proposito: la FUENTE DE VERDAD
+                    -- es MontoTotal.calcular (domain.oportunidades); este modulo es SQL
+                    -- nativo y no puede cruzar de modulo (regla 12). Si cambia alla,
+                    -- cambia aqui.
+                    LEFT JOIN LATERAL (
+                        SELECT SUM(ROUND(i.cantidad * i.precio_venta * (1 - COALESCE(i.descuento, 0) / 100), 2)) AS monto,
+                               SUM(i.cantidad) AS cantidad
+                        FROM oportunidad_items i
+                        WHERE i.id_oportunidad = o.id
+                    ) it ON true
+                    WHERE o.estado != 'cerrado'
+                    """.trimIndent(),
+                )
                 if (idVendedor != null) {
-                    append("AND id_vendedor = :idVendedor ")
+                    append(" AND o.id_vendedor = :idVendedor")
                 }
-                append("GROUP BY estado")
+                append(" GROUP BY o.estado")
             }
         return jdbc.query(sql, MapSqlParameterSource("idVendedor", idVendedor)) { rs, _ ->
             EtapaPipelineRow(
@@ -104,11 +123,14 @@ class InicioDao(
         if (idsVendedor.isEmpty()) return emptyMap()
         val sql =
             buildString {
-                append("SELECT id_vendedor, COALESCE(SUM(cantidad), 0) AS unidades FROM oportunidades ")
-                append("WHERE estado = 'facturado' AND id_vendedor IN (:idsVendedor) ")
-                append("AND EXTRACT(YEAR FROM facturado_en) = :anio ")
-                if (mes != null) append("AND EXTRACT(MONTH FROM facturado_en) = :mes ")
-                append("GROUP BY id_vendedor")
+                append("SELECT o.id_vendedor, COALESCE(SUM(i.cantidad), 0) AS unidades FROM oportunidades o ")
+                // plan-08 C2: las unidades salen de `oportunidad_items`, no de la
+                // columna plana `oportunidades.cantidad`.
+                append("JOIN oportunidad_items i ON i.id_oportunidad = o.id ")
+                append("WHERE o.estado = 'facturado' AND o.id_vendedor IN (:idsVendedor) ")
+                append("AND EXTRACT(YEAR FROM o.facturado_en) = :anio ")
+                if (mes != null) append("AND EXTRACT(MONTH FROM o.facturado_en) = :mes ")
+                append("GROUP BY o.id_vendedor")
             }
         val params =
             MapSqlParameterSource()

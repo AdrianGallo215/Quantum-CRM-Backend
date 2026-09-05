@@ -32,13 +32,18 @@ object SeedFixtures {
      * —de la que V40 depende por FK— todavía no existía; Flyway corre con
      * `out-of-order = false`, así que una versión menor que la máxima ya aplicada no
      * puede entrar nunca. Ver docs/planes/plan-04-fundacion-items.md, tarea O6.
+     *
+     * V46 (drop de columnas planas de `oportunidades`) es correlativa a V45: no reabre
+     * el hueco ni agrega uno nuevo. El hueco de V40 sigue vigente para siempre (es
+     * historia ya aplicada en producción), así que este desfase de 1 entre archivos y
+     * versión máxima tampoco desaparece con V46: pasa de 44/45 a 45/46.
      */
-    const val MIGRACIONES_TOTAL = 44
+    const val MIGRACIONES_TOTAL = 45
 
     /**
      * Número de versión de la última migración. Distinto de [MIGRACIONES_TOTAL] por el
      * hueco de V40 descrito arriba; separarlos es deliberado, porque son dos hechos
      * distintos que coincidían por casualidad mientras la numeración fue correlativa.
      */
-    const val MIGRACION_VERSION_MAX = 45
+    const val MIGRACION_VERSION_MAX = 46
 }

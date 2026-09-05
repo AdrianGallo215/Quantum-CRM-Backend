@@ -24,7 +24,6 @@ import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.MotivoCierreRequeridoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.security.UsuarioActual
-import java.math.BigDecimal
 import java.time.LocalDateTime
 
 /**
@@ -53,6 +52,7 @@ class OportunidadCambiarEstadoInvariantesTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -69,6 +69,7 @@ class OportunidadCambiarEstadoInvariantesTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     private fun oportunidad(
@@ -79,12 +80,7 @@ class OportunidadCambiarEstadoInvariantesTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 1,
         estado = EstadoOportunidad.evaluacion_calidda,
-        cantidad = 1,
-        precioUnitario = BigDecimal.TEN,
-        dcto = BigDecimal.ZERO,
-        montoTotal = BigDecimal.TEN,
         createdAt = LocalDateTime.now(),
         createdBy = 1,
         updatedAt = LocalDateTime.now(),

@@ -53,6 +53,7 @@ class OportunidadCrearTest {
     private val driveStorageService = mockk<DriveStorageService>(relaxed = true)
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
+    private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -69,6 +70,7 @@ class OportunidadCrearTest {
             driveStorageService,
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
+            listadoDao,
         )
 
     private val busX = ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal("92000.00"))
@@ -137,12 +139,7 @@ class OportunidadCrearTest {
                 idEmpresa = original.idEmpresa,
                 idVendedor = original.idVendedor,
                 idFinanciadora = original.idFinanciadora,
-                idModelo = original.idModelo,
                 estado = original.estado,
-                cantidad = original.cantidad,
-                precioUnitario = original.precioUnitario,
-                dcto = original.dcto,
-                montoTotal = original.montoTotal,
                 fincParalelo = original.fincParalelo,
                 garantia = original.garantia,
                 fichaVenta = original.fichaVenta,

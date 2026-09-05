@@ -44,7 +44,6 @@ class OportunidadItemServiceImplTest {
         idEmpresa = 10,
         idVendedor = idVendedor,
         idFinanciadora = 1,
-        idModelo = 7,
         estado = EstadoOportunidad.evaluacion_calidda,
         createdAt = LocalDateTime.now(),
         createdBy = 1,
@@ -139,71 +138,10 @@ class OportunidadItemServiceImplTest {
     }
 
     @Test
-    fun `crear el unico item sincroniza las columnas viejas de la oportunidad`() {
-        val op = oportunidad()
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
-        stubModelo()
-        stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns
-            listOf(item(id = 500, descuento = BigDecimal("2.00")))
-
-        val dto =
-            service.crear(
-                100,
-                CrearOportunidadItemRequest(
-                    idModelo = 7,
-                    cantidad = 2,
-                    precioVenta = BigDecimal("100.00"),
-                    descuento = BigDecimal("2.00"),
-                ),
-                vendedor,
-            )
-
-        assertThat(dto.id).isEqualTo(500)
-        assertThat(dto.montoItem).isEqualTo("196.00")
-        // Solo `actualizar()` puede producir la advertencia de §12.2.
-        assertThat(dto.advertencias).isEmpty()
-        assertThat(op.idModelo).isEqualTo(7)
-        assertThat(op.cantidad).isEqualTo(2)
-        assertThat(op.precioUnitario).isEqualByComparingTo(BigDecimal("100.00"))
-        assertThat(op.dcto).isEqualByComparingTo(BigDecimal("2.00"))
-        assertThat(op.montoTotal).isEqualByComparingTo(BigDecimal("196.00"))
-        verify { oportunidadRepository.save(op) }
-    }
-
-    @Test
-    fun `crear un segundo item suma cantidades y montos, y anula precio unitario y dcto`() {
-        val op = oportunidad()
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
-        stubModelo(id = 9, codigo = "BUS-Z", precioBase = BigDecimal("50.00"))
-        stubGuardadoDeItem(idAsignado = 501)
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns
-            listOf(
-                item(id = 500, idModelo = 7),
-                item(id = 501, idModelo = 9, cantidad = 3, precioVenta = BigDecimal("50.00"), descuento = null),
-            )
-
-        service.crear(100, CrearOportunidadItemRequest(idModelo = 9, cantidad = 3), vendedor)
-
-        // id_modelo se queda en el item mas antiguo (menor id), estable ante altas posteriores.
-        assertThat(op.idModelo).isEqualTo(7)
-        assertThat(op.cantidad).isEqualTo(5)
-        assertThat(op.montoTotal).isEqualByComparingTo(BigDecimal("330.00"))
-        assertThat(op.precioUnitario).isNull()
-        assertThat(op.dcto).isNull()
-    }
-
-    @Test
     fun `crear sin precio_venta toma el precio base del modelo`() {
-        val op = oportunidad()
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
         stubModelo(precioBase = BigDecimal("77.00"))
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns
-            listOf(item(id = 500, cantidad = 1, precioVenta = BigDecimal("77.00"), descuento = null))
 
         val dto = service.crear(100, CrearOportunidadItemRequest(idModelo = 7, cantidad = 1), vendedor)
 
@@ -220,22 +158,17 @@ class OportunidadItemServiceImplTest {
     }
 
     @Test
-    fun `actualizar aplica solo los campos presentes y resincroniza las columnas viejas`() {
-        val op = oportunidad()
+    fun `actualizar aplica solo los campos presentes`() {
         val existente = item(id = 500)
         every { itemRepository.findById(500) } returns Optional.of(existente)
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
         stubModelo()
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         val dto = service.actualizar(500, ActualizarOportunidadItemRequest(cantidad = 4), vendedor)
 
         assertThat(dto.cantidad).isEqualTo(4)
         assertThat(existente.precioVenta).isEqualByComparingTo(BigDecimal("100.00"))
-        assertThat(op.cantidad).isEqualTo(4)
-        assertThat(op.montoTotal).isEqualByComparingTo(BigDecimal("360.00"))
     }
 
     // `reglas_negocio.md §12.2` (cambio de modelo), reimplementada sobre el item:
@@ -248,11 +181,9 @@ class OportunidadItemServiceImplTest {
         val existente = item(id = 500, idModelo = 7, precioVenta = BigDecimal("100.00"))
         every { itemRepository.findById(500) } returns Optional.of(existente)
         every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
         stubModelo()
         stubModelo(id = 9, codigo = "BUS-Z", precioBase = BigDecimal("50.00"))
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         val dto = service.actualizar(500, ActualizarOportunidadItemRequest(idModelo = 9), vendedor)
 
@@ -268,11 +199,9 @@ class OportunidadItemServiceImplTest {
         val existente = item(id = 500, idModelo = 7, precioVenta = BigDecimal("120.00"))
         every { itemRepository.findById(500) } returns Optional.of(existente)
         every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
         stubModelo()
         stubModelo(id = 9, codigo = "BUS-Z", precioBase = BigDecimal("50.00"))
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         val dto = service.actualizar(500, ActualizarOportunidadItemRequest(idModelo = 9), vendedor)
 
@@ -294,11 +223,9 @@ class OportunidadItemServiceImplTest {
         val existente = item(id = 500, idModelo = 7, precioVenta = null)
         every { itemRepository.findById(500) } returns Optional.of(existente)
         every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
         stubModelo()
         stubModelo(id = 9, codigo = "BUS-Z", precioBase = BigDecimal("50.00"))
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         val dto = service.actualizar(500, ActualizarOportunidadItemRequest(idModelo = 9), vendedor)
 
@@ -320,11 +247,9 @@ class OportunidadItemServiceImplTest {
         val existente = item(id = 500, idModelo = 7, precioVenta = BigDecimal("100.00"))
         every { itemRepository.findById(500) } returns Optional.of(existente)
         every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
         stubModelo(precioBase = null)
         stubModelo(id = 9, codigo = "BUS-Z", precioBase = BigDecimal("50.00"))
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         val dto = service.actualizar(500, ActualizarOportunidadItemRequest(idModelo = 9), vendedor)
 
@@ -345,11 +270,9 @@ class OportunidadItemServiceImplTest {
         val existente = item(id = 500, idModelo = 7, precioVenta = BigDecimal("100.00"))
         every { itemRepository.findById(500) } returns Optional.of(existente)
         every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
         stubModelo()
         stubModelo(id = 9, codigo = "BUS-Z", precioBase = BigDecimal("50.00"))
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         val dto =
             service.actualizar(
@@ -370,10 +293,8 @@ class OportunidadItemServiceImplTest {
         val existente = item(id = 500, idModelo = 7)
         every { itemRepository.findById(500) } returns Optional.of(existente)
         every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
         stubModelo()
         stubGuardadoDeItem()
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(existente)
 
         service.actualizar(500, ActualizarOportunidadItemRequest(idModelo = 7, cantidad = 3), vendedor)
 
@@ -412,25 +333,17 @@ class OportunidadItemServiceImplTest {
     }
 
     @Test
-    fun `eliminar uno de dos items resincroniza las columnas viejas con el restante`() {
-        val op = oportunidad()
+    fun `eliminar uno de dos items borra el item`() {
         val primero = item(id = 500, idModelo = 7)
         val segundo = item(id = 501, idModelo = 9, cantidad = 3, precioVenta = BigDecimal("50.00"), descuento = null)
         every { itemRepository.findById(501) } returns Optional.of(segundo)
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
         every { itemRepository.delete(segundo) } returns Unit
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returnsMany
-            listOf(listOf(primero, segundo), listOf(primero))
+        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(primero, segundo)
 
         service.eliminar(501, vendedor)
 
         verify { itemRepository.delete(segundo) }
-        assertThat(op.idModelo).isEqualTo(7)
-        assertThat(op.cantidad).isEqualTo(2)
-        assertThat(op.precioUnitario).isEqualByComparingTo(BigDecimal("100.00"))
-        assertThat(op.dcto).isEqualByComparingTo(BigDecimal("10.00"))
-        assertThat(op.montoTotal).isEqualByComparingTo(BigDecimal("180.00"))
     }
 
     @Test
@@ -471,59 +384,16 @@ class OportunidadItemServiceImplTest {
     // ── aplicarDescuentoAprobado (B12) ─────────────────────────
 
     @Test
-    fun `aplicarDescuentoAprobado setea el descuento del item y resincroniza monto_total`() {
+    fun `aplicarDescuentoAprobado setea el descuento del item`() {
         val unico = item(id = 500)
-        val op = oportunidad()
         every { itemRepository.findById(500) } returns Optional.of(unico)
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
+        every { oportunidadRepository.findById(100) } returns Optional.of(oportunidad())
         every { itemRepository.save(any()) } answers { firstArg() }
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(unico)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
 
         service.aplicarDescuentoAprobado(500, BigDecimal("5.00"), idAprobador = 2)
 
         assertThat(unico.descuento).isEqualByComparingTo(BigDecimal("5.00"))
         assertThat(unico.updatedBy).isEqualTo(2)
-        assertThat(op.montoTotal).isEqualByComparingTo(BigDecimal("190.00"))
-        assertThat(op.dcto).isEqualByComparingTo(BigDecimal("5.00"))
-        assertThat(op.updatedBy).isEqualTo(2)
-    }
-
-    /**
-     * El bug que B12 corrige: con 2+ items `oportunidad.precioUnitario` es null (D21),
-     * asi que la version vieja escribia `monto_total = null` y lo comiteaba. Ahora el
-     * total es la suma real de los items.
-     */
-    @Test
-    fun `aplicarDescuentoAprobado sobre una oportunidad multi-item deja monto_total como la suma de los items`() {
-        val primero = item(id = 500)
-        val segundo =
-            OportunidadItem(
-                id = 501,
-                idOportunidad = 100,
-                idModelo = 9,
-                cantidad = 1,
-                precioVenta = BigDecimal("50.00"),
-                descuento = null,
-                createdBy = 1,
-                updatedBy = 1,
-            )
-        val op = oportunidad().apply { precioUnitario = null }
-        every { itemRepository.findById(500) } returns Optional.of(primero)
-        every { oportunidadRepository.findById(100) } returns Optional.of(op)
-        every { itemRepository.save(any()) } answers { firstArg() }
-        every { itemRepository.findByIdOportunidadOrderByIdAsc(100) } returns listOf(primero, segundo)
-        every { oportunidadRepository.save(any()) } answers { firstArg() }
-
-        service.aplicarDescuentoAprobado(500, BigDecimal("5.00"), idAprobador = 2)
-
-        // 2 x 100.00 x 0.95 = 190.00  +  1 x 50.00 = 50.00
-        assertThat(op.montoTotal).isNotNull
-        assertThat(op.montoTotal).isEqualByComparingTo(BigDecimal("240.00"))
-        assertThat(op.cantidad).isEqualTo(3)
-        // Con 2+ items no hay un precio unitario ni un dcto de la oportunidad (D21).
-        assertThat(op.precioUnitario).isNull()
-        assertThat(op.dcto).isNull()
     }
 
     @Test
