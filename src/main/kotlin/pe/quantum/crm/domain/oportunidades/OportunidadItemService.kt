@@ -3,6 +3,7 @@ package pe.quantum.crm.domain.oportunidades
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemVinculo
 import pe.quantum.crm.shared.security.UsuarioActual
 import java.math.BigDecimal
@@ -68,4 +69,21 @@ interface OportunidadItemService {
         descuento: BigDecimal,
         idAprobador: Long,
     )
+
+    /**
+     * Datos de estos items para `simulaciones`, SIN chequeo de visibilidad —
+     * igual que [porOportunidades] y [montoTotalPorOportunidades].
+     *
+     * Quien llama decide la regla a proposito: la visibilidad de simulaciones NO
+     * es la de oportunidades (reglas_simulaciones.md §10 — `analista` tiene
+     * acceso total al modulo de simulaciones pese a ser rol de apoyo aqui, y
+     * `jdv` no tiene ninguno pese a ser supervisor aqui). Aplicar la visibilidad
+     * de oportunidades desde dentro le quitaria al analista el acceso que §10 le
+     * da. La decision vive en `SimulacionPermisos`
+     * (plan-09-mapa-simulaciones-modulo.md, decisiones D30-D32).
+     *
+     * Por lotes para no abrir un N+1 en el listado. Los items inexistentes
+     * simplemente no aparecen en el mapa.
+     */
+    fun datosParaSimulacion(idsItem: Collection<Long>): Map<Long, OportunidadItemParaSimulacion>
 }

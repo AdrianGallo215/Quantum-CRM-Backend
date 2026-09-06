@@ -8,6 +8,7 @@ import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemVinculo
 import pe.quantum.crm.shared.PoliticaDescuento
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -160,6 +161,45 @@ class OportunidadItemServiceImpl(
             .groupBy { it.idOportunidad }
             .mapNotNull { (idOportunidad, items) ->
                 MontoTotal.sumarItems(items)?.let { idOportunidad to it }
+            }.toMap()
+    }
+
+    /**
+     * Sin chequeo de visibilidad a proposito (D32): la autorizacion de simulaciones
+     * la decide `SimulacionPermisos`, y no coincide con la de oportunidades. Ver el
+     * KDoc de `OportunidadItemService.datosParaSimulacion`.
+     *
+     * Dos consultas por lotes y nunca una por item: los items por id, y despues sus
+     * oportunidades dueñas por id (de ahi salen `idEmpresa` e `idVendedor`).
+     */
+    @Transactional(readOnly = true)
+    override fun datosParaSimulacion(idsItem: Collection<Long>): Map<Long, OportunidadItemParaSimulacion> {
+        if (idsItem.isEmpty()) {
+            return emptyMap()
+        }
+        val items = itemRepository.findAllById(idsItem)
+        val oportunidades =
+            oportunidadRepository
+                .findAllById(items.map { it.idOportunidad }.distinct())
+                .associateBy { requireNotNull(it.id) }
+        // La FK garantiza la oportunidad dueña; el `mapNotNull` es defensivo, igual
+        // que el `orElseThrow` de `oportunidadVisible`.
+        return items
+            .mapNotNull { item ->
+                val oportunidad = oportunidades[item.idOportunidad] ?: return@mapNotNull null
+                val id = requireNotNull(item.id)
+                id to
+                    OportunidadItemParaSimulacion(
+                        id = id,
+                        idOportunidad = item.idOportunidad,
+                        idEmpresa = oportunidad.idEmpresa,
+                        idVendedor = oportunidad.idVendedor,
+                        idModelo = item.idModelo,
+                        cantidad = item.cantidad,
+                        precioVenta = item.precioVenta,
+                        descuento = item.descuento,
+                        cuotaFinanciadora = item.cuotaFinanciadora,
+                    )
             }.toMap()
     }
 

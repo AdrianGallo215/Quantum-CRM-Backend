@@ -448,4 +448,139 @@ class OportunidadItemServiceImplTest {
 
         verify(exactly = 0) { itemRepository.delete(any()) }
     }
+
+    // ── datosParaSimulacion (D4) ─────────────────────
+
+    /**
+     * Instancia aparte con `OportunidadVisibilidad` MOCKEADO: el contrato de D32 es
+     * que este metodo no aplica la visibilidad de oportunidades, y como la firma no
+     * recibe `UsuarioActual`, la unica forma de comprobarlo es verificar que la
+     * colaboracion nunca se invoca. El `service` de arriba usa la visibilidad real y
+     * no se toca.
+     */
+    private val visibilidadMock = mockk<OportunidadVisibilidad>()
+
+    private val servicioSinVisibilidad =
+        OportunidadItemServiceImpl(itemRepository, oportunidadRepository, modeloService, visibilidadMock)
+
+    private fun oportunidadCon(
+        id: Long,
+        idEmpresa: Long,
+        idVendedor: Long,
+    ) = Oportunidad(
+        id = id,
+        idEmpresa = idEmpresa,
+        idVendedor = idVendedor,
+        idFinanciadora = 1,
+        estado = EstadoOportunidad.evaluacion_calidda,
+        createdAt = LocalDateTime.now(),
+        createdBy = 1,
+        updatedAt = LocalDateTime.now(),
+        updatedBy = 1,
+    )
+
+    @Suppress("LongParameterList") // Refleja las columnas de `OportunidadItem`, igual que la entidad.
+    private fun itemDe(
+        id: Long,
+        idOportunidad: Long,
+        idModelo: Long = 7,
+        cantidad: Int? = 2,
+        precioVenta: BigDecimal? = BigDecimal("100.00"),
+        descuento: BigDecimal? = BigDecimal("10.00"),
+        cuotaFinanciadora: BigDecimal = BigDecimal("937.50"),
+    ) = OportunidadItem(
+        id = id,
+        idOportunidad = idOportunidad,
+        idModelo = idModelo,
+        cantidad = cantidad,
+        precioVenta = precioVenta,
+        descuento = descuento,
+        cuotaFinanciadora = cuotaFinanciadora,
+        createdBy = 1,
+        updatedBy = 1,
+    )
+
+    @Test
+    fun `datosParaSimulacion resuelve empresa y vendedor de la oportunidad dueña de cada item`() {
+        every { itemRepository.findAllById(listOf(500L, 501L)) } returns
+            listOf(
+                itemDe(id = 500, idOportunidad = 100),
+                itemDe(
+                    id = 501,
+                    idOportunidad = 200,
+                    idModelo = 9,
+                    cantidad = 3,
+                    precioVenta = BigDecimal("50.00"),
+                    descuento = null,
+                    cuotaFinanciadora = BigDecimal("1200.00"),
+                ),
+            )
+        every { oportunidadRepository.findAllById(listOf(100L, 200L)) } returns
+            listOf(
+                oportunidadCon(id = 100, idEmpresa = 10, idVendedor = 1),
+                oportunidadCon(id = 200, idEmpresa = 20, idVendedor = 99),
+            )
+
+        val datos = servicioSinVisibilidad.datosParaSimulacion(listOf(500L, 501L))
+
+        assertThat(datos.keys).containsExactlyInAnyOrder(500L, 501L)
+        val primero = requireNotNull(datos[500L])
+        assertThat(primero.id).isEqualTo(500L)
+        assertThat(primero.idOportunidad).isEqualTo(100L)
+        assertThat(primero.idEmpresa).isEqualTo(10L)
+        assertThat(primero.idVendedor).isEqualTo(1L)
+        assertThat(primero.idModelo).isEqualTo(7L)
+        assertThat(primero.cantidad).isEqualTo(2)
+        assertThat(primero.precioVenta).isEqualByComparingTo(BigDecimal("100.00"))
+        assertThat(primero.descuento).isEqualByComparingTo(BigDecimal("10.00"))
+        assertThat(primero.cuotaFinanciadora).isEqualByComparingTo(BigDecimal("937.50"))
+
+        val segundo = requireNotNull(datos[501L])
+        assertThat(segundo.idOportunidad).isEqualTo(200L)
+        assertThat(segundo.idEmpresa).isEqualTo(20L)
+        assertThat(segundo.idVendedor).isEqualTo(99L)
+        assertThat(segundo.idModelo).isEqualTo(9L)
+        assertThat(segundo.cantidad).isEqualTo(3)
+        assertThat(segundo.precioVenta).isEqualByComparingTo(BigDecimal("50.00"))
+        assertThat(segundo.descuento).isNull()
+        assertThat(segundo.cuotaFinanciadora).isEqualByComparingTo(BigDecimal("1200.00"))
+    }
+
+    @Test
+    fun `datosParaSimulacion sin ids devuelve vacio y no consulta ningun repositorio`() {
+        assertThat(servicioSinVisibilidad.datosParaSimulacion(emptyList())).isEmpty()
+
+        verify(exactly = 0) { itemRepository.findAllById(any()) }
+        verify(exactly = 0) { oportunidadRepository.findAllById(any()) }
+    }
+
+    @Test
+    fun `datosParaSimulacion omite del mapa el item inexistente en vez de lanzar`() {
+        every { itemRepository.findAllById(listOf(500L, 999L)) } returns listOf(itemDe(id = 500, idOportunidad = 100))
+        every { oportunidadRepository.findAllById(listOf(100L)) } returns
+            listOf(oportunidadCon(id = 100, idEmpresa = 10, idVendedor = 1))
+
+        val datos = servicioSinVisibilidad.datosParaSimulacion(listOf(500L, 999L))
+
+        assertThat(datos.keys).containsExactly(500L)
+    }
+
+    /**
+     * D32: el metodo NO aplica la visibilidad de oportunidades. La oportunidad de
+     * este item es de otro vendedor (99) y aun asi los datos salen; y sobre todo,
+     * `OportunidadVisibilidad` no se consulta en absoluto.
+     */
+    @Test
+    fun `datosParaSimulacion no aplica la visibilidad de oportunidades`() {
+        every { itemRepository.findAllById(listOf(500L)) } returns listOf(itemDe(id = 500, idOportunidad = 100))
+        every { oportunidadRepository.findAllById(listOf(100L)) } returns
+            listOf(oportunidadCon(id = 100, idEmpresa = 10, idVendedor = 99))
+
+        val datos = servicioSinVisibilidad.datosParaSimulacion(listOf(500L))
+
+        assertThat(datos).containsKey(500L)
+        verify(exactly = 0) { visibilidadMock.alcanza(any(), any()) }
+        verify(exactly = 0) { visibilidadMock.rechazarSiEsApoyo(any()) }
+        verify(exactly = 0) { visibilidadMock.idsColaboracion(any()) }
+    }
 }
