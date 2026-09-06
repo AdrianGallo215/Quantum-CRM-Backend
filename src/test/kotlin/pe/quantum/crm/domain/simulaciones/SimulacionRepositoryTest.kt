@@ -216,4 +216,97 @@ class SimulacionRepositoryTest
             assertThat(filas.getValue(requireNotNull(s2.id)).getCorrelativo()).isEqualTo(2)
             assertThat(filas.getValue(requireNotNull(s3.id)).getCorrelativo()).isEqualTo(3)
         }
+
+        // ---------------------------------------------------------------------
+        // Historial (D43): ventana de 7 días y desempate por `id` (K23/K29).
+        // `simulacion_log.id_simulacion` NO tiene FK a propósito, así que un id
+        // sintético basta para aislar estos casos del resto del archivo.
+        // ---------------------------------------------------------------------
+
+        private fun eventoLog(
+            tipoEvento: TipoEventoSimulacion,
+            createdAt: LocalDateTime,
+            idSimulacion: Long = ID_SIMULACION_HISTORIAL,
+        ) = SimulacionLog(
+            idSimulacion = idSimulacion,
+            tipoEvento = tipoEvento,
+            // El CHECK chk_simulacion_log_snapshot exige el snapshot completo
+            // para creada/editada/restaurada.
+            modo = ModoSimulacion.leasing,
+            precioVenta = BigDecimal("100000.00"),
+            cuotaInicial = BigDecimal("20000.00"),
+            plazoMeses = 36,
+            tea = BigDecimal("15.00"),
+            valorResidual = BigDecimal("0.00"),
+            cuotaFinal = BigDecimal("3500.00"),
+            createdAt = createdAt,
+            createdBy = 1,
+        )
+
+        /**
+         * Siembra, en orden de inserción (y por tanto de `id` ascendente):
+         * `creada` de hace 20 días (fuera de la ventana), `editada` de hace 3
+         * días, y **dos** `editada` que comparten exactamente el mismo
+         * `createdAt` de hace 2 días — el caso de K29.
+         */
+        private fun sembrarHistorial(): Sembrado {
+            val ahora = LocalDateTime.now()
+            val empate = ahora.minusDays(2)
+            return Sembrado(
+                viejo = logRepository.saveAndFlush(eventoLog(TipoEventoSimulacion.creada, ahora.minusDays(20))),
+                tresDias = logRepository.saveAndFlush(eventoLog(TipoEventoSimulacion.editada, ahora.minusDays(3))),
+                empateA = logRepository.saveAndFlush(eventoLog(TipoEventoSimulacion.editada, empate)),
+                empateB = logRepository.saveAndFlush(eventoLog(TipoEventoSimulacion.editada, empate)),
+            )
+        }
+
+        private data class Sembrado(
+            val viejo: SimulacionLog,
+            val tresDias: SimulacionLog,
+            val empateA: SimulacionLog,
+            val empateB: SimulacionLog,
+        )
+
+        @Test
+        fun `historial deja fuera el evento de 20 dias y desempata los empatados por id descendente`() {
+            val sembrado = sembrarHistorial()
+
+            val historial = logRepository.historial(ID_SIMULACION_HISTORIAL)
+
+            assertThat(historial.map { it.id })
+                .containsExactly(sembrado.empateB.id, sembrado.empateA.id, sembrado.tresDias.id)
+                .doesNotContain(sembrado.viejo.id)
+        }
+
+        @Test
+        fun `eventoAnteriorA cruza la ventana de 7 dias para el evento mas antiguo del historial`() {
+            val sembrado = sembrarHistorial()
+
+            val anterior =
+                logRepository.eventoAnteriorA(
+                    ID_SIMULACION_HISTORIAL,
+                    sembrado.tresDias.createdAt,
+                    requireNotNull(sembrado.tresDias.id),
+                )
+
+            assertThat(anterior?.id).isEqualTo(sembrado.viejo.id)
+        }
+
+        @Test
+        fun `eventoAnteriorA no se salta el evento empatado en created_at con id menor`() {
+            val sembrado = sembrarHistorial()
+
+            val anterior =
+                logRepository.eventoAnteriorA(
+                    ID_SIMULACION_HISTORIAL,
+                    sembrado.empateB.createdAt,
+                    requireNotNull(sembrado.empateB.id),
+                )
+
+            assertThat(anterior?.id).isEqualTo(sembrado.empateA.id)
+        }
+
+        private companion object {
+            const val ID_SIMULACION_HISTORIAL = 900_001L
+        }
     }
