@@ -1,8 +1,10 @@
 package pe.quantum.crm.domain.simulaciones
 
 import pe.quantum.crm.domain.simulaciones.dto.ActualizarSimulacionRequest
+import pe.quantum.crm.domain.simulaciones.dto.BifurcarSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CrearSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CronogramaDto
+import pe.quantum.crm.domain.simulaciones.dto.EventoHistorialDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionFiltros
 import pe.quantum.crm.shared.Paginado
@@ -54,4 +56,35 @@ interface SimulacionService {
         id: Long,
         usuario: UsuarioActual,
     ): CronogramaDto
+
+    /** Historial con diff, ventana de 7 dias / 15 versiones (§7.2). */
+    fun historial(
+        id: Long,
+        usuario: UsuarioActual,
+    ): List<EventoHistorialDto>
+
+    /** Restaura una version de la ventana de 7 dias (§7.2). Recalcula `cuota_final`. */
+    fun restaurar(
+        id: Long,
+        idEventoLog: Long,
+        usuario: UsuarioActual,
+    ): SimulacionDto
+
+    /** §6.3: cambia manualmente cual es la simulacion principal del item. */
+    fun marcarPrincipal(
+        id: Long,
+        usuario: UsuarioActual,
+    ): SimulacionDto
+
+    /**
+     * §7.3 "Guardar como Nueva Simulacion": fila NUEVA con
+     * `id_simulacion_origen` apuntando a [id]. Unica via autorizada para
+     * cambiar de `modo` (§2, hallazgo K27 de
+     * plan-11-mapa-historial-calculadora.md).
+     */
+    fun bifurcar(
+        id: Long,
+        request: BifurcarSimulacionRequest,
+        usuario: UsuarioActual,
+    ): SimulacionDto
 }

@@ -13,8 +13,11 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import pe.quantum.crm.domain.simulaciones.dto.ActualizarSimulacionRequest
+import pe.quantum.crm.domain.simulaciones.dto.BifurcarSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CrearSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CronogramaDto
+import pe.quantum.crm.domain.simulaciones.dto.EventoHistorialDto
+import pe.quantum.crm.domain.simulaciones.dto.RestaurarSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionFiltros
 import pe.quantum.crm.shared.ApiResponse
@@ -87,4 +90,27 @@ class SimulacionController(
     ) {
         simulacionService.eliminar(id, usuarioProvider.actual())
     }
+
+    @GetMapping("/{id}/historial")
+    fun historial(
+        @PathVariable id: Long,
+    ): ApiResponse<List<EventoHistorialDto>> = ApiResponse.ok(simulacionService.historial(id, usuarioProvider.actual()))
+
+    @PostMapping("/{id}/restaurar")
+    fun restaurar(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: RestaurarSimulacionRequest,
+    ): ApiResponse<SimulacionDto> = ApiResponse.ok(simulacionService.restaurar(id, request.idEventoLog, usuarioProvider.actual()))
+
+    @PostMapping("/{id}/bifurcar")
+    @ResponseStatus(HttpStatus.CREATED)
+    fun bifurcar(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: BifurcarSimulacionRequest,
+    ): ApiResponse<SimulacionDto> = ApiResponse.ok(simulacionService.bifurcar(id, request, usuarioProvider.actual()))
+
+    @PatchMapping("/{id}/principal")
+    fun marcarPrincipal(
+        @PathVariable id: Long,
+    ): ApiResponse<SimulacionDto> = ApiResponse.ok(simulacionService.marcarPrincipal(id, usuarioProvider.actual()))
 }

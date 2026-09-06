@@ -17,8 +17,10 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import pe.quantum.crm.config.security.JwtService
+import pe.quantum.crm.domain.simulaciones.dto.CampoDiffDto
 import pe.quantum.crm.domain.simulaciones.dto.CrearSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CronogramaDto
+import pe.quantum.crm.domain.simulaciones.dto.EventoHistorialDto
 import pe.quantum.crm.domain.simulaciones.dto.FilaCronogramaDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionDto
 import pe.quantum.crm.shared.Paginacion
@@ -234,5 +236,85 @@ class SimulacionControllerWebMvcTest {
     @Test
     fun `sin token responde 401`() {
         mockMvc.get("/api/v1/simulaciones").andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `GET simulaciones-id-historial responde 200 con la lista`() {
+        val evento =
+            EventoHistorialDto(
+                idEventoLog = 55,
+                tipoEvento = "editada",
+                createdAt = Instant.now(),
+                createdBy = 1,
+                diff = listOf(CampoDiffDto(campo = "tea", valorAnterior = "18.00", valorNuevo = "20.00")),
+            )
+        every { simulacionService.historial(9, any()) } returns listOf(evento)
+        mockMvc.get("/api/v1/simulaciones/9/historial") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenAnalista()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data[0].id_evento_log") { value(55) }
+            jsonPath("$.data[0].diff[0].campo") { value("tea") }
+        }
+    }
+
+    @Test
+    fun `POST simulaciones-id-restaurar responde 200`() {
+        every { simulacionService.restaurar(9, 55, any()) } returns simulacionDto()
+        mockMvc.post("/api/v1/simulaciones/9/restaurar") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenAnalista()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"id_evento_log":55}"""
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(9) }
+        }
+    }
+
+    @Test
+    fun `POST simulaciones-id-bifurcar responde 201 con la simulacion nueva`() {
+        every { simulacionService.bifurcar(9, any(), any()) } returns simulacionDto(id = 10)
+        mockMvc.post("/api/v1/simulaciones/9/bifurcar") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenAnalista()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"precio_venta":120000}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.data.id") { value(10) }
+        }
+    }
+
+    @Test
+    fun `PATCH simulaciones-id-principal responde 200`() {
+        every { simulacionService.marcarPrincipal(9, any()) } returns simulacionDto()
+        mockMvc.patch("/api/v1/simulaciones/9/principal") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenAnalista()}")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.data.id") { value(9) }
+        }
+    }
+
+    @Test
+    fun `POST simulaciones-id-bifurcar con precio_venta negativo responde 400 VALIDACION`() {
+        mockMvc.post("/api/v1/simulaciones/9/bifurcar") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenAnalista()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"precio_venta":-1}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("VALIDACION") }
+        }
+    }
+
+    @Test
+    fun `POST simulaciones-id-restaurar sin id_evento_log responde 400`() {
+        mockMvc.post("/api/v1/simulaciones/9/restaurar") {
+            header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenAnalista()}")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{}"""
+        }.andExpect {
+            status { isBadRequest() }
+        }
     }
 }
