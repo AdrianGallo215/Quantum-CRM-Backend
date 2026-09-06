@@ -24,6 +24,8 @@ import pe.quantum.crm.domain.oportunidades.OportunidadContactoRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadEstadoLogRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadItemRepository
 import pe.quantum.crm.domain.oportunidades.OportunidadRepository
+import pe.quantum.crm.domain.simulaciones.SimulacionLogRepository
+import pe.quantum.crm.domain.simulaciones.SimulacionRepository
 import pe.quantum.crm.domain.solicitudes.SolicitudRepository
 import pe.quantum.crm.domain.tareas.TareaRepository
 import pe.quantum.crm.domain.tareas.TareaResponsableRepository
@@ -92,6 +94,12 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun tipoCambioRepository(): TipoCambioRepository = mockk(relaxed = true)
+
+    @Bean
+    fun simulacionRepository(): SimulacionRepository = mockk(relaxed = true)
+
+    @Bean
+    fun simulacionLogRepository(): SimulacionLogRepository = mockk(relaxed = true)
 
     @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mockk(relaxed = true)
