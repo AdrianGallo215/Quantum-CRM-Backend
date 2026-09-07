@@ -33,8 +33,33 @@ data class OportunidadItemDto(
     val precioVenta: String?,
     val descuento: String?,
     val cuotaFinanciadora: String,
+    /** Cuota Quantum del item: su simulacion principal, o el estimado de §6.1. Null si no hay ninguna calculable. */
+    val cuotaQuantum: String?,
+    /** `cuotaQuantum + cuotaFinanciadora`. Null cuando `cuotaQuantum` lo es (§6.2). */
+    val cuotaTotal: String?,
     val montoItem: String?,
     val advertencias: List<String> = emptyList(),
+)
+
+/**
+ * Importes crudos de un item, sin formatear. Los consume
+ * `OportunidadServiceImpl.toDtos` para los calculos de
+ * `reglas_simulaciones.md` §6.2: la cuota Quantum de cada item (que viaja a
+ * `simulaciones` en un `ItemParaCuota`) y los tres totales de la oportunidad.
+ *
+ * Existe porque [OportunidadItemDto] ya publica `precioVenta`, `descuento` y
+ * `cuotaFinanciadora` como `String` (`toPlainString()`), y volver a parsearlos
+ * seria fragil: dependeria del formato exacto de salida. Mismo criterio que
+ * `OportunidadItemService.montoTotalPorOportunidades`, que tambien calcula
+ * sobre las entidades y no sobre el DTO.
+ */
+data class OportunidadItemDatos(
+    val id: Long,
+    val idOportunidad: Long,
+    val cantidad: Int?,
+    val precioVenta: BigDecimal?,
+    val descuento: BigDecimal?,
+    val cuotaFinanciadora: BigDecimal,
 )
 
 /**

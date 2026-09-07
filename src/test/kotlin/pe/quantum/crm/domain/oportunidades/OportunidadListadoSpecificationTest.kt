@@ -21,6 +21,7 @@ import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.exception.ValidacionException
@@ -57,6 +58,8 @@ class OportunidadListadoSpecificationTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -74,6 +77,7 @@ class OportunidadListadoSpecificationTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")

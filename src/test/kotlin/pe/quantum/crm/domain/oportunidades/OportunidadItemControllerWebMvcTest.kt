@@ -56,6 +56,8 @@ class OportunidadItemControllerWebMvcTest {
             precioVenta = "92000.00",
             descuento = "3.00",
             cuotaFinanciadora = "0.00",
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = "714080.00",
         )
 

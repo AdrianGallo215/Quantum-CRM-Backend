@@ -42,6 +42,18 @@ data class OportunidadDto(
     val estado: String,
     val items: List<OportunidadItemDto>,
     val montoTotal: String?,
+    /** §6.2: Σ (cuota Quantum del item × cantidad). Null si algun item no aporta la suya. */
+    val cuotaQuantumTotal: String?,
+    /** §6.2: Σ (cuota total del item × cantidad). Null bajo la misma condicion. */
+    val cuotaTotal: String?,
+    /**
+     * §6.2: `cuotaTotal / dias_trabajados`. El divisor es la constante 22
+     * (`SimulacionService.DIAS_TRABAJADOS_POR_DEFECTO`), no el de ninguna
+     * simulacion: es una cifra de nivel oportunidad y sus items pueden tener
+     * simulaciones con valores distintos, asi que no hay un divisor "del item"
+     * bien definido.
+     */
+    val cuotaDiariaTotal: String?,
     val garantia: Boolean?,
     val fincParalelo: Boolean?,
     val fichaVenta: String?,

@@ -1,6 +1,7 @@
 package pe.quantum.crm.domain.oportunidades
 
 import jakarta.persistence.criteria.Predicate
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.event.EventListener
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
@@ -29,6 +30,8 @@ import pe.quantum.crm.domain.oportunidades.dto.OportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadRecordatorioDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadVinculo
+import pe.quantum.crm.domain.simulaciones.SimulacionService
+import pe.quantum.crm.domain.simulaciones.dto.ItemParaCuota
 import pe.quantum.crm.integracion.drive.DriveArchivoSubido
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.CamposOrdenables
@@ -69,6 +72,11 @@ class OportunidadServiceImpl(
     // Solo para la rama de orden por agregado del listado (D29); todo lo demas
     // del servicio sigue pasando por JPA.
     private val listadoDao: OportunidadListadoDao,
+    // `@Lazy` porque `simulaciones` ya depende de `oportunidades`
+    // (OportunidadItemService.datosParaSimulacion, D32) y Spring Boot 3 rechaza
+    // los ciclos de constructor; el proxy corta el ciclo al arrancar. Mismo
+    // patron y mismo motivo que `OportunidadVisibilidad.tareaService`.
+    @Lazy private val simulacionService: SimulacionService,
 ) : OportunidadService {
     /**
      * Creacion transaccional completa (reglas §4.2): snapshot de vendedor,
@@ -745,10 +753,22 @@ class OportunidadServiceImpl(
         // Los items resuelven sus propios modelos por lotes; la oportunidad ya no tiene modelo propio.
         val itemsPorOportunidad = oportunidadItemService.porOportunidades(ids)
         val montosPorOportunidad = oportunidadItemService.montoTotalPorOportunidades(ids)
+        // §6.2: los importes crudos de los items (el DTO ya los trae formateados) y
+        // UNA sola llamada a `simulaciones` para TODA la pagina, nunca una por
+        // oportunidad ni una por item (D56).
+        val datosItems = oportunidadItemService.datosCrudosPorOportunidades(ids)
+        val cuotasPorItem =
+            simulacionService.cuotaQuantumPorItems(
+                datosItems.values.map {
+                    ItemParaCuota(idItem = it.id, precioVenta = it.precioVenta, descuento = it.descuento)
+                },
+            )
+        val datosPorOportunidad = datosItems.values.groupBy { it.idOportunidad }
         val tareasPendientes = consultas.tareasPendientesPorOportunidad(ids)
         val eventosPendientes = consultas.eventosPendientesPorOportunidad(ids)
         return oportunidades.map { op ->
             val opId = requireNotNull(op.id)
+            val totales = CuotaOportunidad.totales(datosPorOportunidad[opId].orEmpty(), cuotasPorItem)
             OportunidadDto(
                 id = opId,
                 idEmpresa = op.idEmpresa,
@@ -758,9 +778,12 @@ class OportunidadServiceImpl(
                 idFinanciadora = op.idFinanciadora,
                 financiadora = financiadoras[op.idFinanciadora],
                 estado = op.estado.name,
-                items = itemsPorOportunidad[opId].orEmpty(),
+                items = CuotaOportunidad.porItem(itemsPorOportunidad[opId].orEmpty(), datosItems, cuotasPorItem),
                 // Derivado de los items, no de la columna plana `oportunidades.monto_total` (D15/D21).
                 montoTotal = montosPorOportunidad[opId]?.toPlainString(),
+                cuotaQuantumTotal = totales?.cuotaQuantumTotal,
+                cuotaTotal = totales?.cuotaTotal,
+                cuotaDiariaTotal = totales?.cuotaDiariaTotal,
                 garantia = op.garantia,
                 fincParalelo = op.fincParalelo,
                 fichaVenta = op.fichaVenta,

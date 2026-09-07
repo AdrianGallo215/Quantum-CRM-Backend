@@ -28,10 +28,12 @@
 20. [Solicitudes](#20-solicitudes)
 21. [Metas de venta](#21-metas-de-venta)
 22. [Tipo de cambio](#22-tipo-de-cambio)
-23. [Mantenimiento](#23-mantenimiento)
-24. [Enums](#24-enums)
-25. [Notas operativas — Drive](#25-notas-operativas--drive)
-26. [Changelog del contrato](#26-changelog-del-contrato)
+23. [Simulaciones](#23-simulaciones)
+24. [Calculadora Financiera](#24-calculadora-financiera)
+25. [Mantenimiento](#25-mantenimiento)
+26. [Enums](#26-enums)
+27. [Notas operativas — Drive](#27-notas-operativas--drive)
+28. [Changelog del contrato](#28-changelog-del-contrato)
 
 ---
 
@@ -961,11 +963,16 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
           "precio_venta": "92000.00",
           "descuento": "3.00",
           "cuota_financiadora": "937.50",
+          "cuota_quantum": "1234.56",
+          "cuota_total": "2172.06",
           "monto_item": "713920.00",
           "advertencias": []
         }
       ],
       "monto_total": "713920.00",
+      "cuota_quantum_total": "9876.48",
+      "cuota_total": "17376.48",
+      "cuota_diaria_total": "789.84",
       "garantia": true,
       "finc_paralelo": false,
       "ficha_venta": null,
@@ -986,6 +993,11 @@ El backend no almacena el archivo: lo transmite en streaming hacia Drive.
 - `id_modelo`, `modelo`, `cantidad`, `precio_unitario`, `dcto` **ya no viven en la raíz** de la oportunidad: cada modelo vendido es un `item` dentro de `items`. Una oportunidad con un solo modelo sigue teniendo un `items` de un solo elemento — no cambia el caso de uso simple, solo dónde vive el dato.
 - `monto_total` se queda en la raíz: es la suma de `monto_item` de todos los ítems, calculado y de solo lectura (igual que antes).
 - `sort=precio_unitario` **ya no es un valor válido** — un "precio unitario" no significa nada con varios modelos por oportunidad. `sort=cantidad` y `sort=monto_total` se mantienen: siguen siendo agregados sobre los ítems, con el mismo resultado observable que antes.
+
+**Campos de cuota Quantum (`reglas_simulaciones.md` §6.2):**
+- Por ítem: `cuota_quantum` es la `cuota_final` de la simulación **principal** de ese ítem si tiene una, o el cálculo efímero de §6.1 (con los parámetros por defecto del módulo Simulaciones) si no. `cuota_total` es `cuota_quantum + cuota_financiadora`. Ambos son `null` cuando no hay ninguna cuota calculable para ese ítem (ítem incompleto, o parámetros por defecto inválidos para su precio — degradación silenciosa, nunca un error).
+- A nivel de oportunidad: `cuota_quantum_total` es la Σ de `cuota_quantum × cantidad` de todos los ítems; `cuota_total` (a nivel de oportunidad) es la Σ de `cuota_total_item × cantidad`; `cuota_diaria_total` es `cuota_total / dias_trabajados` (constante 22, no la de ninguna simulación en particular).
+- **Los tres campos de nivel oportunidad son `null` conjuntamente si CUALQUIER ítem no tiene una cuota calculable** (`cuota_quantum` nulo, o `cantidad` nulo) — no es un error: el cliente debe tratarlo como "no se puede mostrar la cuota total todavía", nunca como "la cuota es cero". Es deliberadamente distinto del criterio de `monto_total`, donde un ítem incompleto aporta 0: omitir un ítem en silencio en una cuota subestimaría cuánto paga el cliente al mes.
 
 ---
 
@@ -1182,6 +1194,8 @@ Todos los campos son opcionales salvo `id_modelo`. Sin `precio_venta`, se inicia
     "descuento": "3.00",
     "cuota_financiadora": "937.50",
     "monto_item": "356976.00",
+    "cuota_quantum": null,
+    "cuota_total": null,
     "advertencias": []
   }
 }
@@ -1189,6 +1203,7 @@ Todos los campos son opcionales salvo `id_modelo`. Sin `precio_venta`, se inicia
 
 **Notas:**
 - `monto_item` es el subtotal del ítem: `cantidad × precio_venta × (1 − descuento/100)`. Calculado y de solo lectura.
+- **`cuota_quantum` y `cuota_total` (§6.2) siempre vienen `null` en la respuesta de este endpoint** — no es "sin cuota calculable" (§6.2), es que este endpoint no las resuelve. Solo `GET /oportunidades` y `GET /oportunidades/:id` las calculan. Si el cliente necesita el valor real tras crear/editar un ítem, debe volver a pedir la oportunidad.
 - Si `descuento` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el ítem no se crea. Crear primero sin descuento (o dentro del límite) y solicitar el mayor después sobre el ítem ya creado.
 - Errores: `404 NO_ENCONTRADO` (oportunidad ajena o inexistente).
 
@@ -1213,6 +1228,8 @@ Todos los campos son opcionales salvo `id_modelo`. Sin `precio_venta`, se inicia
     "descuento": "3.00",
     "cuota_financiadora": "937.50",
     "monto_item": "356976.00",
+    "cuota_quantum": null,
+    "cuota_total": null,
     "advertencias": ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]
   }
 }
@@ -1223,6 +1240,7 @@ Todos los campos son opcionales salvo `id_modelo`. Sin `precio_venta`, se inicia
 - Si `precio_venta` fue editado manualmente, el backend NO lo sobreescribe y devuelve `advertencias: ["El precio unitario fue editado manualmente y no se actualizó con el nuevo modelo"]`.
 - Si `descuento` supera el límite del rol (§5) → `422 APROBACION_REQUERIDA`: el resto de campos puede reintentarse sin `descuento` o dentro del límite.
 - Recalcula `monto_item` (y, en cascada, el `monto_total` de la oportunidad).
+- **`cuota_quantum` y `cuota_total` (§6.2) siempre vienen `null` en la respuesta de este endpoint**, por el mismo motivo que en `POST` de arriba: este endpoint no las resuelve, solo `GET /oportunidades` y `GET /oportunidades/:id` lo hacen.
 - Errores: `404 NO_ENCONTRADO` (ítem u oportunidad ajenos o inexistentes).
 
 ---
@@ -2088,12 +2106,13 @@ Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). S
 
 Notifica a un usuario cuando ocurre una acción relacionada con él pero no accionada por él mismo. También cubre recordatorios de tareas y eventos (job programado, sin actor humano).
 
-**Tipo (`tipo`):** los 16 valores reales de `TipoNotificacion` (`NotificacionEnums.kt`, migración V22/V28/V34):
+**Tipo (`tipo`):** los 17 valores reales de `TipoNotificacion` (`NotificacionEnums.kt`, migración V22/V28/V34/V47):
 - `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio` — el set original.
 - `solicitud_creada`, `solicitud_aprobada`, `solicitud_denegada` — ciclo de vida de una Solicitud (§20).
 - `meta_propuesta`, `meta_aprobada`, `meta_rechazada`, `meta_modificada` — ciclo de vida de una Meta de venta (§21).
+- `simulacion_por_expirar` — aviso de purga de una simulación huérfana (§23).
 
-**Entidad referenciada (`entidad_tipo`):** los 4 valores reales de `EntidadNotificacion`: `oportunidad` | `empresa` | `solicitud` | `meta_venta` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
+**Entidad referenciada (`entidad_tipo`):** los 5 valores reales de `EntidadNotificacion`: `oportunidad` | `empresa` | `solicitud` | `meta_venta` | `simulacion` — nunca una tarea/evento suelto; para tareas/eventos se referencia su oportunidad si tiene una, si no su empresa.
 
 **DTO `Notificacion`:**
 ```json
@@ -2341,7 +2360,428 @@ Tipo de cambio PEN/USD publicado por SUNAT, para el indicador permanente del lay
 
 ---
 
-## 23. Mantenimiento
+## 23. Simulaciones
+
+Módulo de financiamiento propio de Quantum (`reglas_simulaciones.md`): motor de cálculo (leasing / crédito directo), persistencia de simulaciones, bitácora de versiones y purga automática de las que quedan huérfanas. Distinto de la Calculadora Financiera (§24): aquí todo se persiste.
+
+**Permisos del módulo (§10 de `reglas_simulaciones.md`), centralizados en `SimulacionPermisos` y no repartidos por endpoint:**
+
+| Rol | Acceso |
+|---|---|
+| `admin`, `gerencia`, `analista` | Total: listan, ven y editan cualquier simulación |
+| `vendedor` | Sin acceso al listado (`GET /simulaciones`); sí puede crear/ver/editar la simulación de un ítem de **su propia** oportunidad, o una no enlazada que él mismo creó |
+| `jdv`, `otro` | Sin acceso a ninguna función del módulo |
+
+`analista` es de solo lectura en `oportunidades` pero tiene escritura completa aquí — es el rol dueño de este módulo. `jdv` es supervisor en `oportunidades` pero no tiene acceso aquí. Un recurso fuera del alcance del rol (una simulación ajena para `vendedor`, o cualquiera para `jdv`/`otro`) responde **`404 NO_ENCONTRADO`**, nunca `403` (CLAUDE.md regla 14) — la única excepción es el listado completo del módulo (`GET /simulaciones`) y el acceso a "alguna función", que sí son `403 PERMISO_INSUFICIENTE` porque no es una pregunta sobre si el recurso existe, sino sobre si el rol tiene la función.
+
+**Puntos que no se deducen de las firmas de los endpoints:**
+
+- **`cuota_final` es solo lectura.** El backend siempre la recalcula server-side (motor de cálculo) al crear, actualizar, restaurar o bifurcar; si viene en el body de cualquier request, se ignora (`reglas_simulaciones.md` §4).
+- **`modo` es inmutable.** Un `PATCH /simulaciones/:id` que intente cambiarlo responde **`409 MODO_INMUTABLE`**. La única vía autorizada para cambiar de modo es `POST /simulaciones/:id/bifurcar` ("Guardar como Nueva Simulación"), que sí lo acepta y lo aplica sobre una fila **nueva** — la fila origen conserva su modo intacto.
+- **El historial es una ventana, no la bitácora completa.** `GET /simulaciones/:id/historial` devuelve solo los eventos con snapshot (`creada`/`editada`/`restaurada`) de los **últimos 7 días, hasta 15**, más recientes primero (§7.2 de `reglas_simulaciones.md`). El log completo permanece en base, solo la lectura está acotada. `diff` puede venir **vacío** legítimamente: ocurre en el primer evento de la simulación, y también cuando un `PATCH` no tocó ninguno de los 10 parámetros del snapshot (por ejemplo, un `PATCH` que solo reenlaza `id_oportunidad_item`, o un `PATCH` vacío). Un diff vacío es información honesta, no un error.
+- **`POST /simulaciones/:id/restaurar` recalcula `cuota_final`.** Nunca copia la que estuviera guardada en esa versión del historial — si hubo una corrección de fórmula entre medio, la cuota vieja podría estar mal.
+- **`eliminacion_prevista_el` solo trae valor si la simulación no está enlazada a un ítem.** Es `created_at + 30 días` mientras `id_oportunidad_item` sea `null` (§5); en cuanto se enlaza (al crearla o en un `PATCH` posterior), pasa a `null` de forma permanente — enlazarla la salva definitivamente de la purga.
+- **`id_oportunidad` en la respuesta es derivado del ítem enlazado.** No es una columna de `simulaciones`; sale de resolver `id_oportunidad_item → oportunidad` en el servidor para que el cliente pueda agrupar por oportunidad sin hacer esa resolución por su cuenta (§8.2). Es `null` si la simulación no está enlazada.
+
+---
+
+### POST /simulaciones
+> Crea una simulación de financiamiento (persistida).
+
+**Roles:** `admin` `gerencia` `analista` `vendedor` (`vendedor` solo puede enlazarla a un ítem de una oportunidad donde él es el vendedor asignado). `jdv` y `otro` no tienen ninguna función en el módulo: `403 PERMISO_INSUFICIENTE`.
+
+**Request:**
+```json
+{
+  "modo": "leasing",
+  "nombre": null,
+  "id_oportunidad_item": 502,
+  "id_modelo": 1,
+  "precio_venta": 92000.00,
+  "descuento": 3.00,
+  "cuota_inicial": 45000.00,
+  "plazo_meses": 48,
+  "tea": 14.00,
+  "valor_residual": 25000.00,
+  "dias_trabajados": 22,
+  "comision_estructuracion": 1180.00
+}
+```
+Solo `modo`, `precio_venta`, `cuota_inicial`, `plazo_meses` y `tea` son obligatorios. `descuento`, `valor_residual`, `dias_trabajados` y `comision_estructuracion` ausentes toman los defaults de §6.1 de `reglas_simulaciones.md`. `id_oportunidad_item` y `id_modelo` son opcionales: sin ítem, la simulación nace huérfana (ver notas del módulo arriba).
+
+**Respuesta 201:**
+```json
+{
+  "data": {
+    "id": 87,
+    "nombre": "Transportes Lima SAC · KinWin K12 · Leasing · #1",
+    "nombre_es_manual": false,
+    "modo": "leasing",
+    "id_oportunidad_item": 502,
+    "id_oportunidad": 101,
+    "id_modelo": 1,
+    "modelo": { "id": 1, "codigo": "KinWin K12" },
+    "id_simulacion_origen": null,
+    "precio_venta": "92000.00",
+    "descuento": "3.00",
+    "cuota_inicial": "45000.00",
+    "plazo_meses": 48,
+    "tea": "14.00",
+    "valor_residual": "25000.00",
+    "dias_trabajados": 22,
+    "comision_estructuracion": "1180.00",
+    "cuota_final": "1234.56",
+    "es_principal": true,
+    "created_at": "2026-09-07T10:00:00Z",
+    "updated_at": "2026-09-07T10:00:00Z",
+    "eliminacion_prevista_el": null
+  },
+  "meta": null,
+  "error": null
+}
+```
+
+**Notas:**
+- Enlazarla a un ítem la convierte automáticamente en la simulación **principal** de ese ítem (desmarca la que lo era). Sin ítem, `es_principal` es siempre `false` (CHECK `chk_simulacion_principal_requiere_item`).
+- `nombre_es_manual` es `false` cuando `nombre` sale autogenerado (§8.1 de `reglas_simulaciones.md`); el autogenerado nunca se persiste.
+- Validaciones de §13 (`cuota_inicial < PV_efectivo`, `valor_residual < Principal`) responden `400 VALIDACION` si no se cumplen — a diferencia del cálculo efímero de §6.1 en `GET /oportunidades` (§10 de este contrato), que degrada a `null` en vez de fallar.
+- Se registra el evento `creada` en la bitácora.
+
+---
+
+### GET /simulaciones
+> Lista simulaciones del módulo, paginado estándar (§4).
+
+**Roles:** SOLO `admin` `gerencia` `analista`. **`403 PERMISO_INSUFICIENTE` para `vendedor`, `jdv` y `otro`** — el `vendedor` llega a sus simulaciones por el simulador de su propia oportunidad (`GET /simulaciones/:id` y afines) y por la Calculadora Financiera (§24), nunca por este listado completo.
+
+**Request — query params:**
+
+| Param | Tipo | Descripción |
+|---|---|---|
+| `id_oportunidad_item` | long | Filtra por ítem enlazado |
+| `id_modelo` | long | Filtra por modelo |
+| `modo` | enum | `leasing` \| `credito_directo` |
+| `page`, `per_page`, `sort`, `dir` | — | Paginación estándar (§4). `sort` acepta `created_at` (default), `id`, `cuota_final`, `updated_at` |
+
+**Respuesta 200:**
+```json
+{
+  "data": [
+    {
+      "id": 87,
+      "nombre": "Transportes Lima SAC · KinWin K12 · Leasing · #1",
+      "nombre_es_manual": false,
+      "modo": "leasing",
+      "id_oportunidad_item": 502,
+      "id_oportunidad": 101,
+      "id_modelo": 1,
+      "modelo": { "id": 1, "codigo": "KinWin K12" },
+      "id_simulacion_origen": null,
+      "precio_venta": "92000.00",
+      "descuento": "3.00",
+      "cuota_inicial": "45000.00",
+      "plazo_meses": 48,
+      "tea": "14.00",
+      "valor_residual": "25000.00",
+      "dias_trabajados": 22,
+      "comision_estructuracion": "1180.00",
+      "cuota_final": "1234.56",
+      "es_principal": true,
+      "created_at": "2026-09-07T10:00:00Z",
+      "updated_at": "2026-09-07T10:00:00Z",
+      "eliminacion_prevista_el": null
+    }
+  ],
+  "meta": { "page": 1, "per_page": 20, "total": 3, "total_pages": 1 },
+  "error": null
+}
+```
+
+**Notas:**
+- Un `modo` fuera del enum responde `400 VALIDACION` (`field: "modo"`).
+
+---
+
+### GET /simulaciones/:id
+> Detalle de una simulación.
+
+**Roles:** `admin` `gerencia` `analista` alcanzan cualquiera; `vendedor` alcanza la que está enlazada a un ítem de su propia oportunidad, o una no enlazada que él mismo creó; `jdv`/`otro` no tienen acceso. Ajena o inexistente → **`404 NO_ENCONTRADO`**.
+
+**Request:** sin body ni query params.
+
+**Respuesta 200:** el mismo objeto de `POST /simulaciones` (ver arriba).
+
+---
+
+### GET /simulaciones/:id/cronograma
+> Cronograma completo de amortización, recalculado al vuelo — nunca se persiste (§4 de `reglas_simulaciones.md`).
+
+**Roles:** los mismos que `GET /simulaciones/:id`.
+
+**Request:** sin body ni query params.
+
+**Respuesta 200:**
+```json
+{
+  "data": {
+    "cuota_final": "1234.56",
+    "cuota_financiera": "1046.24",
+    "valor_venta": "77966.10",
+    "igv": "14033.90",
+    "principal": "39830.68",
+    "tasa_nominal_mensual": "1.09489",
+    "filas": [
+      {
+        "mes": 0,
+        "saldo_inicial": "39830.68",
+        "amortizacion": "0.00",
+        "interes": null,
+        "igv": null,
+        "saldo_final": "39830.68",
+        "cuota": null,
+        "cuota_con_igv": null
+      },
+      {
+        "mes": 1,
+        "saldo_inicial": "39830.68",
+        "amortizacion": "823.10",
+        "interes": "436.14",
+        "igv": null,
+        "saldo_final": "39007.58",
+        "cuota": "1046.24",
+        "cuota_con_igv": null
+      }
+    ]
+  },
+  "meta": null,
+  "error": null
+}
+```
+
+**Notas:**
+- `tasa_nominal_mensual` nunca se redondea (§3.1 de `reglas_simulaciones.md`).
+- `interes`, `igv`, `cuota` y `cuota_con_igv` van `null` en la fila del mes 0 (la de la cuota inicial); `igv` va `null` en todas las filas cuando `modo = "leasing"`, que no desglosa IGV (§3.3).
+
+---
+
+### PATCH /simulaciones/:id
+> Actualiza parcialmente los parámetros de una simulación. Solo se tocan los campos que vienen en el body.
+
+**Roles:** los mismos que `GET /simulaciones/:id`.
+
+**Request:** cualquier subconjunto de los campos de `POST /simulaciones` (`modo`, `nombre`, `id_oportunidad_item`, `id_modelo`, `precio_venta`, `descuento`, `cuota_inicial`, `plazo_meses`, `tea`, `valor_residual`, `dias_trabajados`, `comision_estructuracion`). Ejemplo:
+```json
+{
+  "precio_venta": 95000.00,
+  "descuento": 5.00
+}
+```
+
+**Respuesta 200:** la simulación actualizada, mismo shape que `POST /simulaciones`. `cuota_final` sale siempre recalculada, incluso con un body vacío.
+
+**Errores:**
+- **`409 MODO_INMUTABLE`** — el body trae `modo` distinto del actual. Usa `POST /simulaciones/:id/bifurcar` para cambiar de modo.
+- `400 VALIDACION` — el snapshot resultante no cumple §13 (`cuota_inicial >= PV_efectivo`, o `valor_residual >= Principal`).
+- `404 NO_ENCONTRADO` — ajena o inexistente.
+
+**Notas:**
+- Con todos los campos nullable, "ausente" y "`null` explícito" son indistinguibles: este `PATCH` permite enlazar a un ítem pero no desenlazar.
+- Se registra el evento `editada` en la bitácora.
+
+---
+
+### DELETE /simulaciones/:id
+> Elimina definitivamente una simulación.
+
+**Roles:** los mismos que `GET /simulaciones/:id`.
+
+**Respuesta 204:** sin body.
+
+**Notas:**
+- Se registra el evento `eliminada` con snapshot completo en `simulacion_log` **antes** de borrar la fila — el log sobrevive porque `id_simulacion` no tiene FK.
+- Distinto de la purga automática de §5: esto es un borrado manual, a pedido del usuario, sobre cualquier simulación alcanzable (enlazada o no).
+
+---
+
+### GET /simulaciones/:id/historial
+> Bitácora de versiones de la simulación: ventana de 7 días / 15 versiones, con el diff respecto al evento anterior (§7 de `reglas_simulaciones.md`).
+
+**Roles:** los mismos que `GET /simulaciones/:id`.
+
+**Request:** sin body ni query params.
+
+**Respuesta 200:**
+```json
+{
+  "data": [
+    {
+      "id_evento_log": 340,
+      "tipo_evento": "editada",
+      "created_at": "2026-09-06T16:00:00Z",
+      "created_by": 5,
+      "diff": [
+        { "campo": "precio_venta", "valor_anterior": "92000.00", "valor_nuevo": "95000.00" },
+        { "campo": "descuento", "valor_anterior": "3.00", "valor_nuevo": "5.00" }
+      ]
+    },
+    {
+      "id_evento_log": 338,
+      "tipo_evento": "creada",
+      "created_at": "2026-09-05T10:00:00Z",
+      "created_by": 5,
+      "diff": []
+    }
+  ],
+  "meta": null,
+  "error": null
+}
+```
+
+**Notas:**
+- Solo eventos con snapshot: `creada`, `editada`, `restaurada`. `marcada_principal`, `enlazada_a_item` y `eliminada` no aparecen aquí.
+- `diff` vacío es legítimo: es el caso del primer evento de la simulación, y también el de una escritura que no tocó ninguno de los 10 parámetros del snapshot (un `PATCH` que solo reenlaza a otro ítem, o un `PATCH` vacío).
+- `created_by` es `null` cuando el evento lo generó un job programado sin actor humano (la purga de §5).
+- Más recientes primero.
+
+---
+
+### POST /simulaciones/:id/restaurar
+> Restaura los parámetros de una versión dentro de la ventana de restauración (7 días / 15 versiones).
+
+**Roles:** los mismos que `GET /simulaciones/:id`.
+
+**Request:**
+```json
+{ "id_evento_log": 338 }
+```
+
+**Respuesta 200:** la simulación restaurada, mismo shape que `POST /simulaciones`.
+
+**Errores:**
+- `404 NO_ENCONTRADO` — `id_evento_log` no existe, no pertenece a esta simulación, no está en la ventana de 7 días/15 versiones, o no es de un tipo restaurable (`creada`/`editada`/`restaurada`). Mismo mensaje para los cuatro motivos: no se filtra cuál falló.
+- `400 VALIDACION` — el snapshot restaurado ya no cumple §13 (puede pasar si hubo una corrección de fórmula entre medio).
+
+**Notas:**
+- **`cuota_final` se recalcula server-side, nunca se restaura la que estuviera guardada en esa versión del historial.**
+- No restaura `modo` (es inmutable, y es la misma simulación), ni `es_principal` ni `id_oportunidad_item`: no son parámetros de cálculo.
+- Registra **dos** eventos: `editada` (congela el estado justo antes de restaurar, para poder deshacer el deshacer) y `restaurada` (el estado nuevo).
+
+---
+
+### POST /simulaciones/:id/bifurcar
+> "Guardar como Nueva Simulación": crea una fila nueva a partir de otra existente, sin mutar el origen. Es la única vía autorizada para cambiar de `modo`.
+
+**Roles:** los mismos que `GET /simulaciones/:id` (aplican sobre la simulación origen).
+
+**Request:** mismos campos que `PATCH /simulaciones/:id`, todos opcionales — lo que no venga se hereda del origen, **excepto `nombre`**, que nunca se hereda: si no viene, la bifurcada nace sin nombre manual y autogenera el suyo (dos simulaciones no pueden compartir el mismo título autogenerado). Ejemplo (cambiando de modo):
+```json
+{
+  "modo": "credito_directo"
+}
+```
+
+**Respuesta 201:** la nueva simulación, mismo shape que `POST /simulaciones`, con `id_simulacion_origen` apuntando a la original.
+
+**Notas:**
+- A diferencia de `PATCH`, aquí `modo` **sí** se aplica — nunca responde `409 MODO_INMUTABLE`.
+- Hereda el enlace a ítem del origen si lo tenía, y en ese caso nace como principal de ese ítem (desmarca la que lo era).
+- Se registra el evento `creada` en la bitácora de la fila nueva; el origen no se modifica ni recibe un evento propio por esta operación.
+
+---
+
+### PATCH /simulaciones/:id/principal
+> Marca la simulación como la principal de su ítem enlazado.
+
+**Roles:** los mismos que `GET /simulaciones/:id`.
+
+**Request:** cuerpo vacío.
+
+**Respuesta 200:** la simulación actualizada, con `es_principal: true`.
+
+**Errores:**
+- `400 VALIDACION` — la simulación no está enlazada a ningún ítem (no puede ser principal sin ítem, CHECK `chk_simulacion_principal_requiere_item`).
+- `404 NO_ENCONTRADO` — ajena o inexistente.
+
+**Notas:**
+- Desmarca automáticamente la que era principal de ese mismo ítem (`uq_simulacion_principal` garantiza una sola).
+- Ya principal es un no-op exitoso: no reescribe la fila ni registra un evento duplicado.
+- Se registra el evento `marcada_principal` en la bitácora.
+
+---
+
+## 24. Calculadora Financiera
+
+Estimación rápida durante la prospección (`reglas_simulaciones.md` §9), con el **mismo motor y las mismas validaciones §13** que el módulo de Simulaciones, pero **cero persistencia**: no escribe en `simulaciones` ni en `simulacion_log`, ni siquiera auditoría. Es deliberado — no una omisión — para que el servicio pueda ofrecerse sin repositorios en absoluto.
+
+**"Enlazar a Oportunidad" no es un endpoint de esta sección.** Convertir un cálculo de la Calculadora en una simulación real es, literalmente, `POST /simulaciones` (§23) con los mismos parámetros más el `id_oportunidad_item` elegido — recién ahí se crea la fila y su evento `creada`.
+
+### POST /calculadora
+> Calcula un cronograma de financiamiento sin persistir nada.
+
+**Roles:** `admin` `gerencia` `analista` `vendedor` — mismo reparto que `POST /simulaciones` (§10 de `reglas_simulaciones.md`). `jdv` y `otro`: `403 PERMISO_INSUFICIENTE`.
+
+**Request:**
+```json
+{
+  "modo": "leasing",
+  "id_empresa": 3,
+  "id_modelo": 1,
+  "precio_venta": 92000.00,
+  "descuento": 3.00,
+  "cuota_inicial": 45000.00,
+  "plazo_meses": 48,
+  "tea": 14.00,
+  "valor_residual": 25000.00,
+  "dias_trabajados": 22,
+  "comision_estructuracion": 1180.00
+}
+```
+`id_empresa` e `id_modelo` son opcionales y puramente de presentación (no participan del cálculo). No se declara `id_oportunidad_item`: antes de "Enlazar a Oportunidad" no existe ítem.
+
+**Respuesta 200:**
+```json
+{
+  "data": {
+    "empresa": { "id": 3, "razon_social": "Transp. Negociaciones Sta. Anita S.A." },
+    "modelo": { "id": 1, "codigo": "KinWin K12" },
+    "cronograma": {
+      "cuota_final": "1234.56",
+      "cuota_financiera": "1046.24",
+      "valor_venta": "77966.10",
+      "igv": "14033.90",
+      "principal": "39830.68",
+      "tasa_nominal_mensual": "1.09489",
+      "filas": [
+        {
+          "mes": 0,
+          "saldo_inicial": "39830.68",
+          "amortizacion": "0.00",
+          "interes": null,
+          "igv": null,
+          "saldo_final": "39830.68",
+          "cuota": null,
+          "cuota_con_igv": null
+        }
+      ]
+    }
+  },
+  "meta": null,
+  "error": null
+}
+```
+
+**Errores:**
+- `400 VALIDACION` — §13 no se cumple (`cuota_inicial >= PV_efectivo`, o `valor_residual >= Principal`), o `modo`/`id_empresa`/`id_modelo` inválidos.
+- `404 NO_ENCONTRADO` — `id_empresa` o `id_modelo` no existen.
+
+**Notas:**
+- **No persiste nada, ni siquiera un registro de auditoría.** No hay `id`, `created_at`, `es_principal` ni `nombre` en la respuesta: no existe fila que los tenga.
+- `empresa` y `modelo` vienen `null` cuando el request no trajo sus ids.
+- No devuelve `cuota_total` (cuota Quantum + cuota financiadora, §6.2): esa suma solo existe dentro de una oportunidad, donde hay un ítem del cual leer `cuota_financiadora`. Antes de enlazar no hay ítem.
+
+---
+
+## 25. Mantenimiento
 
 ### POST /mantenimiento/carpetas-drive
 > Crea las carpetas de Google Drive que faltan en empresas y oportunidades anteriores a la integración.
@@ -2373,7 +2813,7 @@ Tipo de cambio PEN/USD publicado por SUNAT, para el indicador permanente del lay
 
 ---
 
-## 24. Enums
+## 26. Enums
 
 > Valores exactos que viajan en `campos` de tipo enum, en minúscula, tal cual los define PostgreSQL (migración V1 y siguientes) y los enums Kotlin del backend. Un valor fuera de esta lista responde `400 VALIDACION`. Verificado contra el schema real de producción (Supabase) el 2026-08-17 — sin deriva respecto a las migraciones locales (V1–V39).
 >
@@ -2395,16 +2835,18 @@ Tipo de cambio PEN/USD publicado por SUNAT, para el indicador permanente del lay
 | `aprobador_solicitud_enum` | `Solicitud.aprobador_rol` | `jdv`, `gerencia` |
 | `entidad_solicitud_enum` | `Solicitud.entidad_tipo` | `oportunidad`, `empresa`, `oportunidad_item` (V42 — el valor que usa hoy `tipo: "descuento"`; `oportunidad` queda como valor legado del enum, no se acepta para ese tipo) |
 | `estado_meta_enum` | `MetaVenta.estado` | `propuesta`, `aprobada`, `rechazada` |
-| `tipo_notificacion_enum` | `Notificacion.tipo` | `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`, `solicitud_creada`, `solicitud_aprobada`, `solicitud_denegada`, `meta_propuesta`, `meta_aprobada`, `meta_rechazada`, `meta_modificada` |
-| `entidad_notificacion_enum` | `Notificacion.entidad_tipo` | `oportunidad`, `empresa`, `solicitud`, `meta_venta` |
+| `tipo_notificacion_enum` | `Notificacion.tipo` | `oportunidad_cambio_estado`, `empresa_convertida`, `evento_creado`, `tarea_creada`, `tarea_colaborador_agregado`, `empresa_asignada`, `oportunidad_traspasada`, `tarea_recordatorio`, `evento_recordatorio`, `solicitud_creada`, `solicitud_aprobada`, `solicitud_denegada`, `meta_propuesta`, `meta_aprobada`, `meta_rechazada`, `meta_modificada`, `simulacion_por_expirar` |
+| `entidad_notificacion_enum` | `Notificacion.entidad_tipo` | `oportunidad`, `empresa`, `solicitud`, `meta_venta`, `simulacion` |
+| `modo_simulacion_enum` | `Simulacion.modo` | `leasing`, `credito_directo` |
+| `tipo_evento_simulacion_enum` | `SimulacionLog.tipo_evento` | `creada`, `editada`, `restaurada`, `marcada_principal`, `enlazada_a_item`, `eliminada` |
 
 **No expuestos por la API** (uso interno, dedup del job de recordatorios — no aparecen en ningún request/response): `origen_recordatorio_enum` (`tarea`, `evento`), `umbral_recordatorio_enum` (`proximo`, `vencido`).
 
 ---
 
-## 25. Notas operativas — Drive
+## 27. Notas operativas — Drive
 
-> Aclaraciones sobre el flujo de archivos de Drive (§8 Empresas, §10 Oportunidades, §23 Mantenimiento) que no se desprenden de la firma de los endpoints. El equipo de frontend las traía documentadas por separado, confirmadas de palabra con backend el 2026-07-31; quedan incorporadas aquí, en el contrato oficial, el 2026-08-17 tras verificarlas contra el código actual (`EmpresaDriveController.kt`, `OportunidadDriveController.kt`, `DriveMultipartUploader.kt`, `DriveProperties.kt`, `GlobalExceptionHandler.kt`).
+> Aclaraciones sobre el flujo de archivos de Drive (§8 Empresas, §10 Oportunidades, §25 Mantenimiento) que no se desprenden de la firma de los endpoints. El equipo de frontend las traía documentadas por separado, confirmadas de palabra con backend el 2026-07-31; quedan incorporadas aquí, en el contrato oficial, el 2026-08-17 tras verificarlas contra el código actual (`EmpresaDriveController.kt`, `OportunidadDriveController.kt`, `DriveMultipartUploader.kt`, `DriveProperties.kt`, `GlobalExceptionHandler.kt`).
 
 - **Creación de carpeta al subir sobre `drive_folder_id: null`:** `POST /empresas/:id/archivos` y `POST /oportunidades/:id/archivos` llaman primero a `asegurarCarpetaDrive`, que crea la carpeta en ese momento si `drive_folder_id` es `null` y la persiste antes de subir el archivo — no devuelve 404. El 404 solo ocurre si la entidad no existe o es ajena al usuario (chequeo de visibilidad corre antes de tocar Drive, por diseño de IDOR). Consecuencia para el cliente: tras esa primera subida, el detalle de la entidad debe refrescarse, porque `drive_folder_id` ya dejó de ser `null` en el servidor.
 - **Unidad del límite de tamaño:** el límite de archivo es `app.drive.max-file-size-bytes`, por defecto **`104_857_600` bytes exactos** (100 × 1024 × 1024 = MiB, no MB decimales — ver `DriveProperties.DEFAULT_MAX_FILE_SIZE_BYTES`). El límite se aplica sobre el stream ya desenmarcado del multipart (`StreamAcotado` envuelve `parte.inputStream`, después de que `commons-fileupload2` separa boundary/headers/CRLFs): el framing nunca cuenta contra el tope. Validar contra `file.size` en el cliente es exacto y no requiere reservar margen.
@@ -2412,13 +2854,13 @@ Tipo de cambio PEN/USD publicado por SUNAT, para el indicador permanente del lay
 
 ---
 
-## 26. Changelog del contrato
+## 28. Changelog del contrato
 
 > Registro de cambios a este contrato desde que la app está en producción (2026-08-18 en adelante — no se reconstruyen entradas retroactivas para lo anterior a esa fecha). **Todo PR que modifique la forma de un request/response, un código de error, la semántica de un campo, o agregue/quite un endpoint documentado aquí, agrega una entrada a esta tabla en el mismo PR.** Sin entrada, el PR no se considera completo aunque el código y los tests pasen.
 
 **Breaking vs non-breaking, para este contrato:**
 - **Breaking** — requiere que el frontend actualice código antes o al mismo tiempo del deploy: quitar o renombrar un campo de un response, cambiar el tipo/formato de un campo existente, cambiar un código de error ya usado, cambiar el status HTTP de un caso ya documentado, quitar un endpoint, agregar un campo *requerido* a un request.
-- **Non-breaking** — el frontend puede ignorarlo hasta que lo adopte: nuevo endpoint, nuevo campo *opcional* en un response, nuevo valor de enum aditivo en un campo que el cliente ya trata con un `default`/`else`, aclaración de comportamiento no observable en la firma (como las notas de §25).
+- **Non-breaking** — el frontend puede ignorarlo hasta que lo adopte: nuevo endpoint, nuevo campo *opcional* en un response, nuevo valor de enum aditivo en un campo que el cliente ya trata con un `default`/`else`, aclaración de comportamiento no observable en la firma (como las notas de §27).
 
 | Fecha | Endpoint(s) | Tipo | Cambio | Acción para frontend |
 |---|---|---|---|---|
@@ -2431,6 +2873,7 @@ Tipo de cambio PEN/USD publicado por SUNAT, para el indicador permanente del lay
 | 2026-09-01 | `GET /tipo-cambio` | Non-breaking | Nuevo endpoint: expone el tipo de cambio PEN/USD vigente. El dato sale de SUNAT, consultado por un job diario (09:30 Lima) que guarda una fila por fecha; si SUNAT no responde ese día, el endpoint sigue devolviendo el último valor guardado (fallback silencioso, sin error). Sin restricción de rol — visible para cualquier usuario autenticado. | Consumirlo para el indicador permanente del layout global. Tolerar `data: null` (HTTP 200) mientras el job no haya poblado la primera fila todavía — por ejemplo justo después del deploy, antes de las 09:30 Lima del día siguiente. |
 | 2026-09-03 | `GET /oportunidades`, `GET /oportunidades/:id`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /oportunidades/:id/items`, `PUT /oportunidades/:id/items/:item_id`, `DELETE /oportunidades/:id/items/:item_id`, `POST /solicitudes` | **Breaking** | Rediseño de oportunidades multi-modelo (V42, `oportunidad_items`): una oportunidad ahora puede vender varios modelos a la vez. (1) `GET/POST/PUT /oportunidades` y `GET /oportunidades/:id`: el response ya NO tiene `id_modelo`, `modelo`, `cantidad`, `precio_unitario`, `dcto` en la raíz — se movieron a `items: [OportunidadItemDto]`, uno por modelo vendido. `monto_total` se queda en la raíz, sigue siendo calculado, ahora como la suma de `monto_item` de todos los ítems. (2) `POST /oportunidades` sigue aceptando `id_modelo`, `cantidad`, `descuento` (renombrado de `dcto`) planos en el body — crea internamente el primer ítem — para no romper el flujo de alta de un solo modelo. (3) `PUT /oportunidades/:id` **ya no acepta** `id_modelo`, `cantidad`, `precio_unitario`/`precio_venta`, `dcto`/`descuento` ni `monto_total`; esos campos se ignoran en silencio si vienen (el DTO no los declara) y el error `400 MONTO_NO_EDITABLE` desaparece del contrato (el guard ya no existe: no hay campo que rechazar). Solo quedan `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado`. (4) Endpoints nuevos para editar ítems: `POST /oportunidades/:id/items` (crea uno más), `PUT /oportunidades/:id/items/:item_id` (edita uno existente — misma regla de "no pisar precio editado a mano" de `reglas_negocio.md §12.2`, ahora aplicada al ítem), `DELETE /oportunidades/:id/items/:item_id` (elimina uno — `409 ULTIMO_ITEM_NO_ELIMINABLE` si es el único ítem que le queda a la oportunidad; una oportunidad no puede quedarse sin ítems). (5) `GET /oportunidades?sort=precio_unitario` deja de ser un valor válido de `sort` — un precio unitario no significa nada con varios modelos por oportunidad; `sort=cantidad` y `sort=monto_total` se mantienen, con el mismo resultado observable de antes. (6) `POST /solicitudes` con `tipo: "descuento"`: `entidad_tipo` ahora debe ser `oportunidad_item` (no `oportunidad`) y `entidad_id` es el `id` del ítem, no de la oportunidad. Roles y visibilidad no cambian: los ítems heredan exactamente el mismo reparto de permisos que hoy tiene editar la oportunidad (ver `matriz_permisos.md §2.4`). | **Dejar de leer `id_modelo`/`modelo`/`cantidad`/`precio_unitario`/`dcto` de la raíz de la oportunidad** y leerlos de `items[]`; para una oportunidad de un solo modelo, `items` sigue teniendo un elemento. **Empezar a usar `POST/PUT/DELETE /oportunidades/:id/items` para agregar, editar o quitar modelos** — `PUT /oportunidades/:id` ya no sirve para eso. Actualizar el formulario de edición de oportunidad para no enviar los campos viejos (se ignoran, no rompen, pero ya no hacen nada). Quitar `precio_unitario` de cualquier selector de orden del listado. Para el flujo de solicitar descuento, enviar `entidad_tipo: "oportunidad_item"` con el `id` del ítem, no de la oportunidad. |
 | 2026-09-04 | `GET /reportes/ventas`, `GET /reportes/pipeline`, `GET /reportes/equipo`, `GET /reportes/descuentos`, `GET /oportunidades` | Non-breaking | La forma del contrato no cambia — ningún campo se agrega, quita ni renombra en ningún DTO. Cambia la **fuente de datos**: estos reportes y el listado de oportunidades dejaron de leer las columnas planas `cantidad`/`precio_unitario`/`dcto`/`monto_total`/`id_modelo` de `oportunidades` (retiradas por V46) y ahora leen `oportunidad_items` directamente. Con los datos de hoy (ninguna oportunidad tiene más de un ítem en producción) los números no cambian. El día que una oportunidad tenga varios ítems, `porModelo` de `GET /reportes/ventas` y los reportes con descuento empezarán a reflejar cada ítem individualmente (por ejemplo, una oportunidad de 2 modelos aparecerá en dos entradas de `porModelo` en vez de una) — es el comportamiento correcto, no una regresión. | Ninguna acción requerida. Solo estar al tanto de que, a futuro, los números granulares de `porModelo`/descuentos pueden reflejar ítems en vez de oportunidades cuando haya oportunidades multi-modelo. |
+| 2026-09-07 | `POST /simulaciones`, `GET /simulaciones`, `GET /simulaciones/:id`, `GET /simulaciones/:id/cronograma`, `PATCH /simulaciones/:id`, `DELETE /simulaciones/:id`, `GET /simulaciones/:id/historial`, `POST /simulaciones/:id/restaurar`, `POST /simulaciones/:id/bifurcar`, `PATCH /simulaciones/:id/principal`, `POST /calculadora`, `GET /oportunidades`, `GET /oportunidades/:id` | Non-breaking | Cierre del módulo de financiamiento propio de Quantum (`reglas_simulaciones.md`). (1) Se documentan los 11 endpoints nuevos: los 10 de `/simulaciones` (§23) — CRUD, cronograma, historial con diff, restaurar, bifurcar ("Guardar como Nueva Simulación") y marcar principal — y `POST /calculadora` (§24), la Calculadora Financiera de estimación rápida sin persistencia. Ya estaban implementados (Planes D y E); esta entrada salda la deuda de contrato. (2) `GET /oportunidades` y `GET /oportunidades/:id` ganan 5 campos opcionales (`reglas_simulaciones.md` §6.2): por ítem, `cuota_quantum` y `cuota_total`; a nivel de oportunidad, `cuota_quantum_total`, `cuota_total` y `cuota_diaria_total`. Los tres campos de nivel oportunidad son `null` conjuntamente si algún ítem no tiene una cuota calculable — no es un error, es "todavía no se puede mostrar la cuota total". (3) Dos valores nuevos, aditivos, en enums existentes: `tipo_notificacion_enum` gana `simulacion_por_expirar` y `entidad_notificacion_enum` gana `simulacion` (aviso 3 días antes de que una simulación huérfana se purgue a los 30 días). | Sin acción requerida salvo adoptar los campos y endpoints nuevos cuando el frontend lo necesite. Los campos de cuota son opcionales y pueden venir `null`; los dos valores de enum son aditivos y se ignoran con un `default`/`else` como cualquier otro. |
 
 ---
 

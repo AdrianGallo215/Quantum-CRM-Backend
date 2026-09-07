@@ -19,4 +19,7 @@ object DefaultsSimulacion {
     val VALOR_RESIDUAL: BigDecimal = BigDecimal.ZERO
     const val DIAS_TRABAJADOS = 22
     val COMISION_ESTRUCTURACION: BigDecimal = BigDecimal("1180")
+
+    /** Dias de retencion de una simulacion huerfana antes del hard delete (§5). */
+    const val DIAS_RETENCION_HUERFANA = 30
 }

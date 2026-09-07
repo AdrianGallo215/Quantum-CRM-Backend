@@ -7,6 +7,9 @@ import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.modelos.dto.ModeloResumen
+import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
+import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadItemService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.domain.simulaciones.dto.ActualizarSimulacionRequest
@@ -15,6 +18,7 @@ import pe.quantum.crm.domain.simulaciones.dto.CrearSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CronogramaDto
 import pe.quantum.crm.domain.simulaciones.dto.EventoHistorialDto
 import pe.quantum.crm.domain.simulaciones.dto.FilaCronogramaDto
+import pe.quantum.crm.domain.simulaciones.dto.ItemParaCuota
 import pe.quantum.crm.domain.simulaciones.dto.ModeloEnSimulacionDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionFiltros
@@ -30,6 +34,7 @@ import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
 import pe.quantum.crm.shared.simulacion.MotorSimulacion
 import pe.quantum.crm.shared.simulacion.ParametrosSimulacion
+import java.math.BigDecimal
 import java.time.LocalDateTime
 
 /**
@@ -50,7 +55,16 @@ import java.time.LocalDateTime
 // parten `crear` por responsabilidad. Mismo precedente que
 // `OportunidadItemServiceImpl`: fundirlos en menos funciones haria a `crear`
 // mas larga y menos legible, no mas simple.
-@Suppress("TooManyFunctions")
+// `LargeClass`: los 2 campos derivados de F2 (D63) cruzaron el umbral de
+// detekt sobre una clase que ya concentraba las 8 operaciones del CRUD mas
+// sus validaciones §13; partirla en varias clases diluiria el punto unico de
+// union (`ensamblar`) que exige D10, mismo criterio que el `@Suppress` ya
+// existente en `SimulacionServiceImplTest`.
+// `LongParameterList`: 7 colaboradores inyectados por constructor (CLAUDE.md
+// regla 8), uno por frontera que este servicio necesita cruzar. El septimo,
+// `NotificacionService`, es el aviso de §5 (F7): agrupar colaboradores en un
+// objeto intermedio solo para bajar la cuenta esconderia esas fronteras.
+@Suppress("TooManyFunctions", "LargeClass", "LongParameterList")
 class SimulacionServiceImpl(
     private val simulacionRepository: SimulacionRepository,
     private val simulacionLogRepository: SimulacionLogRepository,
@@ -58,6 +72,9 @@ class SimulacionServiceImpl(
     private val oportunidadItemService: OportunidadItemService,
     private val modeloService: ModeloService,
     private val empresaService: EmpresaService,
+    // Interfaz publica de otro modulo: legal por CLAUDE.md regla 12, y sin `@Lazy`
+    // porque `notificaciones` no depende de `simulaciones` (no hay ciclo que cortar).
+    private val notificacionService: NotificacionService,
 ) : SimulacionService {
     @Transactional
     override fun crear(
@@ -132,8 +149,8 @@ class SimulacionServiceImpl(
                     updatedBy = usuario.id,
                 ),
             )
-        registrarEvento(simulacion, item, usuario, TipoEventoSimulacion.creada, simulacion.createdAt)
-        return toDto(simulacion, item?.idEmpresa, modelo)
+        registrarEvento(simulacion, item, usuario.id, TipoEventoSimulacion.creada, simulacion.createdAt)
+        return toDto(simulacion, item?.idEmpresa, item?.idOportunidad, modelo)
     }
 
     @Transactional(readOnly = true)
@@ -147,7 +164,7 @@ class SimulacionServiceImpl(
         // IDOR (CLAUDE.md regla 14, D31): ajena -> 404, nunca 403.
         permisos.exigirAlcance(simulacion.createdBy, item?.idVendedor, usuario)
         val modelo = simulacion.idModelo?.let { modeloService.resumen(it) }
-        return toDto(simulacion, item?.idEmpresa, modelo)
+        return toDto(simulacion, item?.idEmpresa, item?.idOportunidad, modelo)
     }
 
     @Transactional(readOnly = true)
@@ -285,8 +302,8 @@ class SimulacionServiceImpl(
                 tipoEvento = TipoEventoSimulacion.enlazada_a_item,
             )
         }
-        registrarEvento(actualizada, item, usuario, TipoEventoSimulacion.editada, actualizada.updatedAt)
-        return toDto(actualizada, item?.idEmpresa, modelo)
+        registrarEvento(actualizada, item, usuario.id, TipoEventoSimulacion.editada, actualizada.updatedAt)
+        return toDto(actualizada, item?.idEmpresa, item?.idOportunidad, modelo)
     }
 
     /**
@@ -307,7 +324,7 @@ class SimulacionServiceImpl(
         // IDOR (CLAUDE.md regla 14, D31): ajena -> 404, nunca 403.
         permisos.exigirAlcance(simulacion.createdBy, item?.idVendedor, usuario)
 
-        registrarEvento(simulacion, item, usuario, TipoEventoSimulacion.eliminada, LocalDateTime.now())
+        registrarEvento(simulacion, item, usuario.id, TipoEventoSimulacion.eliminada, LocalDateTime.now())
         simulacionRepository.delete(simulacion)
     }
 
@@ -451,7 +468,7 @@ class SimulacionServiceImpl(
         // ocurre ahora, no cuando se hizo la edicion que lo dejo asi. Fecharlo
         // con el `updatedAt` viejo insertaria una fila fuera de orden y romperia
         // el diff, que asume orden cronologico (D48 paso 3).
-        registrarEvento(simulacion, item, usuario, TipoEventoSimulacion.editada, LocalDateTime.now())
+        registrarEvento(simulacion, item, usuario.id, TipoEventoSimulacion.editada, LocalDateTime.now())
 
         // El CHECK `chk_simulacion_log_snapshot` exige el snapshot completo para
         // los tres tipos que [versionRestaurable] admite (K15): un nulo aqui
@@ -496,8 +513,8 @@ class SimulacionServiceImpl(
         simulacion.updatedBy = usuario.id
 
         val restaurada = simulacionRepository.save(simulacion)
-        registrarEvento(restaurada, item, usuario, TipoEventoSimulacion.restaurada, restaurada.updatedAt)
-        return toDto(restaurada, item?.idEmpresa, modelo)
+        registrarEvento(restaurada, item, usuario.id, TipoEventoSimulacion.restaurada, restaurada.updatedAt)
+        return toDto(restaurada, item?.idEmpresa, item?.idOportunidad, modelo)
     }
 
     /**
@@ -536,7 +553,7 @@ class SimulacionServiceImpl(
         }
 
         if (simulacion.esPrincipal) {
-            return toDto(simulacion, item?.idEmpresa, modelo)
+            return toDto(simulacion, item?.idEmpresa, item?.idOportunidad, modelo)
         }
 
         // Relevo de la principal (D38): desmarcar la vigente ANTES de marcar
@@ -554,7 +571,7 @@ class SimulacionServiceImpl(
             usuario = usuario,
             tipoEvento = TipoEventoSimulacion.marcada_principal,
         )
-        return toDto(actualizada, item?.idEmpresa, modelo)
+        return toDto(actualizada, item?.idEmpresa, item?.idOportunidad, modelo)
     }
 
     /**
@@ -680,12 +697,111 @@ class SimulacionServiceImpl(
         registrarEvento(
             bifurcada,
             item,
-            usuario,
+            usuario.id,
             TipoEventoSimulacion.creada,
             bifurcada.createdAt,
             idSimulacionOrigen = bifurcada.idSimulacionOrigen,
         )
-        return toDto(bifurcada, item?.idEmpresa, modelo)
+        return toDto(bifurcada, item?.idEmpresa, item?.idOportunidad, modelo)
+    }
+
+    /**
+     * Cuota Quantum por item (§6.2, decision D56 de
+     * plan-13-mapa-cierre-simulaciones.md): la `cuota_final` de su simulacion
+     * principal si la tiene, o el calculo efimero de §6.1 si no (sin persistir
+     * nada).
+     *
+     * SIN chequeo de visibilidad y sin `UsuarioActual` en la firma —no toca
+     * [permisos] en ninguna rama—, igual que
+     * `OportunidadItemService.datosParaSimulacion` en el sentido contrario
+     * (D32): quien llama (`oportunidades`) ya filtro que el usuario alcanza
+     * esas oportunidades. Aplicar aqui la regla de §10 le quitaria la cuota al
+     * `vendedor`, que SI debe verla en su propia oportunidad.
+     *
+     * Una sola consulta para toda la coleccion (D10), nunca una por item: la
+     * alimenta `GET /oportunidades`, donde un N+1 se multiplicaria por cada
+     * item de cada fila de la pagina.
+     *
+     * Un item ausente del mapa es un item cuya cuota no se pudo calcular
+     * (incompleto, o parametros por defecto invalidos para su precio, D55).
+     * Eso NO es un error: es "no hay cuota que mostrar".
+     */
+    @Transactional(readOnly = true)
+    override fun cuotaQuantumPorItems(items: Collection<ItemParaCuota>): Map<Long, BigDecimal> {
+        // Sin items no hay nada que consultar: ni una query de mas.
+        if (items.isEmpty()) return emptyMap()
+
+        val principales =
+            simulacionRepository
+                .findByIdOportunidadItemInAndEsPrincipalTrue(items.map { it.idItem })
+                .associateBy({ requireNotNull(it.idOportunidadItem) }, { it.cuotaFinal })
+
+        return items
+            .mapNotNull { item ->
+                // La principal manda: si existe, su `cuota_final` persistida es
+                // la cuota Quantum del item y no se calcula nada efimero.
+                val cuota = principales[item.idItem] ?: CuotaEfimera.calcular(item.precioVenta, item.descuento)
+                cuota?.let { item.idItem to it }
+            }.toMap()
+    }
+
+    /**
+     * Purga de §5 (decision D60 de plan-13-mapa-cierre-simulaciones.md): hard
+     * delete de las simulaciones que siguen sin item [limite] despues de su
+     * `created_at` — 30 dias, en la corrida real del job.
+     *
+     * El evento `eliminada` con snapshot completo se registra ANTES del
+     * `delete` de cada fila, mismo orden y mismo motivo que [eliminar]: es lo
+     * unico que hace correcto el snapshot por diseño y no por casualidad de que
+     * el objeto Kotlin siga vivo en memoria tras borrar la fila. El log
+     * sobrevive porque `simulacion_log.id_simulacion` no tiene FK (§7, K15).
+     *
+     * `item = null` no es una omision: estas simulaciones son huerfanas por
+     * definicion (`idOportunidadItem == null`), asi que `idOportunidadItem` e
+     * `idOportunidad` del log van en null. El CHECK
+     * `chk_simulacion_log_snapshot` solo exige para `eliminada` el snapshot de
+     * parametros, que [registrarEvento] arma completo.
+     *
+     * `idUsuario = null`: la ejecuta un job programado, sin actor humano
+     * (`created_by` es nullable justamente para esto, KDoc de la columna en
+     * V43). SIN [permisos] por lo mismo — no hay `UsuarioActual` que evaluar;
+     * el unico llamador es el job del propio modulo.
+     *
+     * Una sola transaccion para toda la corrida: el log y el borrado de cada
+     * fila no pueden separarse, o una caida entre ambos dejaria una fila
+     * borrada sin su evento o un evento sin borrado.
+     */
+    @Transactional
+    override fun purgarHuerfanas(limite: LocalDateTime): Int {
+        val huerfanas = simulacionRepository.findByIdOportunidadItemIsNullAndCreatedAtBefore(limite)
+        huerfanas.forEach { simulacion ->
+            registrarEvento(simulacion, null, null, TipoEventoSimulacion.eliminada, LocalDateTime.now())
+            simulacionRepository.delete(simulacion)
+        }
+        return huerfanas.size
+    }
+
+    @Transactional
+    override fun avisarHuerfanasPorExpirar(
+        desde: LocalDateTime,
+        hasta: LocalDateTime,
+    ): Int {
+        val porExpirar = simulacionRepository.findHuerfanasCreadasEntre(desde, hasta)
+        porExpirar.forEach { simulacion ->
+            // Sin evento en `simulacion_log`: avisar no cambia el estado de la
+            // simulacion, y `tipo_evento_simulacion_enum` no tiene un valor para
+            // ello. La bitacora registra lo que le pasa a la fila, no lo que se
+            // le cuenta a su creador.
+            notificacionService.notificar(
+                destinatarios = setOf(simulacion.createdBy),
+                idActor = null,
+                tipo = TipoNotificacion.simulacion_por_expirar,
+                mensaje = MENSAJE_POR_EXPIRAR,
+                entidadTipo = EntidadNotificacion.simulacion,
+                entidadId = requireNotNull(simulacion.id),
+            )
+        }
+        return porExpirar.size
     }
 
     /**
@@ -784,6 +900,12 @@ class SimulacionServiceImpl(
      * llamadores lo dejan en su default `null`, que es lo correcto — su evento
      * no nace de ninguna otra simulacion.
      *
+     * [idUsuario] es `Long?` y no `UsuarioActual` (D60) porque
+     * `simulacion_log.created_by` es nullable justamente para los eventos que
+     * genera un job programado sin actor humano: [purgarHuerfanas] pasa `null`
+     * (§5, KDoc de la columna en V43). Los llamadores con usuario pasan
+     * `usuario.id`.
+     *
      * `LongParameterList`: un parametro por dimension del evento (que fila, que
      * item, quien, que tipo, cuando, de que origen). Son los campos del propio
      * [SimulacionLog], no una firma agrupable sin inventar un DTO intermedio que
@@ -793,7 +915,7 @@ class SimulacionServiceImpl(
     private fun registrarEvento(
         simulacion: Simulacion,
         item: OportunidadItemParaSimulacion?,
-        usuario: UsuarioActual,
+        idUsuario: Long?,
         tipoEvento: TipoEventoSimulacion,
         momento: LocalDateTime,
         idSimulacionOrigen: Long? = null,
@@ -816,7 +938,7 @@ class SimulacionServiceImpl(
                 idOportunidadItem = item?.id,
                 idOportunidad = item?.idOportunidad,
                 createdAt = momento,
-                createdBy = usuario.id,
+                createdBy = idUsuario,
             ),
         )
     }
@@ -916,15 +1038,23 @@ class SimulacionServiceImpl(
 
         return simulaciones.map { simulacion ->
             val modelo = simulacion.idModelo?.let { modelos[it] }
+            // Resuelto ANTES de la rama de nombre (D63): un item enlazado alimenta
+            // `idOportunidad` tanto si el nombre es manual como si es autogenerado.
+            val item = simulacion.idOportunidadItem?.let { items[it] }
             val manual = simulacion.nombre
             if (manual != null) {
-                ensamblar(simulacion, manual, nombreEsManual = true, modelo = modelo)
+                ensamblar(simulacion, manual, nombreEsManual = true, modelo = modelo, idOportunidad = item?.idOportunidad)
             } else {
-                val item = simulacion.idOportunidadItem?.let { items[it] }
                 val razonSocial = item?.let { empresas[it.idEmpresa]?.razonSocial }
                 val correlativo = correlativos[requireNotNull(simulacion.id)] ?: CORRELATIVO_INICIAL
                 val autogenerado = NombreSimulacion.autogenerado(razonSocial, modelo?.codigo, simulacion.modo, correlativo)
-                ensamblar(simulacion, autogenerado, nombreEsManual = false, modelo = modelo)
+                ensamblar(
+                    simulacion,
+                    autogenerado,
+                    nombreEsManual = false,
+                    modelo = modelo,
+                    idOportunidad = item?.idOportunidad,
+                )
             }
         }
     }
@@ -938,13 +1068,14 @@ class SimulacionServiceImpl(
     private fun toDto(
         simulacion: Simulacion,
         idEmpresa: Long?,
+        idOportunidad: Long?,
         modelo: ModeloResumen?,
     ): SimulacionDto {
         // El nombre manual es pegajoso (§8.1): si existe, manda y no se
         // autogenera nada — ni se consulta la empresa ni el correlativo.
         val manual = simulacion.nombre
         if (manual != null) {
-            return ensamblar(simulacion, manual, nombreEsManual = true, modelo = modelo)
+            return ensamblar(simulacion, manual, nombreEsManual = true, modelo = modelo, idOportunidad = idOportunidad)
         }
         val razonSocial = idEmpresa?.let { empresaService.resumenPorIds(listOf(it))[it]?.razonSocial }
         val correlativo =
@@ -953,7 +1084,7 @@ class SimulacionServiceImpl(
                 .firstOrNull()
                 ?.getCorrelativo() ?: CORRELATIVO_INICIAL
         val autogenerado = NombreSimulacion.autogenerado(razonSocial, modelo?.codigo, simulacion.modo, correlativo)
-        return ensamblar(simulacion, autogenerado, nombreEsManual = false, modelo = modelo)
+        return ensamblar(simulacion, autogenerado, nombreEsManual = false, modelo = modelo, idOportunidad = idOportunidad)
     }
 
     /**
@@ -968,6 +1099,7 @@ class SimulacionServiceImpl(
         nombre: String,
         nombreEsManual: Boolean,
         modelo: ModeloResumen?,
+        idOportunidad: Long?,
     ): SimulacionDto =
         SimulacionDto(
             id = requireNotNull(simulacion.id),
@@ -975,6 +1107,7 @@ class SimulacionServiceImpl(
             nombreEsManual = nombreEsManual,
             modo = simulacion.modo.name,
             idOportunidadItem = simulacion.idOportunidadItem,
+            idOportunidad = idOportunidad,
             idModelo = simulacion.idModelo,
             modelo = modelo?.let { ModeloEnSimulacionDto(id = it.id, codigo = it.codigo) },
             idSimulacionOrigen = simulacion.idSimulacionOrigen,
@@ -990,6 +1123,16 @@ class SimulacionServiceImpl(
             esPrincipal = simulacion.esPrincipal,
             createdAt = simulacion.createdAt.comoInstanteUtc(),
             updatedAt = simulacion.updatedAt.comoInstanteUtc(),
+            // §5: solo existe para una simulacion huerfana (sin item). Enlazarla
+            // la salva de forma definitiva.
+            eliminacionPrevistaEl =
+                if (simulacion.idOportunidadItem != null) {
+                    null
+                } else {
+                    simulacion.createdAt
+                        .plusDays(DefaultsSimulacion.DIAS_RETENCION_HUERFANA.toLong())
+                        .comoInstanteUtc()
+                },
         )
 
     private companion object {
@@ -1000,6 +1143,14 @@ class SimulacionServiceImpl(
          * dato critico.
          */
         const val CORRELATIVO_INICIAL = 1
+
+        /**
+         * Aviso de §5, con el plazo escrito en el texto: son los 3 dias de
+         * preaviso que la ventana `(desde, hasta]` del job materializa. Mismo
+         * tono que los recordatorios de `notificaciones` ("Recordatorio: ...").
+         */
+        const val MENSAJE_POR_EXPIRAR =
+            "Recordatorio: tu simulación se eliminará en 3 días si no la enlazas a una oportunidad"
 
         /** Ventana de restauracion de §7.2: 7 dias. El limite de 15 versiones lo aplica la query del historial. */
         const val DIAS_VENTANA_RESTAURACION = 7L

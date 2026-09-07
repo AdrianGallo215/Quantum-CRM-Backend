@@ -25,6 +25,7 @@ import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoCartera
@@ -51,6 +52,8 @@ class OportunidadServiceImplTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -68,6 +71,7 @@ class OportunidadServiceImplTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     init {
@@ -76,6 +80,7 @@ class OportunidadServiceImplTest {
         every { empresaService.asegurarCarpetaDrive(any()) } returns "carpeta-empresa"
         every { oportunidadItemService.crear(any(), any(), any()) } returns itemDtoNeutro()
         every { oportunidadItemService.porOportunidades(any()) } returns emptyMap()
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
     }
 
@@ -94,6 +99,8 @@ class OportunidadServiceImplTest {
             precioVenta = "100.00",
             descuento = "0.00",
             cuotaFinanciadora = "0.00",
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = "100.00",
         )
 
@@ -241,6 +248,7 @@ class OportunidadServiceImplTest {
                 OportunidadVisibilidad(tareaService),
                 oportunidadItemService,
                 listadoDao,
+                simulacionService,
             )
         val entidad = oportunidad(idVendedor = 1)
         every { oportunidadRepository.findByIdBloqueando(100) } returns entidad

@@ -59,6 +59,7 @@ class SimulacionControllerWebMvcTest {
             nombreEsManual = false,
             modo = "leasing",
             idOportunidadItem = 3,
+            idOportunidad = 33,
             idModelo = 7,
             modelo = null,
             idSimulacionOrigen = null,
@@ -74,6 +75,8 @@ class SimulacionControllerWebMvcTest {
             esPrincipal = true,
             createdAt = Instant.now(),
             updatedAt = Instant.now(),
+            // idOportunidadItem = 3 (enlazada): §5 exige eliminacionPrevistaEl null en ese caso.
+            eliminacionPrevistaEl = null,
         )
 
     private val bodyCreacionValido =

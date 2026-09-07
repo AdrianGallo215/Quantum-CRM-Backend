@@ -17,6 +17,7 @@ import pe.quantum.crm.domain.financiadoras.FinanciadoraService
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -53,6 +54,8 @@ class OportunidadCambiarEstadoInvariantesTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -70,6 +73,7 @@ class OportunidadCambiarEstadoInvariantesTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     private fun oportunidad(

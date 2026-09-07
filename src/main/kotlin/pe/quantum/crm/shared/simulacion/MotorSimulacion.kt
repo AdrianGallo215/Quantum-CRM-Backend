@@ -11,8 +11,13 @@ import java.math.RoundingMode
  * sin dependencias de Spring, BD ni framework (reglas_simulaciones.md §3.1).
  *
  * Vive en `shared` y no en `domain/simulaciones` a proposito: lo consumen dos
- * flujos —el modulo que persiste y la Calculadora Financiera, que no persiste
- * nada (§9)— y `oportunidades` lo necesita para la cuota efimera de §6.1.
+ * flujos dentro de ese modulo —el que persiste y la Calculadora Financiera,
+ * que no persiste nada (§9). `oportunidades` NO lo invoca directamente: la
+ * cuota efimera de §6.1 la resuelve `CuotaEfimera` (domain/simulaciones), y
+ * `oportunidades` solo consume el resultado ya calculado via la interfaz
+ * `SimulacionService.cuotaQuantumPorItems` (K34/D56 de
+ * plan-13-mapa-cierre-simulaciones.md: `oportunidades` no puede cruzar hacia
+ * ningun `object` interno de `simulaciones`, y el motor es uno de ellos).
  * Ver docs/planes/plan-00-mapa-simulaciones.md, decision D1.
  *
  * Toda la aritmetica interna del cronograma se arrastra SIN redondear con

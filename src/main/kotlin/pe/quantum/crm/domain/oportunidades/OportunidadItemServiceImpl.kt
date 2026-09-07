@@ -7,6 +7,7 @@ import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemVinculo
@@ -152,6 +153,27 @@ class OportunidadItemServiceImpl(
     }
 
     @Transactional(readOnly = true)
+    override fun datosCrudosPorOportunidades(idsOportunidad: Collection<Long>): Map<Long, OportunidadItemDatos> {
+        if (idsOportunidad.isEmpty()) {
+            return emptyMap()
+        }
+        return itemRepository
+            .findByIdOportunidadInOrderByIdAsc(idsOportunidad)
+            .associate { item ->
+                val id = requireNotNull(item.id)
+                id to
+                    OportunidadItemDatos(
+                        id = id,
+                        idOportunidad = item.idOportunidad,
+                        cantidad = item.cantidad,
+                        precioVenta = item.precioVenta,
+                        descuento = item.descuento,
+                        cuotaFinanciadora = item.cuotaFinanciadora,
+                    )
+            }
+    }
+
+    @Transactional(readOnly = true)
     override fun montoTotalPorOportunidades(idsOportunidad: Collection<Long>): Map<Long, BigDecimal> {
         if (idsOportunidad.isEmpty()) {
             return emptyMap()
@@ -290,6 +312,11 @@ class OportunidadItemServiceImpl(
             precioVenta = precioVenta?.toPlainString(),
             descuento = descuento?.toPlainString(),
             cuotaFinanciadora = cuotaFinanciadora.toPlainString(),
+            // §6.2 se resuelve en `OportunidadServiceImpl.toDtos`, que es quien habla
+            // con `simulaciones` por lotes para toda la pagina: aqui no hay a quien
+            // preguntarle la cuota sin abrir un N+1, y el CRUD del item no la necesita.
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = MontoTotal.calcular(cantidad, precioVenta, descuento)?.toPlainString(),
             advertencias = advertencias,
         )

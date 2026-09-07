@@ -23,6 +23,7 @@ import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -54,6 +55,8 @@ class OportunidadCrearTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -71,6 +74,7 @@ class OportunidadCrearTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     private val busX = ModeloResumen(id = 1, codigo = "BUS-X", precioBase = BigDecimal("92000.00"))
@@ -115,6 +119,7 @@ class OportunidadCrearTest {
         // en OportunidadItemService (B6), y `toDtos` lee de el los items y el total.
         every { oportunidadItemService.crear(any(), any(), any()) } returns itemDto()
         every { oportunidadItemService.porOportunidades(any()) } returns mapOf(100L to listOf(itemDto()))
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
     }
 
@@ -127,6 +132,8 @@ class OportunidadCrearTest {
             precioVenta = "92000.00",
             descuento = "3.00",
             cuotaFinanciadora = "0.00",
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = "713920.00",
         )
 
@@ -172,6 +179,7 @@ class OportunidadCrearTest {
         // 8 x 92000.00 x (1 - 3/100) = 713920.00. La formula y el precio base del
         // modelo son ahora del item (ver OportunidadItemServiceImplTest); aqui se
         // fija que el total del DTO sale de el y no de la columna plana (D15/D21).
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L)) } returns
             mapOf(100L to BigDecimal("713920.00"))
 

@@ -21,7 +21,9 @@ import pe.quantum.crm.domain.modelos.dto.ModeloResumen
 import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -53,6 +55,8 @@ class OportunidadLecturasTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -70,6 +74,7 @@ class OportunidadLecturasTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -99,6 +104,8 @@ class OportunidadLecturasTest {
             precioVenta = "100.00",
             descuento = "0.00",
             cuotaFinanciadora = "0.00",
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = "200.00",
         )
 
@@ -118,6 +125,7 @@ class OportunidadLecturasTest {
         // Modelo y monto ya no salen de la oportunidad: los aporta OportunidadItemService (B8).
         every { oportunidadItemService.porOportunidades(listOf(100L, 101L)) } returns
             mapOf(100L to listOf(itemDto()), 101L to listOf(itemDto()))
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L, 101L)) } returns
             mapOf(100L to BigDecimal("200.00"), 101L to BigDecimal("200.00"))
         every { consultas.tareasPendientesPorOportunidad(listOf(100L, 101L)) } returns mapOf(100L to 3)
@@ -153,6 +161,204 @@ class OportunidadLecturasTest {
         assertThat(paginado.items).isEmpty()
         assertThat(paginado.meta.total).isZero()
         verify(exactly = 0) { consultas.tareasPendientesPorOportunidad(any()) }
+    }
+
+    // ── §6.2: cuota Quantum, cuota total y cuota diaria (D62) ──
+
+    private fun itemDtoCuota(datos: OportunidadItemDatos) =
+        itemDto().copy(
+            id = datos.id,
+            cantidad = datos.cantidad,
+            cuotaFinanciadora = datos.cuotaFinanciadora.toPlainString(),
+        )
+
+    private fun itemDatos(
+        id: Long,
+        idOportunidad: Long,
+        cantidad: Int?,
+        cuotaFinanciadora: String,
+    ) = OportunidadItemDatos(
+        id = id,
+        idOportunidad = idOportunidad,
+        cantidad = cantidad,
+        precioVenta = BigDecimal("100.00"),
+        descuento = BigDecimal.ZERO,
+        cuotaFinanciadora = BigDecimal(cuotaFinanciadora),
+    )
+
+    /**
+     * Una pagina de listado con los items dados y todos los catalogos ya
+     * resueltos: los tests de §6.2 solo declaran que items hay y que cuota
+     * Quantum devuelve `simulaciones` para cada uno.
+     */
+    private fun stubPagina(
+        ids: List<Long>,
+        items: List<OportunidadItemDatos>,
+        cuotas: Map<Long, BigDecimal>,
+    ) {
+        every { oportunidadRepository.findAll(any<Specification<Oportunidad>>(), any<PageRequest>()) } returns
+            PageImpl(ids.map { oportunidad(id = it) }, PageRequest.of(0, 20), ids.size.toLong())
+        every { empresaService.resumenPorIds(any()) } returns emptyMap()
+        every { empleadoService.resumenPorIds(any()) } returns emptyMap()
+        every { financiadoraService.porIds(any()) } returns emptyMap()
+        every { oportunidadItemService.porOportunidades(ids) } returns
+            items.groupBy { it.idOportunidad }.mapValues { (_, deLaOportunidad) -> deLaOportunidad.map(::itemDtoCuota) }
+        every { oportunidadItemService.datosCrudosPorOportunidades(ids) } returns items.associateBy { it.id }
+        every { oportunidadItemService.montoTotalPorOportunidades(ids) } returns emptyMap()
+        every { simulacionService.cuotaQuantumPorItems(any()) } returns cuotas
+        every { consultas.tareasPendientesPorOportunidad(ids) } returns emptyMap()
+        every { consultas.eventosPendientesPorOportunidad(ids) } returns emptyMap()
+    }
+
+    private fun listarPagina() = service.listar(OportunidadFiltros(), admin, page = null, perPage = null, sort = null, dir = null)
+
+    @Test
+    fun `el item con cuota resuelta expone cuotaTotal igual a cuotaQuantum mas cuotaFinanciadora`() {
+        // 1000 (cuota Quantum) + 500 (cuota financiadora del item) = 1500.
+        stubPagina(
+            ids = listOf(100L),
+            items = listOf(itemDatos(id = 500, idOportunidad = 100, cantidad = 2, cuotaFinanciadora = "500.00")),
+            cuotas = mapOf(500L to BigDecimal("1000.00")),
+        )
+
+        val item = listarPagina().items.single().items.single()
+
+        assertThat(item.cuotaQuantum).isEqualTo("1000.00")
+        assertThat(item.cuotaTotal).isEqualTo("1500.00")
+    }
+
+    /**
+     * D62: basta con que UN item no aporte su cuota para que la oportunidad no
+     * publique NINGUNO de los tres totales, aunque el resto de items si la tengan.
+     * Una cuota parcial se lee como "esto es lo que paga al mes" y subestimaria
+     * el pago en silencio.
+     */
+    @Test
+    fun `un item sin cuota calculable deja sus dos campos y los TRES totales en null`() {
+        stubPagina(
+            ids = listOf(100L),
+            items =
+                listOf(
+                    itemDatos(id = 500, idOportunidad = 100, cantidad = 2, cuotaFinanciadora = "500.00"),
+                    itemDatos(id = 501, idOportunidad = 100, cantidad = 1, cuotaFinanciadora = "937.50"),
+                ),
+            // El 501 no esta en el mapa: `simulaciones` no pudo calcular su cuota (D55).
+            cuotas = mapOf(500L to BigDecimal("1000.00")),
+        )
+
+        val dto = listarPagina().items.single()
+
+        assertThat(dto.items.single { it.id == 501L }.cuotaQuantum).isNull()
+        assertThat(dto.items.single { it.id == 501L }.cuotaTotal).isNull()
+        // El otro item SI tiene la suya y aun asi los totales no se publican.
+        assertThat(dto.items.single { it.id == 500L }.cuotaQuantum).isEqualTo("1000.00")
+        assertThat(dto.cuotaQuantumTotal).isNull()
+        assertThat(dto.cuotaTotal).isNull()
+        assertThat(dto.cuotaDiariaTotal).isNull()
+    }
+
+    @Test
+    fun `un item sin cantidad deja los TRES totales en null aunque tenga cuota`() {
+        stubPagina(
+            ids = listOf(100L),
+            items =
+                listOf(
+                    itemDatos(id = 500, idOportunidad = 100, cantidad = 2, cuotaFinanciadora = "500.00"),
+                    itemDatos(id = 501, idOportunidad = 100, cantidad = null, cuotaFinanciadora = "937.50"),
+                ),
+            cuotas = mapOf(500L to BigDecimal("1000.00"), 501L to BigDecimal("2000.00")),
+        )
+
+        val dto = listarPagina().items.single()
+
+        // El item incompleto conserva su cuota: lo que no se puede es agregarla.
+        assertThat(dto.items.single { it.id == 501L }.cuotaQuantum).isEqualTo("2000.00")
+        assertThat(dto.cuotaQuantumTotal).isNull()
+        assertThat(dto.cuotaTotal).isNull()
+        assertThat(dto.cuotaDiariaTotal).isNull()
+    }
+
+    /**
+     * Aritmetica de §6.2 verificada a mano:
+     *
+     *   item A: cuotaQuantum 1000, cuotaFinanciadora  500.00, cantidad 2
+     *   item B: cuotaQuantum 2000, cuotaFinanciadora  937.50, cantidad 1
+     *
+     *   cuotaQuantumTotal = 1000 x 2 + 2000 x 1                  = 4000.00
+     *   cuotaTotal        = (1000+500) x 2 + (2000+937.50) x 1
+     *                     = 3000.00 + 2937.50                    = 5937.50
+     *   cuotaDiariaTotal  = 5937.50 / 22 = 269.886363...         = 269.89 (HALF_UP)
+     */
+    @Test
+    fun `dos items con cuota y cantidad multiplican por cantidad y suman`() {
+        stubPagina(
+            ids = listOf(100L),
+            items =
+                listOf(
+                    itemDatos(id = 500, idOportunidad = 100, cantidad = 2, cuotaFinanciadora = "500.00"),
+                    itemDatos(id = 501, idOportunidad = 100, cantidad = 1, cuotaFinanciadora = "937.50"),
+                ),
+            cuotas = mapOf(500L to BigDecimal("1000.00"), 501L to BigDecimal("2000.00")),
+        )
+
+        val dto = listarPagina().items.single()
+
+        assertThat(dto.items.single { it.id == 500L }.cuotaTotal).isEqualTo("1500.00")
+        assertThat(dto.items.single { it.id == 501L }.cuotaTotal).isEqualTo("2937.50")
+        assertThat(dto.cuotaQuantumTotal).isEqualTo("4000.00")
+        assertThat(dto.cuotaTotal).isEqualTo("5937.50")
+    }
+
+    /** El divisor es la constante 22 de `SimulacionService`, no el de ninguna simulacion (D62). */
+    @Test
+    fun `cuotaDiariaTotal es cuotaTotal dividido entre los 22 dias trabajados`() {
+        stubPagina(
+            ids = listOf(100L),
+            items =
+                listOf(
+                    itemDatos(id = 500, idOportunidad = 100, cantidad = 2, cuotaFinanciadora = "500.00"),
+                    itemDatos(id = 501, idOportunidad = 100, cantidad = 1, cuotaFinanciadora = "937.50"),
+                ),
+            cuotas = mapOf(500L to BigDecimal("1000.00"), 501L to BigDecimal("2000.00")),
+        )
+
+        val dto = listarPagina().items.single()
+
+        assertThat(SimulacionService.DIAS_TRABAJADOS_POR_DEFECTO).isEqualTo(22)
+        // cuotaTotal 5937.50 / 22 = 269.886363... -> 269.89
+        assertThat(dto.cuotaDiariaTotal).isEqualTo("269.89")
+    }
+
+    /** Nunca una llamada por oportunidad ni por item: una sola para toda la pagina (D56). */
+    @Test
+    fun `cuotaQuantumPorItems se llama una sola vez para toda la pagina`() {
+        stubPagina(
+            ids = listOf(100L, 101L),
+            items =
+                listOf(
+                    itemDatos(id = 500, idOportunidad = 100, cantidad = 2, cuotaFinanciadora = "500.00"),
+                    itemDatos(id = 501, idOportunidad = 100, cantidad = 1, cuotaFinanciadora = "937.50"),
+                    itemDatos(id = 600, idOportunidad = 101, cantidad = 3, cuotaFinanciadora = "500.00"),
+                    itemDatos(id = 601, idOportunidad = 101, cantidad = 1, cuotaFinanciadora = "937.50"),
+                ),
+            cuotas =
+                mapOf(
+                    500L to BigDecimal("1000.00"),
+                    501L to BigDecimal("2000.00"),
+                    600L to BigDecimal("1000.00"),
+                    601L to BigDecimal("2000.00"),
+                ),
+        )
+
+        assertThat(listarPagina().items).hasSize(2)
+
+        verify(exactly = 1) { simulacionService.cuotaQuantumPorItems(any()) }
+        // Y esa unica llamada llevo los cuatro items de las dos oportunidades.
+        verify(exactly = 1) {
+            simulacionService.cuotaQuantumPorItems(
+                match { enviados -> enviados.map { it.idItem }.toSet() == setOf(500L, 501L, 600L, 601L) },
+            )
+        }
     }
 
     // ── GET /oportunidades/:id/log ────────────────────────────

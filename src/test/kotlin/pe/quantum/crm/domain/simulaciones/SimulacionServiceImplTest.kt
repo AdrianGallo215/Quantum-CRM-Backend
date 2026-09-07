@@ -17,12 +17,16 @@ import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.empresas.dto.EmpresaResumen
 import pe.quantum.crm.domain.modelos.ModeloService
 import pe.quantum.crm.domain.modelos.dto.ModeloResumen
+import pe.quantum.crm.domain.notificaciones.EntidadNotificacion
+import pe.quantum.crm.domain.notificaciones.NotificacionService
+import pe.quantum.crm.domain.notificaciones.TipoNotificacion
 import pe.quantum.crm.domain.oportunidades.OportunidadItemService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.domain.simulaciones.dto.ActualizarSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.BifurcarSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CrearSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionFiltros
+import pe.quantum.crm.shared.comoInstanteUtc
 import pe.quantum.crm.shared.enums.ModoSimulacion
 import pe.quantum.crm.shared.enums.TipoEventoSimulacion
 import pe.quantum.crm.shared.exception.ConflictoException
@@ -54,6 +58,7 @@ class SimulacionServiceImplTest {
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val modeloService = mockk<ModeloService>()
     private val empresaService = mockk<EmpresaService>()
+    private val notificacionService = mockk<NotificacionService>()
     private val service =
         SimulacionServiceImpl(
             simulacionRepository,
@@ -62,6 +67,7 @@ class SimulacionServiceImplTest {
             oportunidadItemService,
             modeloService,
             empresaService,
+            notificacionService,
         )
 
     private val admin = UsuarioActual(id = 5, rol = "admin")
@@ -1790,6 +1796,255 @@ class SimulacionServiceImplTest {
 
         verify(exactly = 0) { simulacionRepository.save(any()) }
         verify(exactly = 0) { simulacionRepository.desmarcarPrincipalDe(any()) }
+        verify(exactly = 0) { simulacionLogRepository.save(any()) }
+    }
+
+    // ========================================================================
+    // F2 — idOportunidad y eliminacionPrevistaEl en SimulacionDto (D63, §5/§8.2)
+    // ========================================================================
+
+    @Test
+    fun `detalle de una simulacion con item devuelve idOportunidad del item y eliminacionPrevistaEl null`() {
+        val conItem =
+            simulacionPersistida(
+                id = ID_SIMULACION,
+                createdBy = admin.id,
+                idOportunidadItem = ID_ITEM,
+                nombre = "Nombre Original",
+            )
+        every { simulacionRepository.findById(ID_SIMULACION) } returns Optional.of(conItem)
+        stubItem()
+
+        val dto = service.detalle(ID_SIMULACION, admin)
+
+        assertThat(dto.idOportunidad).isEqualTo(ID_OPORTUNIDAD)
+        assertThat(dto.eliminacionPrevistaEl).isNull()
+    }
+
+    @Test
+    fun `detalle de una simulacion sin item devuelve idOportunidad null y eliminacionPrevistaEl en createdAt mas 30 dias`() {
+        val sinItem = simulacionPersistida(id = ID_SIMULACION, createdBy = admin.id, nombre = "Nombre Original")
+        every { simulacionRepository.findById(ID_SIMULACION) } returns Optional.of(sinItem)
+
+        val dto = service.detalle(ID_SIMULACION, admin)
+
+        assertThat(dto.idOportunidad).isNull()
+        // Contra el createdAt que sembro el fixture, NUNCA contra now(): el mismo
+        // helper comoInstanteUtc() que usa SimulacionServiceImpl.ensamblar.
+        assertThat(dto.eliminacionPrevistaEl)
+            .isEqualTo(
+                sinItem.createdAt
+                    .plusDays(DefaultsSimulacion.DIAS_RETENCION_HUERFANA.toLong())
+                    .comoInstanteUtc(),
+            )
+    }
+
+    @Test
+    fun `listar resuelve idOportunidad y eliminacionPrevistaEl igual que detalle para una pagina con ambos casos`() {
+        val conItem =
+            simulacionPersistida(
+                id = 901L,
+                createdBy = admin.id,
+                idOportunidadItem = ID_ITEM,
+                nombre = "Nombre Original",
+            )
+        val sinItem = simulacionPersistida(id = 902L, createdBy = admin.id, nombre = "Otra simulacion")
+        every { simulacionRepository.findAll(any<Specification<Simulacion>>(), any<PageRequest>()) } returns
+            PageImpl(listOf(conItem, sinItem), PageRequest.of(0, 20), 2)
+        stubItem()
+        // toDtos resuelve empresas de TODOS los items de la pagina antes de
+        // ramificar por nombre manual/autogenerado (D10); con ambos nombres
+        // manuales aqui no se usa, pero mockk exige el stub igual.
+        every { empresaService.resumenPorIds(any()) } returns
+            mapOf(ID_EMPRESA to EmpresaResumen(id = ID_EMPRESA, razonSocial = "Transportes Lima SAC", distrito = null))
+
+        val resultado = service.listar(SimulacionFiltros(), gerencia, null, null, null, null)
+
+        val dtoConItem = resultado.items.single { it.id == 901L }
+        val dtoSinItem = resultado.items.single { it.id == 902L }
+        assertThat(dtoConItem.idOportunidad).isEqualTo(ID_OPORTUNIDAD)
+        assertThat(dtoConItem.eliminacionPrevistaEl).isNull()
+        assertThat(dtoSinItem.idOportunidad).isNull()
+        assertThat(dtoSinItem.eliminacionPrevistaEl)
+            .isEqualTo(
+                sinItem.createdAt
+                    .plusDays(DefaultsSimulacion.DIAS_RETENCION_HUERFANA.toLong())
+                    .comoInstanteUtc(),
+            )
+    }
+
+    // ========================================================================
+    // F6 — purgarHuerfanas (§5 de reglas_simulaciones.md, decision D60)
+    // ========================================================================
+
+    /**
+     * La purga borra varias filas en una sola corrida y cada una registra su
+     * evento: un `slot` unico solo conservaria el ultimo. Se acumulan en una
+     * lista, mismo criterio que [logsE5].
+     */
+    private val logsPurga = mutableListOf<SimulacionLog>()
+
+    /** El corte de 30 dias que le pasa el job (F7); aqui solo tiene que ser el mismo valor que el stub. */
+    private val limitePurga = LocalDateTime.now().minusDays(DefaultsSimulacion.DIAS_RETENCION_HUERFANA.toLong())
+
+    private fun stubPurga(huerfanas: List<Simulacion>) {
+        every { simulacionRepository.findByIdOportunidadItemIsNullAndCreatedAtBefore(limitePurga) } returns huerfanas
+        every { simulacionLogRepository.save(capture(logsPurga)) } answers { logsPurga.last() }
+        // `any<Simulacion>()` explicito: `SimulacionRepository` hereda tambien
+        // `JpaSpecificationExecutor.delete(Specification)`, y sin el tipo las dos
+        // sobrecargas son ambiguas.
+        every { simulacionRepository.delete(any<Simulacion>()) } just Runs
+    }
+
+    @Test
+    fun `purgarHuerfanas registra un evento eliminada por cada huerfana, las borra todas y devuelve cuantas`() {
+        val primera = simulacionPersistida(id = 901L, createdBy = admin.id)
+        val segunda = simulacionPersistida(id = 902L, createdBy = ID_VENDEDOR)
+        stubPurga(listOf(primera, segunda))
+
+        val eliminadas = service.purgarHuerfanas(limitePurga)
+
+        assertThat(eliminadas).isEqualTo(2)
+        verify(exactly = 2) { simulacionLogRepository.save(any()) }
+        assertThat(logsPurga.map { it.idSimulacion }).containsExactly(901L, 902L)
+        assertThat(logsPurga.map { it.tipoEvento })
+            .containsExactly(TipoEventoSimulacion.eliminada, TipoEventoSimulacion.eliminada)
+        verify(exactly = 1) { simulacionRepository.delete(primera) }
+        verify(exactly = 1) { simulacionRepository.delete(segunda) }
+    }
+
+    @Test
+    fun `purgarHuerfanas registra el evento eliminada ANTES del hard delete de esa misma simulacion`() {
+        val huerfana = simulacionPersistida(id = 901L, createdBy = admin.id)
+        stubPurga(listOf(huerfana))
+
+        service.purgarHuerfanas(limitePurga)
+
+        // El unico orden que hace correcto el snapshot por diseño y no por
+        // casualidad de que el objeto Kotlin siga vivo tras borrar la fila (§5).
+        verifyOrder {
+            simulacionLogRepository.save(any())
+            simulacionRepository.delete(huerfana)
+        }
+    }
+
+    @Test
+    fun `el evento eliminada de la purga lleva el snapshot completo del CHECK y created_by en null`() {
+        val huerfana = simulacionPersistida(id = 901L, createdBy = admin.id)
+        stubPurga(listOf(huerfana))
+
+        service.purgarHuerfanas(limitePurga)
+
+        val log = logsPurga.single()
+        assertThat(log.tipoEvento).isEqualTo(TipoEventoSimulacion.eliminada)
+        assertThat(log.idSimulacion).isEqualTo(901L)
+        // Los 7 campos que `chk_simulacion_log_snapshot` exige para `eliminada` (K15).
+        assertThat(log.modo).isNotNull()
+        assertThat(log.precioVenta).isNotNull()
+        assertThat(log.cuotaInicial).isNotNull()
+        assertThat(log.plazoMeses).isNotNull()
+        assertThat(log.tea).isNotNull()
+        assertThat(log.valorResidual).isNotNull()
+        assertThat(log.cuotaFinal).isNotNull()
+        // Lo ejecuta un job programado, sin actor humano: `created_by` es
+        // nullable justamente para esto (D60, KDoc de la columna en V43).
+        assertThat(log.createdBy).isNull()
+        // Huerfana por definicion: sin item, y por tanto sin oportunidad.
+        assertThat(log.idOportunidadItem).isNull()
+        assertThat(log.idOportunidad).isNull()
+    }
+
+    @Test
+    fun `sin huerfanas la purga devuelve 0 y no registra ni borra nada`() {
+        stubPurga(emptyList())
+
+        assertThat(service.purgarHuerfanas(limitePurga)).isZero()
+
+        verify(exactly = 0) { simulacionLogRepository.save(any()) }
+        verify(exactly = 0) { simulacionRepository.delete(any<Simulacion>()) }
+    }
+
+    // ========================================================================
+    // F7 — avisarHuerfanasPorExpirar (§5 de reglas_simulaciones.md, decision D58)
+    // ========================================================================
+
+    /** La ventana `(desde, hasta]` que le pasa el job: aqui solo tiene que ser la misma que el stub. */
+    private val desdeAviso = LocalDateTime.now().minusDays(28)
+    private val hastaAviso = LocalDateTime.now().minusDays(27)
+
+    private fun stubAviso(porExpirar: List<Simulacion>) {
+        every { simulacionRepository.findHuerfanasCreadasEntre(desdeAviso, hastaAviso) } returns porExpirar
+        every {
+            notificacionService.notificar(any(), any(), any(), any(), any(), any())
+        } just Runs
+    }
+
+    @Test
+    fun `avisarHuerfanasPorExpirar notifica una vez por simulacion, a su creador y sin actor`() {
+        val primera = simulacionPersistida(id = 901L, createdBy = admin.id)
+        val segunda = simulacionPersistida(id = 902L, createdBy = ID_VENDEDOR)
+        stubAviso(listOf(primera, segunda))
+
+        val avisadas = service.avisarHuerfanasPorExpirar(desdeAviso, hastaAviso)
+
+        assertThat(avisadas).isEqualTo(2)
+        verify(exactly = 2) { notificacionService.notificar(any(), any(), any(), any(), any(), any()) }
+        // `idActor = null`: lo dispara un job, no una persona, y `notificar`
+        // excluye al actor del set — con un actor no nulo el creador podria
+        // quedarse sin su propio aviso.
+        verify(exactly = 1) {
+            notificacionService.notificar(
+                destinatarios = setOf(admin.id),
+                idActor = null,
+                tipo = TipoNotificacion.simulacion_por_expirar,
+                mensaje = any(),
+                entidadTipo = EntidadNotificacion.simulacion,
+                entidadId = 901L,
+            )
+        }
+        verify(exactly = 1) {
+            notificacionService.notificar(
+                destinatarios = setOf(ID_VENDEDOR),
+                idActor = null,
+                tipo = TipoNotificacion.simulacion_por_expirar,
+                mensaje = any(),
+                entidadTipo = EntidadNotificacion.simulacion,
+                entidadId = 902L,
+            )
+        }
+    }
+
+    @Test
+    fun `el mensaje del aviso dice cuantos dias faltan y como evitar el borrado`() {
+        stubAviso(listOf(simulacionPersistida(id = 901L, createdBy = admin.id)))
+        val mensaje = slot<String>()
+        every {
+            notificacionService.notificar(any(), any(), any(), capture(mensaje), any(), any())
+        } just Runs
+
+        service.avisarHuerfanasPorExpirar(desdeAviso, hastaAviso)
+
+        assertThat(mensaje.captured).contains("3 días")
+        assertThat(mensaje.captured).contains("oportunidad")
+    }
+
+    @Test
+    fun `sin simulaciones en la ventana el aviso devuelve 0 y no notifica`() {
+        stubAviso(emptyList())
+
+        assertThat(service.avisarHuerfanasPorExpirar(desdeAviso, hastaAviso)).isZero()
+
+        verify(exactly = 0) { notificacionService.notificar(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `avisar no registra ningun evento en simulacion_log`() {
+        stubAviso(listOf(simulacionPersistida(id = 901L, createdBy = admin.id)))
+
+        service.avisarHuerfanasPorExpirar(desdeAviso, hastaAviso)
+
+        // Avisar no es un cambio de estado de la simulacion, y
+        // `tipo_evento_simulacion_enum` no tiene un valor para ello (F7).
         verify(exactly = 0) { simulacionLogRepository.save(any()) }
     }
 }

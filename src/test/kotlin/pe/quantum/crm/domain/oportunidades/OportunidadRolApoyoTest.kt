@@ -20,6 +20,7 @@ import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.CambiarEstadoRequest
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadFiltros
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -45,6 +46,8 @@ class OportunidadRolApoyoTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -62,12 +65,14 @@ class OportunidadRolApoyoTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     init {
         // `toDtos()` pide items y monto al OportunidadItemService (B8); estos
         // escenarios solo verifican visibilidad por rol, no los items.
         every { oportunidadItemService.porOportunidades(any()) } returns emptyMap()
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(any()) } returns emptyMap()
     }
 

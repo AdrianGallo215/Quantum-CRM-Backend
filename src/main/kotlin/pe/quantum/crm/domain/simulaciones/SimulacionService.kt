@@ -5,17 +5,26 @@ import pe.quantum.crm.domain.simulaciones.dto.BifurcarSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CrearSimulacionRequest
 import pe.quantum.crm.domain.simulaciones.dto.CronogramaDto
 import pe.quantum.crm.domain.simulaciones.dto.EventoHistorialDto
+import pe.quantum.crm.domain.simulaciones.dto.ItemParaCuota
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionDto
 import pe.quantum.crm.domain.simulaciones.dto.SimulacionFiltros
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.math.BigDecimal
+import java.time.LocalDateTime
 
 /**
  * API publica del modulo de simulaciones del financiamiento propio de Quantum
  * (`reglas_simulaciones.md`). El cronograma **no se persiste** (§4): se
  * recalcula al vuelo en cada lectura. `cuota_final` es el unico derivado
  * persistido y **nunca** se acepta del cliente (restriccion 2 del encargo).
+ *
+ * `TooManyFunctions`: las 10 operaciones del CRUD e historial del modulo mas
+ * [cuotaQuantumPorItems], que no es una operacion de usuario sino la API
+ * publica que consume `oportunidades` para §6.2 (D56). Mismo precedente que
+ * `EmpleadoService`: partir la interfaz solo dispersaria el contrato del modulo.
  */
+@Suppress("TooManyFunctions")
 interface SimulacionService {
     fun crear(
         request: CrearSimulacionRequest,
@@ -87,4 +96,56 @@ interface SimulacionService {
         request: BifurcarSimulacionRequest,
         usuario: UsuarioActual,
     ): SimulacionDto
+
+    /**
+     * Cuota Quantum por item (§6.2): la `cuota_final` de su simulacion
+     * principal si la tiene, o el calculo efimero de §6.1 si no (sin
+     * persistir nada).
+     *
+     * SIN chequeo de visibilidad, igual que
+     * `OportunidadItemService.datosParaSimulacion` en el sentido contrario
+     * (D32): quien llama —`oportunidades`— ya filtro que el usuario alcanza
+     * esas oportunidades. Aplicar aqui la regla de §10 le quitaria la cuota al
+     * `vendedor`, que SI debe verla en su propia oportunidad.
+     *
+     * Un item ausente del mapa es un item cuya cuota no se pudo calcular
+     * (incompleto, o parametros por defecto invalidos para su precio, D55).
+     * Eso NO es un error: es "no hay cuota que mostrar".
+     */
+    fun cuotaQuantumPorItems(items: Collection<ItemParaCuota>): Map<Long, BigDecimal>
+
+    /**
+     * Purga de §5: hard delete de las simulaciones sin item creadas antes de
+     * [limite]. Registra el evento `eliminada` con snapshot completo ANTES de
+     * borrar cada una — el log sobrevive (`id_simulacion` no tiene FK, por eso
+     * mismo). Devuelve cuantas elimino.
+     *
+     * Sin `UsuarioActual`: la ejecuta un job programado, y `created_by` del
+     * evento queda en null (decision D60 de
+     * plan-13-mapa-cierre-simulaciones.md).
+     */
+    fun purgarHuerfanas(limite: LocalDateTime): Int
+
+    /**
+     * Aviso de §5: notifica al creador de cada simulacion huerfana cuya
+     * antiguedad cruza en esta corrida la frontera de los 3 dias previos al
+     * borrado — `created_at` en `(desde, hasta]`. Devuelve cuantas notifico.
+     *
+     * Sin `UsuarioActual`: la ejecuta un job programado, y `notificar` recibe
+     * `idActor = null` para que no se excluya a nadie del set de destinatarios
+     * (decision D58 de plan-13-mapa-cierre-simulaciones.md).
+     */
+    fun avisarHuerfanasPorExpirar(
+        desde: LocalDateTime,
+        hasta: LocalDateTime,
+    ): Int
+
+    companion object {
+        /**
+         * Divisor de `cuota_diaria` (§6.1/§6.2), espejo publico de
+         * `DefaultsSimulacion.DIAS_TRABAJADOS` para que `oportunidades` pueda
+         * usarlo sin cruzar hacia un `object` interno del modulo (K34).
+         */
+        const val DIAS_TRABAJADOS_POR_DEFECTO = DefaultsSimulacion.DIAS_TRABAJADOS
+    }
 }
