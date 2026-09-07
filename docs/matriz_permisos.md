@@ -262,6 +262,31 @@ Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 
 ---
 
+### 2.15 Simulaciones
+
+| Rol | Módulo Simulaciones | Simulador en su oportunidad | Calculadora Financiera |
+|---|---|---|---|
+| `admin` | Total | Sí | Sí |
+| `analista` | **Total** | Sí | Sí |
+| `gerencia` | Total | Sí | Sí |
+| `vendedor` | **Sin acceso** | Solo donde es el vendedor asignado | Sí |
+| `jdv`, `otro` | Sin acceso | No | No |
+
+Este es el único módulo del documento donde el reparto de `analista` y `jdv` se
+invierte respecto al resto del CRM:
+
+- **`analista` es de solo lectura en oportunidades pero tiene escritura
+  completa en simulaciones**: es el rol dueño del módulo.
+- **`jdv` es supervisor en oportunidades pero no tiene acceso aquí.**
+
+**Nota de implementación:** la decisión vive centralizada en
+`SimulacionPermisos` (`domain/simulaciones/SimulacionPermisos.kt`), **no** en
+los predicados compartidos de `UsuarioActual`: `esRolApoyo` agrupa `analista`
+con `otro`, que aquí están en extremos opuestos (el primero con acceso total,
+el segundo sin ninguno); `esSupervisor` incluye a `jdv`, que aquí no entra.
+
+---
+
 ## 3. Reglas de implementación en Spring Security
 
 ### 3.1 Estructura recomendada

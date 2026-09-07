@@ -61,6 +61,8 @@ class OportunidadesDeContactoImplTest {
             precioVenta = "10",
             descuento = null,
             cuotaFinanciadora = "0",
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = "10",
         )
 

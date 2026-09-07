@@ -43,10 +43,11 @@ Antes de cada commit: `./gradlew test` debe pasar.
 ```
 src/main/kotlin/pe/quantum/crm/
 ├── config/         # Security, CORS, async
-├── domain/         # un módulo por dominio; los 15 que existen hoy:
+├── domain/         # un módulo por dominio; los 17 que existen hoy:
 │   │                 catalogoeventos, contactos, empleados, empresas, eventos,
 │   │                 financiadoras, inicio, metasventa, modelos, notificaciones,
-│   │                 oportunidades, prospeccion, reportes, solicitudes, tareas
+│   │                 oportunidades, prospeccion, reportes, simulaciones,
+│   │                 solicitudes, tareas, tipocambio
 │   └── <modulo>/  Controller, Service (interfaz), ServiceImpl, Repository, Entity, Mapper, dto/
 ├── integracion/    # drive/ — Google Drive como almacén de documentos
 ├── importcsvtemp/  # import CSV temporal (utilidad de carga, no es el import de Excel del PRD)
@@ -70,6 +71,7 @@ Cada módulo: `Controller → Service → Repository`. La dependencia fluye en u
 | `contrato_api.md` | Endpoints, requests, responses, errores. Este repo es su dueño |
 | `matriz_permisos.md` | Qué rol puede ver/hacer qué |
 | `schema.sql` | Modelo de datos completo |
+| `reglas_simulaciones.md` | Antes de tocar el módulo de simulaciones. La fuente de verdad de su comportamiento: modos, motor de cálculo, purga, cuota en la oportunidad, permisos |
 | `TESTING-backend.md` | **Cómo escribir tests. TDD obligatorio** |
 | `SECURITY-backend.md` | Requisitos de seguridad |
 | `DEVOPS-backend.md` | CI/CD, deploy |
@@ -133,6 +135,6 @@ Módulo financiero (comisiones, cuotas, balloon) · endpoints de `buses_entregad
 ## Coordinación con el frontend (repo separado)
 
 - Este repo es dueño de `contrato_api.md` y `matriz_permisos.md`. Si cambian, se comunica al equipo de frontend.
-- Todo cambio a un endpoint documentado (breaking o no) se registra en `contrato_api.md §25 Changelog del contrato`, en el mismo PR que lo hace. Sin esa entrada, el cambio de contrato no está terminado.
+- Todo cambio a un endpoint documentado (breaking o no) se registra en `contrato_api.md §28 Changelog del contrato`, en el mismo PR que lo hace. Sin esa entrada, el cambio de contrato no está terminado.
 - El backend debe tener el dominio del frontend en `CORS_ALLOWED_ORIGINS`.
 - API versionada en `/api/v1`.

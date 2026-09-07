@@ -19,6 +19,7 @@ import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadRequest
 import pe.quantum.crm.domain.oportunidades.dto.ModeloEnOportunidadDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
+import pe.quantum.crm.domain.simulaciones.SimulacionService
 import pe.quantum.crm.domain.tareas.TareaService
 import pe.quantum.crm.integracion.drive.DriveStorageService
 import pe.quantum.crm.shared.enums.EstadoOportunidad
@@ -55,6 +56,8 @@ class OportunidadActualizarTest {
     private val tareaService = mockk<TareaService>()
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val listadoDao = mockk<OportunidadListadoDao>(relaxed = true)
+    private val simulacionService =
+        mockk<SimulacionService> { every { cuotaQuantumPorItems(any()) } returns emptyMap() }
     private val service =
         OportunidadServiceImpl(
             oportunidadRepository,
@@ -72,6 +75,7 @@ class OportunidadActualizarTest {
             OportunidadVisibilidad(tareaService),
             oportunidadItemService,
             listadoDao,
+            simulacionService,
         )
 
     private val admin = UsuarioActual(id = 1, rol = "admin")
@@ -110,6 +114,7 @@ class OportunidadActualizarTest {
         // Items y monto_total del DTO salen de OportunidadItemService (B8), no de
         // las columnas planas de la oportunidad.
         every { oportunidadItemService.porOportunidades(listOf(100L)) } returns mapOf(100L to listOf(itemDto()))
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L)) } returns
             mapOf(100L to BigDecimal("270.00"))
     }
@@ -123,6 +128,8 @@ class OportunidadActualizarTest {
             precioVenta = "150.00",
             descuento = "10.00",
             cuotaFinanciadora = "0.00",
+            cuotaQuantum = null,
+            cuotaTotal = null,
             montoItem = "270.00",
         )
 
@@ -227,6 +234,7 @@ class OportunidadActualizarTest {
     fun `actualizar una oportunidad sin monto derivable deja monto_total en null`() {
         val entidad = oportunidad()
         every { oportunidadRepository.findById(100) } returns Optional.of(entidad)
+        every { oportunidadItemService.datosCrudosPorOportunidades(any()) } returns emptyMap()
         every { oportunidadItemService.montoTotalPorOportunidades(listOf(100L)) } returns emptyMap()
 
         val dto = service.actualizar(100, ActualizarOportunidadRequest(notas = "sin cantidad"), admin)

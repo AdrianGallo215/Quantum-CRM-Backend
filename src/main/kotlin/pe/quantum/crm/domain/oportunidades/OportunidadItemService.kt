@@ -2,6 +2,7 @@ package pe.quantum.crm.domain.oportunidades
 
 import pe.quantum.crm.domain.oportunidades.dto.ActualizarOportunidadItemRequest
 import pe.quantum.crm.domain.oportunidades.dto.CrearOportunidadItemRequest
+import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDatos
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemDto
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemVinculo
@@ -51,6 +52,21 @@ interface OportunidadItemService {
      * Sin chequeo de visibilidad, igual que [porOportunidades].
      */
     fun montoTotalPorOportunidades(idsOportunidad: Collection<Long>): Map<Long, BigDecimal>
+
+    /**
+     * Importes crudos (`BigDecimal`, sin formatear) de los items de estas
+     * oportunidades, indexados por **id de item**.
+     *
+     * Existe para §6.2 de `reglas_simulaciones.md`: `OportunidadServiceImpl.toDtos`
+     * tiene que hacer aritmetica con `precio_venta`, `descuento` y
+     * `cuota_financiadora`, y [porOportunidades] ya los devuelve formateados como
+     * `String`. Mismo criterio que [montoTotalPorOportunidades]: calcular sobre las
+     * entidades y no volver a parsear lo que el DTO expone.
+     *
+     * Por lotes, una consulta para toda la pagina. Sin chequeo de visibilidad,
+     * igual que [porOportunidades].
+     */
+    fun datosCrudosPorOportunidades(idsOportunidad: Collection<Long>): Map<Long, OportunidadItemDatos>
 
     /**
      * Aplica sobre un item un descuento ya aprobado por solicitud (modulo

@@ -36,14 +36,16 @@ object SeedFixtures {
      * V46 (drop de columnas planas de `oportunidades`) es correlativa a V45: no reabre
      * el hueco ni agrega uno nuevo. El hueco de V40 sigue vigente para siempre (es
      * historia ya aplicada en producción), así que este desfase de 1 entre archivos y
-     * versión máxima tampoco desaparece con V46: pasa de 44/45 a 45/46.
+     * versión máxima tampoco desaparece con V46: pasa de 44/45 a 45/46. V47 (valores de
+     * enum de notificaciones para simulaciones) es correlativa a V46: el desfase pasa de
+     * 45/46 a 46/47.
      */
-    const val MIGRACIONES_TOTAL = 45
+    const val MIGRACIONES_TOTAL = 46
 
     /**
      * Número de versión de la última migración. Distinto de [MIGRACIONES_TOTAL] por el
      * hueco de V40 descrito arriba; separarlos es deliberado, porque son dos hechos
      * distintos que coincidían por casualidad mientras la numeración fue correlativa.
      */
-    const val MIGRACION_VERSION_MAX = 46
+    const val MIGRACION_VERSION_MAX = 47
 }

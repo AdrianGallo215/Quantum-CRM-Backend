@@ -37,6 +37,13 @@ data class SimulacionDto(
     val nombreEsManual: Boolean,
     val modo: String,
     val idOportunidadItem: Long?,
+    /**
+     * Oportunidad dueña del item enlazado, derivada — no es columna de
+     * `simulaciones`. Existe para que el modulo pueda agrupar por oportunidad
+     * sin resolver item->oportunidad por su cuenta (§8.2). Null si la
+     * simulacion no esta enlazada.
+     */
+    val idOportunidad: Long?,
     val idModelo: Long?,
     val modelo: ModeloEnSimulacionDto?,
     val idSimulacionOrigen: Long?,
@@ -53,6 +60,13 @@ data class SimulacionDto(
     val esPrincipal: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /**
+     * Fecha prevista de borrado de una simulacion huerfana: `created_at` + 30
+     * dias. §5 exige que la regla sea VISIBLE EN LA UI, no solo logica de
+     * servidor. Null en cuanto la simulacion tiene item: enlazarla la salva de
+     * forma definitiva. Derivado, nunca persistido.
+     */
+    val eliminacionPrevistaEl: Instant?,
 )
 
 /** Modelo de bus mostrado en la simulacion; no participa del calculo (§3.2). */

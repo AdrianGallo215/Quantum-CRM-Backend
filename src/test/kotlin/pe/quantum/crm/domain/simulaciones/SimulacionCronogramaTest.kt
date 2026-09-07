@@ -8,6 +8,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import pe.quantum.crm.domain.empresas.EmpresaService
 import pe.quantum.crm.domain.modelos.ModeloService
+import pe.quantum.crm.domain.notificaciones.NotificacionService
 import pe.quantum.crm.domain.oportunidades.OportunidadItemService
 import pe.quantum.crm.domain.oportunidades.dto.OportunidadItemParaSimulacion
 import pe.quantum.crm.shared.enums.ModoSimulacion
@@ -37,6 +38,9 @@ class SimulacionCronogramaTest {
     private val oportunidadItemService = mockk<OportunidadItemService>()
     private val modeloService = mockk<ModeloService>()
     private val empresaService = mockk<EmpresaService>()
+
+    /** Solo lo usa `avisarHuerfanasPorExpirar` (F7), que este test no ejercita. */
+    private val notificacionService = mockk<NotificacionService>()
     private val service =
         SimulacionServiceImpl(
             simulacionRepository,
@@ -45,6 +49,7 @@ class SimulacionCronogramaTest {
             oportunidadItemService,
             modeloService,
             empresaService,
+            notificacionService,
         )
 
     private val admin = UsuarioActual(id = 5, rol = "admin")
