@@ -23,8 +23,8 @@ data class EventoDto(
     val esRecomendado: Boolean,
     val etapaAsociada: String?,
     val esHitoProspeccion: Boolean,
-    val createdBy: Long,
-    val createdAt: Instant,
+    val createdBy: Long = 0,
+    val createdAt: Instant = Instant.EPOCH,
 )
 
 /** Eventos de una oportunidad separados por estado (contrato §11). */

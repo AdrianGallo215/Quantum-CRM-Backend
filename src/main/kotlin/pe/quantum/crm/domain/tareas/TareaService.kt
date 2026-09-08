@@ -15,7 +15,7 @@ import java.time.Instant
  * Interfaz publica del modulo tareas. `listar` arrastra los 4 parametros de
  * paginacion del contrato (page, per_page, sort, dir).
  */
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "TooManyFunctions")
 interface TareaService {
     fun listar(
         filtros: TareaFiltros,

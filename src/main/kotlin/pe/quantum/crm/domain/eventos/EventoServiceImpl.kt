@@ -232,7 +232,9 @@ class EventoServiceImpl(
                         idEmpresa != null -> empresaService.vinculoVisible(idEmpresa, usuario)
                     }
                     true
-                } catch (e: NoEncontradoException) {
+                } catch (
+                    @Suppress("SwallowedException") e: NoEncontradoException,
+                ) {
                     false
                 }
             }

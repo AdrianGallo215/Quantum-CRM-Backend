@@ -68,7 +68,7 @@ class ComentarioActividadServiceImplTest {
     @Test
     fun `crear un comentario sobre un evento visible usa la columna de evento`() {
         every { eventoService.vinculoVisible(4, supervisor) } returns
-            EventoVinculo(id = 4, idEmpresa = null, idOportunidad = 20, createdBy = 7)
+            EventoVinculo(id = 4, idOportunidad = 20, createdBy = 7)
         val guardado = slot<ActividadComentario>()
         every { repository.save(capture(guardado)) } answers {
             ActividadComentario(id = 1, idTarea = null, idEvento = 4, texto = "ok", createdBy = 1)

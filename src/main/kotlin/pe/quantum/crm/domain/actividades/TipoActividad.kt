@@ -9,7 +9,7 @@ package pe.quantum.crm.domain.actividades
  * Es API publica del modulo (CLAUDE.md regla 12): `tareas` y `eventos` lo
  * consumen al registrar auditoria.
  */
-@Suppress("EnumEntryName")
+@Suppress("EnumEntryName", "EnumNaming")
 enum class TipoActividad {
     tarea,
     evento,
