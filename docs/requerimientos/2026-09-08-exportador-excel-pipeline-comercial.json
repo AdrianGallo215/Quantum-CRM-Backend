@@ -1,0 +1,161 @@
+{
+  "titulo": "Exportador en Excel de prospectos, pipeline y actividades comerciales para gerencia",
+  "origen": "gerencia, con carácter de urgencia alto",
+  "fecha": "2026-09-08",
+  "problema": "Gerencia necesita una vista exportable en Excel de la gestión comercial (prospectos, avance en el pipeline, estados, motivos de no cierre y actividades) para uso de control interno — dar seguimiento al equipo, estimar tiempos de conversión y detectar operaciones que se cayeron estando avanzadas.",
+  "notas_del_redactor": "La solicitud viene del expertiz de negocio, no del expertiz del CRM. Varios términos del pedido original (estado 'perdido', 'sin respuesta', 'origen del prospecto', 'segmento', 'siguiente acción', 'principal bloqueo') probablemente no tienen equivalente exacto en el modelo de datos actual. CLAUDE.md es explícito en que el enum de estado tiene 4 valores y no existe 'perdido' — ver regla 7. Este ticket no resuelve esas brechas: las deja documentadas como requisitos de mapeo (R6-R8) y preguntas abiertas para que el triage las evalúe contra el repo real.",
+  "requisitos_cerrados": [
+    {
+      "id": "R1",
+      "pedido": "Generar un archivo Excel (.xlsx) descargable con la data comercial solicitada."
+    },
+    {
+      "id": "R2",
+      "pedido": "El export se dispara de forma manual, on-demand (botón en frontend o endpoint que se invoca cuando alguien lo pide). No es un job automático programado.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión, no es un envío recurrente"
+    },
+    {
+      "id": "R3",
+      "pedido": "El export acepta un rango de fechas configurable (desde/hasta) como filtro de alcance, no solo 'todo el histórico' ni solo 'lo vigente'.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión"
+    },
+    {
+      "id": "R4",
+      "pedido": "Uso previsto es control interno de gestión comercial (seguimiento día a día del equipo/gerencia), no un reporte formal para directorio/inversionistas ni una entrega a la financiadora.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión"
+    },
+    {
+      "id": "R5",
+      "pedido": "Acceso restringido a admin y gerencia, con visión total de todos los prospectos/oportunidades de todos los responsables, sin filtrar por dueño del registro.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión",
+      "verificar_en_triage": true
+    },
+    {
+      "id": "R6",
+      "pedido": "El export solo refleja datos que ya existen en el modelo actual del CRM. No se agregan estados, campos ni columnas nuevas a la base de datos ni al dominio para cubrir huecos del pedido de negocio.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión — 'solo mapear con lo que ya existe'"
+    },
+    {
+      "id": "R7",
+      "pedido": "Donde el pedido de negocio use un concepto sin equivalente exacto en el CRM (p. ej. estado 'perdido' o 'sin respuesta'), el export usa el mapeo más cercano con el modelo real (p. ej. estado actual de la oportunidad + motivo_cierre). No se crea un estado nuevo en el enum.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión",
+      "nota": "Choca directo con la regla 7 de CLAUDE.md ('No existe estado perdido... ¿Necesitas otro? Pregunta') — ya se preguntó y la respuesta es no crear estado nuevo."
+    },
+    {
+      "id": "R8",
+      "pedido": "Donde el pedido mencione campos que probablemente no existen como dato estructurado (p. ej. 'siguiente acción', 'principal bloqueo', 'qué ocurrió' en operaciones caídas), la columna solo se llena si hay un campo real que la respalde. Si no hay campo equivalente, la columna queda vacía o se omite — no se inventa contenido.",
+      "segun_solicitante": "confirmado explícitamente en esta sesión — 'solo exportar lo que ya existe'"
+    },
+    {
+      "id": "R9",
+      "pedido": "Prospectos/leads registrados: fecha de ingreso y responsable.",
+      "verificar_en_triage": true,
+      "nota": "Probablemente mapea a oportunidades y/o al módulo de prospección — a confirmar en triage cuál es la fuente correcta."
+    },
+    {
+      "id": "R10",
+      "pedido": "Origen del prospecto: cartera propia, Cálidda, MTC, referido, prospección en calle u otro.",
+      "verificar_en_triage": true,
+      "nota": "No confirmado que exista un campo 'origen' con esos valores exactos. Sujeto a R6/R8: si no existe, la columna queda vacía, no bloquea el entregable."
+    },
+    {
+      "id": "R11",
+      "pedido": "Segmento: transporte urbano, personal, turismo u otro.",
+      "verificar_en_triage": true,
+      "nota": "Mismo caso que R10 — a confirmar si existe el campo."
+    },
+    {
+      "id": "R12",
+      "pedido": "Modelo y número de unidades potenciales por prospecto.",
+      "verificar_en_triage": true,
+      "nota": "Probablemente mapea al módulo de modelos y a la cantidad registrada en la oportunidad."
+    },
+    {
+      "id": "R13",
+      "pedido": "Etapa alcanzada por cada oportunidad: contacto, reunión, cotización, evaluación, aprobación Cálidda, contrato, etc.",
+      "verificar_en_triage": true,
+      "nota": "A confirmar el enum real de etapas del pipeline y si los nombres de negocio calzan con los del CRM."
+    },
+    {
+      "id": "R14",
+      "pedido": "Estado actual de cada oportunidad.",
+      "verificar_en_triage": true,
+      "nota": "Sujeto al mapeo de R7 (sin estado 'perdido' nuevo)."
+    },
+    {
+      "id": "R15",
+      "pedido": "Razón de no cierre / pérdida, cuando corresponda.",
+      "verificar_en_triage": true,
+      "nota": "Probablemente mapea a motivo_cierre (regla 5 de CLAUDE.md: obligatorio cuando estado = cerrado)."
+    },
+    {
+      "id": "R16",
+      "pedido": "Fecha de primer contacto y última gestión, para estimar tiempos de conversión.",
+      "verificar_en_triage": true,
+      "nota": "A confirmar si existen esos timestamps como campos, o si 'última gestión' se deriva del historial de actividades/auditoría."
+    },
+    {
+      "id": "R17",
+      "pedido": "Operaciones consideradas avanzadas o prácticamente cerradas que finalmente se cayeron, con breve indicación de qué ocurrió.",
+      "verificar_en_triage": true,
+      "nota": "Sujeto a R8. 'Qué ocurrió' es contenido libre/narrativo — probablemente solo cubribles si hay notas o comentarios asociados (ver módulo de historial de actividades)."
+    },
+    {
+      "id": "R18",
+      "pedido": "Pipeline comercial vigente: etapa, unidades, siguiente acción, fecha estimada de cierre y principal bloqueo.",
+      "verificar_en_triage": true,
+      "nota": "'Siguiente acción' y 'principal bloqueo' sujetos a R8. 'Fecha estimada de cierre' a confirmar si existe como campo."
+    },
+    {
+      "id": "R19",
+      "pedido": "Si está disponible, histórico de actividades comerciales: llamadas, reuniones, visitas, cotizaciones y seguimientos.",
+      "verificar_en_triage": true,
+      "nota": "El propio pedido ya lo condiciona a 'si está disponible' — no es un requisito duro."
+    }
+  ],
+  "preguntas_abiertas": [
+    {
+      "id": "P1",
+      "pregunta": "¿El archivo debe tener una sola hoja con todas las columnas, o varias hojas separadas (p. ej. prospectos, pipeline vigente, histórico de actividades)?",
+      "por_que_bloquea": "Cambia el diseño del exportador y cómo se agrupan los datos de R9-R19.",
+      "decide": "gerencia / producto"
+    },
+    {
+      "id": "P2",
+      "pregunta": "La urgencia se declaró como 'alta'. ¿Hay una fecha límite concreta detrás (p. ej. una reunión de directorio) o es 'cuanto antes' sin fecha fija?",
+      "por_que_bloquea": "Afecta cómo se prioriza el ticket frente a otro trabajo en curso en el repo.",
+      "decide": "solicitante"
+    },
+    {
+      "id": "P3",
+      "pregunta": "Para los campos que probablemente no existen hoy (origen del prospecto, segmento, siguiente acción, principal bloqueo, fecha estimada de cierre): si el triage confirma que no existen como datos capturados en ningún lado del CRM, ¿gerencia acepta el export igual con esas columnas vacías, o alguno de ellos es tan importante que ameritaría un ticket aparte para empezar a capturarlo?",
+      "por_que_bloquea": "R6/R8 ya fijan que este ticket no crea campos nuevos, pero si gerencia considera alguno de estos datos indispensable, es una decisión de producto distinta y más grande que un exportador.",
+      "decide": "gerencia / producto"
+    },
+    {
+      "id": "P4",
+      "pregunta": "El acceso se limitó a admin y gerencia con visión total (R5). ¿Debería incluirse también el rol jdv (jefe de ventas), acotado a su propio equipo, o queda fuera de este ticket?",
+      "decide": "producto"
+    },
+    {
+      "id": "P5",
+      "pregunta": "Para el histórico de actividades comerciales (R19): si el triage confirma que existe el módulo de historial de actividades (llamadas, reuniones, visitas, cotizaciones, seguimientos), ¿gerencia quiere el detalle completo por oportunidad, o un resumen/conteo por prospecto?",
+      "decide": "gerencia / producto"
+    }
+  ],
+  "areas_sospechadas": {
+    "advertencia": "sospecha del redactor a partir de contexto de la sesión (nombres de módulos y commits recientes visibles en git log), sin verificar contra el repo",
+    "modulos": ["oportunidades", "prospeccion", "modelos", "reportes"],
+    "nota_tecnica": "La rama actual del repo (feat/historial-actividades) tiene commits recientes 'feat: historial de actividades (tareas + eventos) con comentarios y auditoria' y 'docs(contrato): seccion 29 actividades'. Podría ser la fuente más cercana para R17/R18 (qué ocurrió, siguiente acción) y R19 (histórico de actividades). No confirmado — el triage debe verificarlo contra el estado real de esa rama y contra contrato_api.md §29.",
+    "docs": ["contrato_api.md", "reglas_negocio.md", "matriz_permisos.md", "PRD-backend.md", "schema.sql"]
+  },
+  "impacto_esperado_en_frontend": "No especificado por el solicitante. El export es manual on-demand (R2); a definir en triage si requiere un botón/pantalla nueva en el frontend o si es un endpoint que se descarga directo (p. ej. desde Postman/navegador) sin cambio de UI.",
+  "no_alcance": [
+    "No se agregan estados nuevos al enum de estado de oportunidad (p. ej. un valor 'perdido' propio) — ver R7.",
+    "No se agregan campos nuevos a la base de datos para capturar 'origen', 'segmento', 'siguiente acción' o 'principal bloqueo' si no existen ya — ver R6/R8.",
+    "No es un reporte automático programado ni un envío recurrente por correo — ver R2.",
+    "No es una entrega directa a Cálidda ni a otra financiadora — ver R4.",
+    "No incluye visibilidad por rol más allá de admin/gerencia, salvo que P4 lo cambie."
+  ],
+  "urgencia": "alta, según el solicitante (gerencia) — sin fecha límite concreta comunicada aún, ver P2"
+}
