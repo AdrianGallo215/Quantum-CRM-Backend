@@ -410,8 +410,6 @@ class EventoServiceImpl(
     }
 
     /** Etiqueta legible del estado destino para el prompt del frontend. */
-
-    /** Etiqueta legible del estado destino para el prompt del frontend. */
     private fun etiqueta(estado: EstadoOportunidad): String =
         when (estado) {
             EstadoOportunidad.evaluacion_calidda -> "Evaluación Calidda"
