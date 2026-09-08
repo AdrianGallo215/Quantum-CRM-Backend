@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.actividades.TipoActividad
+import pe.quantum.crm.domain.actividades.dto.CambioCampo
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
