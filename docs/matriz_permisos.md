@@ -198,6 +198,7 @@ Las fugas de **Solicitudes**, **Metas de venta** y **Contactos** ya se corrigier
 | Velocidad por etapa | ✓ | ✓ | ✓ | — | — | — |
 | Embudo de prospección | ✓ | ✓ | ✓ | — | — | — |
 | Mix de descuentos | ✓ | ✓ | ✓ | — | — | — |
+| Export Excel de gestión comercial | ✓ | ✓ | ✓ | — | — | — |
 
 Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 
