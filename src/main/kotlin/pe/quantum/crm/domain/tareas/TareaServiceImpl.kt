@@ -29,6 +29,8 @@ import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import pe.quantum.crm.domain.tareas.dto.TareaVinculo
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -359,6 +361,50 @@ class TareaServiceImpl(
     @Transactional(readOnly = true)
     override fun idsEmpresasDondeColabora(idEmpleado: Long): Set<Long> = tareaRepository.idsEmpresaConColaborador(idEmpleado).toSet()
 
+    @Transactional(readOnly = true)
+    override fun listarPorEmpleado(
+        idEmpleado: Long,
+        desde: Instant?,
+        hasta: Instant?,
+        usuario: UsuarioActual,
+    ): List<TareaDto> {
+        val tareas =
+            tareaRepository.findByIdAsignadoAndCreatedAtBetweenOrderByCreatedAtDesc(
+                idEmpleado,
+                desde?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: INICIO_DE_LOS_TIEMPOS,
+                hasta?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: FIN_DE_LOS_TIEMPOS,
+            )
+        // Un rol restringido no puede leer la agenda de otro por esta puerta:
+        // se le recorta a lo suyo, igual que hace `especificacion()` en `listar`.
+        val visibles =
+            if (usuario.visibilidadRestringida) {
+                val idsColaborador =
+                    tareaResponsableRepository
+                        .findByIdIdTareaIn(tareas.mapNotNull { it.id })
+                        .filter { it.id.idEmpleado == usuario.id }
+                        .map { it.id.idTarea }
+                        .toSet()
+                tareas.filter { it.idAsignado == usuario.id || it.id in idsColaborador }
+            } else {
+                tareas
+            }
+        return toDtos(visibles)
+    }
+
+    @Transactional(readOnly = true)
+    override fun vinculoVisible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): TareaVinculo {
+        val tarea = visible(id, usuario)
+        return TareaVinculo(
+            id = requireNotNull(tarea.id),
+            idEmpresa = tarea.idEmpresa,
+            idOportunidad = tarea.idOportunidad,
+            idAsignado = tarea.idAsignado,
+        )
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     /** vendedor/analista solo operan tareas donde son dueño o colaborador (404 si no). */
@@ -460,5 +506,13 @@ class TareaServiceImpl(
 
         /** Superconjunto del umbral `proximo` de `RecordatorioJob` (24 h). */
         const val HORAS_VENTANA_PROXIMO = 24L
+
+        /**
+         * Limites del rango cuando el cliente no manda `desde`/`hasta`.
+         * `LocalDateTime.MIN/MAX` NO sirven: se salen del rango de un TIMESTAMP
+         * de Postgres y la query revienta.
+         */
+        val INICIO_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(1970, 1, 1, 0, 0)
+        val FIN_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(2999, 12, 31, 23, 59, 59)
     }
 }

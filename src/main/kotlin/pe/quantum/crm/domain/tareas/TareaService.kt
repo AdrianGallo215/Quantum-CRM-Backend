@@ -8,6 +8,8 @@ import pe.quantum.crm.domain.tareas.dto.TareaFiltros
 import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
 import pe.quantum.crm.shared.Paginado
 import pe.quantum.crm.shared.security.UsuarioActual
+import pe.quantum.crm.domain.tareas.dto.TareaVinculo
+import java.time.Instant
 
 /**
  * Interfaz publica del modulo tareas. `listar` arrastra los 4 parametros de
@@ -70,4 +72,26 @@ interface TareaService {
 
     /** Ids de empresa donde `idEmpleado` colabora en alguna tarea. */
     fun idsEmpresasDondeColabora(idEmpleado: Long): Set<Long>
+
+    /**
+     * Tareas asignadas a un empleado, filtradas por rango de `created_at`
+     * (ambos extremos opcionales). Aplica el MISMO filtro de visibilidad que
+     * `listar`: un rol restringido solo recibe aquellas de las que es dueño o
+     * colaborador, aunque pida el id de otro empleado.
+     */
+    fun listarPorEmpleado(
+        idEmpleado: Long,
+        desde: Instant?,
+        hasta: Instant?,
+        usuario: UsuarioActual,
+    ): List<TareaDto>
+
+    /**
+     * Datos minimos de una tarea, comprobando visibilidad. `NoEncontradoException`
+     * (404, nunca 403) si no existe o queda fuera del alcance del usuario.
+     */
+    fun vinculoVisible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): TareaVinculo
 }
