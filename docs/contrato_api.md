@@ -1933,7 +1933,7 @@ Todos los campos son opcionales salvo `id_modelo`. Sin `precio_venta`, se inicia
 
 ## 18. Reportes
 
-Todos los endpoints de reportes requieren rol `admin`, `gerente` o `jdv`. Los vendedores no tienen acceso a reportes en el MVP.
+Todos los endpoints de reportes requieren rol `admin`, `gerencia` o `jdv`. Los vendedores no tienen acceso a reportes en el MVP.
 
 Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). Si no se especifican, el default es el mes calendario actual.
 
@@ -2099,6 +2099,41 @@ Todos aceptan `fecha_desde` y `fecha_hasta` como query params (ISO 8601 date). S
   }
 }
 ```
+
+---
+
+### GET /reportes/exportar-comercial
+> Export en Excel de la gestión comercial completa: prospectos, pipeline e histórico de actividades. Para control interno de gerencia.
+
+**Roles:** `admin`, `gerencia`, `jdv` — con visión total, sin filtrar por dueño del registro. El resto recibe `403`.
+
+**Query params:**
+
+| Param | Tipo | Req. | Descripción |
+|---|---|---|---|
+| `fecha_desde` | ISO 8601 date | no | Filtra por fecha de ingreso, inclusive. |
+| `fecha_hasta` | ISO 8601 date | no | Filtra por fecha de ingreso, inclusive. |
+
+**Diferencia deliberada con el resto de §18:** si no se envían fechas, este endpoint devuelve **todo el histórico**, no el mes calendario actual. Un export de control que por defecto recorta a un mes se lee como datos faltantes.
+
+La fecha de ingreso es `oportunidades.created_at` para las filas con oportunidad y `empresas.created_at` para las filas de prospección. **Las actividades no se filtran por el rango**: una vez que la oportunidad entra en alcance, viene su histórico completo.
+
+**Respuesta 200:** el archivo `.xlsx`, no el envelope JSON.
+
+```
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+Content-Disposition: attachment; filename="gestion-comercial-2026-09-08.xlsx"
+```
+
+> **Es el único endpoint del API que no devuelve `{data, meta, error}`.** El cuerpo es el archivo binario; envolverlo en JSON lo haría indescargable. Los errores (`401`, `403`) sí siguen el envelope estándar.
+
+**Forma del archivo:** una sola hoja llamada `Gestión comercial`, 33 columnas, **una fila por actividad** repitiendo los datos del prospecto y de la oportunidad (tabla plana, pensada para filtrar y pivotar en Excel). Una oportunidad sin actividades ocupa una fila con las columnas de actividad en `-`; un prospecto sin oportunidad también.
+
+**Ninguna celda queda vacía:** lo que el CRM no guarda se emite como `"-"`. En particular, la columna **Principal bloqueo** sale siempre `"-"` porque no existe ningún campo que la respalde — no se infiere de `notas` ni de `motivo_cierre`.
+
+**Columnas, en orden:** RUC · Razón social · Fecha de ingreso · Responsable del prospecto · Origen del prospecto · Segmento · Estado de cartera · ID oportunidad · Vendedor de la oportunidad · Etapa / Estado actual · Modelos y unidades · Unidades totales · Monto total · Financiadora · Fecha de creación de la oportunidad · Fecha estimada de cierre · Fecha de facturación · Motivo de no cierre · Notas de la oportunidad · Siguiente acción · Principal bloqueo · Fecha de primer contacto · Fecha de última gestión · Días sin gestión · Tipo de actividad · Actividad · Tipo de acción · Estado de la actividad · Fecha de la actividad · Responsable de la actividad · Descripción · Comentarios de seguimiento · Fecha de registro.
+
+**Mapeos que conviene conocer:** "Etapa / Estado actual" es el estado real de la oportunidad, con los **4 valores del enum** (`reglas_negocio.md` §4.1) traducidos a etiqueta de negocio — no existe la granularidad de "contacto / reunión / cotización" que se usa al hablar del embudo, ni existe un estado `perdido`. "Siguiente acción" es la próxima tarea pendiente. "Fecha de primer contacto" y "Fecha de última gestión" se derivan del `created_at` mínimo y máximo de las actividades.
 
 ---
 
@@ -2874,6 +2909,85 @@ Estimación rápida durante la prospección (`reglas_simulaciones.md` §9), con 
 | 2026-09-03 | `GET /oportunidades`, `GET /oportunidades/:id`, `POST /oportunidades`, `PUT /oportunidades/:id`, `POST /oportunidades/:id/items`, `PUT /oportunidades/:id/items/:item_id`, `DELETE /oportunidades/:id/items/:item_id`, `POST /solicitudes` | **Breaking** | Rediseño de oportunidades multi-modelo (V42, `oportunidad_items`): una oportunidad ahora puede vender varios modelos a la vez. (1) `GET/POST/PUT /oportunidades` y `GET /oportunidades/:id`: el response ya NO tiene `id_modelo`, `modelo`, `cantidad`, `precio_unitario`, `dcto` en la raíz — se movieron a `items: [OportunidadItemDto]`, uno por modelo vendido. `monto_total` se queda en la raíz, sigue siendo calculado, ahora como la suma de `monto_item` de todos los ítems. (2) `POST /oportunidades` sigue aceptando `id_modelo`, `cantidad`, `descuento` (renombrado de `dcto`) planos en el body — crea internamente el primer ítem — para no romper el flujo de alta de un solo modelo. (3) `PUT /oportunidades/:id` **ya no acepta** `id_modelo`, `cantidad`, `precio_unitario`/`precio_venta`, `dcto`/`descuento` ni `monto_total`; esos campos se ignoran en silencio si vienen (el DTO no los declara) y el error `400 MONTO_NO_EDITABLE` desaparece del contrato (el guard ya no existe: no hay campo que rechazar). Solo quedan `garantia`, `finc_paralelo`, `ficha_venta`, `notas`, `fecha_cierre_estimado`. (4) Endpoints nuevos para editar ítems: `POST /oportunidades/:id/items` (crea uno más), `PUT /oportunidades/:id/items/:item_id` (edita uno existente — misma regla de "no pisar precio editado a mano" de `reglas_negocio.md §12.2`, ahora aplicada al ítem), `DELETE /oportunidades/:id/items/:item_id` (elimina uno — `409 ULTIMO_ITEM_NO_ELIMINABLE` si es el único ítem que le queda a la oportunidad; una oportunidad no puede quedarse sin ítems). (5) `GET /oportunidades?sort=precio_unitario` deja de ser un valor válido de `sort` — un precio unitario no significa nada con varios modelos por oportunidad; `sort=cantidad` y `sort=monto_total` se mantienen, con el mismo resultado observable de antes. (6) `POST /solicitudes` con `tipo: "descuento"`: `entidad_tipo` ahora debe ser `oportunidad_item` (no `oportunidad`) y `entidad_id` es el `id` del ítem, no de la oportunidad. Roles y visibilidad no cambian: los ítems heredan exactamente el mismo reparto de permisos que hoy tiene editar la oportunidad (ver `matriz_permisos.md §2.4`). | **Dejar de leer `id_modelo`/`modelo`/`cantidad`/`precio_unitario`/`dcto` de la raíz de la oportunidad** y leerlos de `items[]`; para una oportunidad de un solo modelo, `items` sigue teniendo un elemento. **Empezar a usar `POST/PUT/DELETE /oportunidades/:id/items` para agregar, editar o quitar modelos** — `PUT /oportunidades/:id` ya no sirve para eso. Actualizar el formulario de edición de oportunidad para no enviar los campos viejos (se ignoran, no rompen, pero ya no hacen nada). Quitar `precio_unitario` de cualquier selector de orden del listado. Para el flujo de solicitar descuento, enviar `entidad_tipo: "oportunidad_item"` con el `id` del ítem, no de la oportunidad. |
 | 2026-09-04 | `GET /reportes/ventas`, `GET /reportes/pipeline`, `GET /reportes/equipo`, `GET /reportes/descuentos`, `GET /oportunidades` | Non-breaking | La forma del contrato no cambia — ningún campo se agrega, quita ni renombra en ningún DTO. Cambia la **fuente de datos**: estos reportes y el listado de oportunidades dejaron de leer las columnas planas `cantidad`/`precio_unitario`/`dcto`/`monto_total`/`id_modelo` de `oportunidades` (retiradas por V46) y ahora leen `oportunidad_items` directamente. Con los datos de hoy (ninguna oportunidad tiene más de un ítem en producción) los números no cambian. El día que una oportunidad tenga varios ítems, `porModelo` de `GET /reportes/ventas` y los reportes con descuento empezarán a reflejar cada ítem individualmente (por ejemplo, una oportunidad de 2 modelos aparecerá en dos entradas de `porModelo` en vez de una) — es el comportamiento correcto, no una regresión. | Ninguna acción requerida. Solo estar al tanto de que, a futuro, los números granulares de `porModelo`/descuentos pueden reflejar ítems en vez de oportunidades cuando haya oportunidades multi-modelo. |
 | 2026-09-07 | `POST /simulaciones`, `GET /simulaciones`, `GET /simulaciones/:id`, `GET /simulaciones/:id/cronograma`, `PATCH /simulaciones/:id`, `DELETE /simulaciones/:id`, `GET /simulaciones/:id/historial`, `POST /simulaciones/:id/restaurar`, `POST /simulaciones/:id/bifurcar`, `PATCH /simulaciones/:id/principal`, `POST /calculadora`, `GET /oportunidades`, `GET /oportunidades/:id` | Non-breaking | Cierre del módulo de financiamiento propio de Quantum (`reglas_simulaciones.md`). (1) Se documentan los 11 endpoints nuevos: los 10 de `/simulaciones` (§23) — CRUD, cronograma, historial con diff, restaurar, bifurcar ("Guardar como Nueva Simulación") y marcar principal — y `POST /calculadora` (§24), la Calculadora Financiera de estimación rápida sin persistencia. Ya estaban implementados (Planes D y E); esta entrada salda la deuda de contrato. (2) `GET /oportunidades` y `GET /oportunidades/:id` ganan 5 campos opcionales (`reglas_simulaciones.md` §6.2): por ítem, `cuota_quantum` y `cuota_total`; a nivel de oportunidad, `cuota_quantum_total`, `cuota_total` y `cuota_diaria_total`. Los tres campos de nivel oportunidad son `null` conjuntamente si algún ítem no tiene una cuota calculable — no es un error, es "todavía no se puede mostrar la cuota total". (3) Dos valores nuevos, aditivos, en enums existentes: `tipo_notificacion_enum` gana `simulacion_por_expirar` y `entidad_notificacion_enum` gana `simulacion` (aviso 3 días antes de que una simulación huérfana se purgue a los 30 días). | Sin acción requerida salvo adoptar los campos y endpoints nuevos cuando el frontend lo necesite. Los campos de cuota son opcionales y pueden venir `null`; los dos valores de enum son aditivos y se ignoran con un `default`/`else` como cualquier otro. |
+| 2026-09-08 | `GET /actividades`, `GET /actividades/{tipo}/{id}/comentarios`, `POST /actividades/{tipo}/{id}/comentarios`, `GET /actividades/{tipo}/{id}/auditoria`, `GET /oportunidades/:id/eventos`, `GET /empresas/:id/eventos`, `PUT /eventos/:id` | Non-breaking | Nueva vista de supervisión "historial de actividades" (§29). (1) Cuatro endpoints nuevos bajo `/actividades`: el historial unificado de tareas + eventos de un empleado (`id_empleado` obligatorio; filtros por rango de `created_at`, tipo, empresa y oportunidad), los comentarios de seguimiento de una actividad (listar y crear, append-only en tabla propia — nunca pisan `descripcion`) y la auditoría de ediciones (una fila por campo cambiado, con valor anterior y nuevo). (2) **Ningún permiso cambia:** `admin`, `gerencia` y `jdv` ya veían todas las tareas y eventos; lo nuevo es poder filtrar esa visión por empleado. Un rol no supervisor solo puede pedir su propio historial (`403 PERMISO_INSUFICIENTE` si pide el de otro). (3) `EventoDto` gana dos campos opcionales, `created_by` y `created_at`, que aparecen en todos los endpoints que ya devolvían eventos — aditivos, ningún campo se quita ni se renombra. Son necesarios porque un evento no tiene asignado y se atribuye a quien lo registró. Ver `matriz_permisos.md §1`. | Construir la vista nueva del side bar consumiendo `GET /actividades`. **Tratar `fecha_hora` y `fecha_dia` como dos campos distintos y no unificarlos**: `fecha_dia` es un día del calendario (columna `DATE`) y darle hora lo desplaza. Los dos campos nuevos de `EventoDto` se pueden ignorar hasta que se necesiten. |
+| 2026-09-08 | `GET /reportes/exportar-comercial` | Non-breaking | Endpoint nuevo: export en Excel (`.xlsx`) de la gestión comercial para control interno de gerencia — prospectos, pipeline e histórico completo de actividades en una sola hoja de 33 columnas, una fila por actividad. Roles `admin`, `gerencia`, `jdv` con visión total (el mismo reparto que los otros 6 reportes; ver `matriz_permisos.md §2.10`). **Es el único endpoint del contrato que no devuelve el envelope `{data, meta, error}`:** el cuerpo es el archivo binario, con `Content-Disposition: attachment`. Dos comportamientos que se apartan del resto de §18, a propósito: (1) sin `fecha_desde`/`fecha_hasta` devuelve todo el histórico, no el mes calendario actual; (2) el rango filtra la fecha de ingreso del prospecto/oportunidad, no las actividades, que vienen completas. Ninguna celda va vacía: lo que el CRM no guarda se emite como `"-"`, incluida la columna "Principal bloqueo", que no tiene campo que la respalde y sale siempre así. En la misma entrada se corrige una deriva de §18, que seguía diciendo `gerente` en vez de `gerencia` (el rol se renombró en V25). | Añadir el botón de descarga donde corresponda para `admin`/`gerencia`/`jdv`. **Tratar la respuesta como binario, no como JSON** — es la excepción al envelope. Si se ofrecen filtros de fecha en la UI, dejar claro que vacío significa "todo el histórico". |
+
+## 29. Actividades (historial de supervisión)
+
+> Vista unificada de tareas y eventos de un empleado. **No amplía ni reduce ninguna visibilidad existente:** `admin`, `gerencia` y `jdv` ya veían todas las tareas y todos los eventos (ver `matriz_permisos.md §1`). Lo que estos endpoints agregan es la forma de filtrar esa visión por empleado, leerla en un solo sitio, y dejar comentarios y rastro de ediciones.
+
+### GET /actividades
+
+Historial de actividades (tareas + eventos) de un empleado, ordenado por `created_at` descendente.
+
+**Roles:** cualquier usuario autenticado para su propio historial. Para el de otro empleado: solo `admin`, `gerencia`, `jdv` — el resto recibe `403 PERMISO_INSUFICIENTE`.
+
+**Query params:**
+
+| Param | Tipo | Req. | Descripción |
+|---|---|---|---|
+| `id_empleado` | long | **sí** | De quién es el historial. Sin él, `400`. |
+| `desde` | ISO-8601 | no | Filtra por `created_at` >= valor. |
+| `hasta` | ISO-8601 | no | Filtra por `created_at` <= valor. |
+| `tipo` | enum | no | `tarea` o `evento`. Ausente ⇒ ambos. Valor desconocido ⇒ `400 VALIDACION`. |
+| `id_empresa` | long | no | Solo actividades de esa empresa. |
+| `id_oportunidad` | long | no | Solo actividades de esa oportunidad. |
+| `page`, `per_page` | int | no | Paginación estándar (§4). `per_page` máx. 100. |
+
+**Notas sobre el rango de fechas:** `desde`/`hasta` filtran por **cuándo se registró** la actividad (`created_at`), no por cuándo está planificada. Es el único campo TIMESTAMP presente y no nulo en ambas entidades.
+
+**Response `data[]` — `ActividadDto`:**
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `tipo` | string | `tarea` o `evento`. |
+| `id` | long | Id dentro de su propia tabla. |
+| `titulo` | string | `tipo_accion` de la tarea, o el nombre del evento. |
+| `descripcion` | string? | |
+| `estado` | string | `estado_accion` de la tarea, o `estado` del evento. |
+| `fecha_hora` | Instant? | Columnas TIMESTAMP: `fecha_ejecucion` (tarea) o `fecha_ocurrencia` (evento). |
+| `fecha_dia` | date? | Columna DATE: `fecha_estimada` del evento. **Siempre `null` en una tarea.** |
+| `id_empresa` | long? | `null` en un evento que cuelga de una oportunidad. |
+| `empresa` | object? | `{id, razon_social, distrito}`. `null` si `id_empresa` es null. |
+| `id_oportunidad` | long? | |
+| `id_empleado` | long? | Asignado de la tarea, o **creador** del evento (un evento no tiene asignado). |
+| `empleado` | object? | `{id, nombres, apellidos}`. |
+| `comentarios` | int | Cuántos comentarios de seguimiento tiene. |
+| `created_at` | Instant | Eje de orden del historial. |
+
+> **`fecha_hora` y `fecha_dia` son dos campos y no uno a propósito.** `fecha_estimada` de un evento es un día del calendario de Lima (columna `DATE`), no un instante; darle una hora la desplaza. No los unifiques en el cliente: muestra `fecha_dia` como fecha suelta y `fecha_hora` como fecha y hora.
+
+### GET /actividades/{tipo}/{id}/comentarios
+
+Comentarios de seguimiento de una actividad, del más antiguo al más reciente.
+
+**Roles:** todos, con el filtro de visibilidad del recurso — una actividad fuera de alcance responde `404 NO_ENCONTRADO`.
+
+`{tipo}` es `tarea` o `evento`; cualquier otro valor ⇒ `400 VALIDACION` con `field: "tipo"`.
+
+**Response `data[]`:** `{id, tipo, id_actividad, texto, created_at, created_by, autor: {id, nombres, apellidos}?}`
+
+### POST /actividades/{tipo}/{id}/comentarios
+
+Agrega un comentario. **`201 Created`.**
+
+**Body:** `{"texto": "..."}` — obligatorio, no vacío tras recortar espacios, máximo 5000 caracteres.
+
+**Errores:** `400 VALIDACION` (texto vacío o desmedido, tipo desconocido), `404 NO_ENCONTRADO` (actividad fuera de alcance).
+
+> Los comentarios son **append-only**: no existe editar ni borrar, y un comentario nuevo nunca sobrescribe la `descripcion` de la tarea o el evento.
+
+### GET /actividades/{tipo}/{id}/auditoria
+
+Cambios registrados sobre una actividad, del más reciente al más antiguo. Una fila **por campo modificado**.
+
+**Roles:** todos, con el filtro de visibilidad del recurso (`404` si queda fuera).
+
+**Response `data[]`:** `{id, campo, valor_anterior, valor_nuevo, changed_at, changed_by, autor: {id, nombres, apellidos}?}`
+
+`campo` viene en snake_case, con el mismo nombre que expone este contrato: `descripcion`, `fecha_ejecucion`, `tipo_accion`, `id_contacto`, `id_asignado` (tareas); `descripcion`, `fecha_estimada`, `fecha_seguimiento` (eventos).
+
+> Se auditan **todas** las ediciones, también las que hace el propio dueño de la actividad. Las transiciones de estado (`completada`, `cancelada`, `ocurrido`, `descartado`) **no** se auditan aquí: ya quedan reflejadas en el `estado` de la propia actividad.
 
 ---
 

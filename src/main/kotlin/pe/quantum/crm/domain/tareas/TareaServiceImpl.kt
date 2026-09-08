@@ -4,6 +4,9 @@ import jakarta.persistence.criteria.Predicate
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
+import pe.quantum.crm.domain.actividades.TipoActividad
+import pe.quantum.crm.domain.actividades.dto.CambioCampo
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
@@ -19,6 +22,7 @@ import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
 import pe.quantum.crm.domain.tareas.dto.TareaDto
 import pe.quantum.crm.domain.tareas.dto.TareaFiltros
 import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
+import pe.quantum.crm.domain.tareas.dto.TareaVinculo
 import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
@@ -29,6 +33,7 @@ import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -42,6 +47,7 @@ class TareaServiceImpl(
     private val contactoService: ContactoService,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
+    private val auditoriaService: AuditoriaActividadService,
 ) : TareaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -218,6 +224,8 @@ class TareaServiceImpl(
         if (tarea.estadoAccion != EstadoAccion.pendiente) {
             throw EstadoInvalidoException("Solo se pueden editar tareas pendientes")
         }
+        // Snapshot ANTES de mutar: la auditoria compara contra estos valores.
+        val antes = InstantaneaTarea(tarea)
         request.tipoAccion?.let { tarea.tipoAccion = it }
         request.descripcion?.let { tarea.descripcion = it }
         // Solo cuenta como reprogramacion si la fecha se mueve de verdad: reiniciar
@@ -255,6 +263,7 @@ class TareaServiceImpl(
             notificacionService.reiniciarRecordatorios(OrigenRecordatorio.tarea, id)
         }
         val actualizada = tareaRepository.save(tarea)
+        auditoriaService.registrar(TipoActividad.tarea, id, antes.diffContra(actualizada), usuario.id)
         notificarCambiosAsignacion(actualizada, nuevoDueno, colaboradoresAgregados, usuario)
         return toDtos(listOf(actualizada)).first()
     }
@@ -359,6 +368,50 @@ class TareaServiceImpl(
     @Transactional(readOnly = true)
     override fun idsEmpresasDondeColabora(idEmpleado: Long): Set<Long> = tareaRepository.idsEmpresaConColaborador(idEmpleado).toSet()
 
+    @Transactional(readOnly = true)
+    override fun listarPorEmpleado(
+        idEmpleado: Long,
+        desde: Instant?,
+        hasta: Instant?,
+        usuario: UsuarioActual,
+    ): List<TareaDto> {
+        val tareas =
+            tareaRepository.findByIdAsignadoAndCreatedAtBetweenOrderByCreatedAtDesc(
+                idEmpleado,
+                desde?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: INICIO_DE_LOS_TIEMPOS,
+                hasta?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: FIN_DE_LOS_TIEMPOS,
+            )
+        // Un rol restringido no puede leer la agenda de otro por esta puerta:
+        // se le recorta a lo suyo, igual que hace `especificacion()` en `listar`.
+        val visibles =
+            if (usuario.visibilidadRestringida) {
+                val idsColaborador =
+                    tareaResponsableRepository
+                        .findByIdIdTareaIn(tareas.mapNotNull { it.id })
+                        .filter { it.id.idEmpleado == usuario.id }
+                        .map { it.id.idTarea }
+                        .toSet()
+                tareas.filter { it.idAsignado == usuario.id || it.id in idsColaborador }
+            } else {
+                tareas
+            }
+        return toDtos(visibles)
+    }
+
+    @Transactional(readOnly = true)
+    override fun vinculoVisible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): TareaVinculo {
+        val tarea = visible(id, usuario)
+        return TareaVinculo(
+            id = requireNotNull(tarea.id),
+            idEmpresa = tarea.idEmpresa,
+            idOportunidad = tarea.idOportunidad,
+            idAsignado = tarea.idAsignado,
+        )
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     /** vendedor/analista solo operan tareas donde son dueño o colaborador (404 si no). */
@@ -460,5 +513,46 @@ class TareaServiceImpl(
 
         /** Superconjunto del umbral `proximo` de `RecordatorioJob` (24 h). */
         const val HORAS_VENTANA_PROXIMO = 24L
+
+        /**
+         * Limites del rango cuando el cliente no manda `desde`/`hasta`.
+         * `LocalDateTime.MIN/MAX` NO sirven: se salen del rango de un TIMESTAMP
+         * de Postgres y la query revienta.
+         */
+        val INICIO_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(1970, 1, 1, 0, 0)
+        val FIN_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(2999, 12, 31, 23, 59, 59)
     }
+}
+
+/**
+ * Valores de una tarea antes de editarla. Existe porque `actualizar` muta la
+ * entidad en sitio: sin copiar antes, no hay con que comparar despues.
+ *
+ * Todo se guarda como texto porque `actividad_auditoria` almacena cualquier
+ * campo con la misma forma (ver V49).
+ */
+private class InstantaneaTarea(
+    tarea: Tarea,
+) {
+    private val tipoAccion: String = tarea.tipoAccion.name
+    private val descripcion: String? = tarea.descripcion
+    private val fechaEjecucion: String? = tarea.fechaEjecucion?.toString()
+    private val idContacto: String? = tarea.idContacto?.toString()
+    private val idAsignado: String? = tarea.idAsignado?.toString()
+
+    /** Un `CambioCampo` por campo que de verdad cambio; lista vacia si no cambio nada. */
+    fun diffContra(tarea: Tarea): List<CambioCampo> =
+        listOfNotNull(
+            cambio("tipo_accion", tipoAccion, tarea.tipoAccion.name),
+            cambio("descripcion", descripcion, tarea.descripcion),
+            cambio("fecha_ejecucion", fechaEjecucion, tarea.fechaEjecucion?.toString()),
+            cambio("id_contacto", idContacto, tarea.idContacto?.toString()),
+            cambio("id_asignado", idAsignado, tarea.idAsignado?.toString()),
+        )
+
+    private fun cambio(
+        campo: String,
+        anterior: String?,
+        nuevo: String?,
+    ): CambioCampo? = if (anterior == nuevo) null else CambioCampo(campo, anterior, nuevo)
 }

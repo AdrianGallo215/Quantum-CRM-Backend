@@ -96,3 +96,11 @@ data class TareaRecordatorioProyeccion(
     val idOportunidad: Long?,
     val fechaEjecucion: LocalDateTime,
 )
+
+/** Datos minimos de una tarea para otros modulos (actividades). */
+data class TareaVinculo(
+    val id: Long,
+    val idEmpresa: Long,
+    val idOportunidad: Long?,
+    val idAsignado: Long?,
+)

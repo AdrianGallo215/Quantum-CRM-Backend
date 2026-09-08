@@ -1,0 +1,83 @@
+{
+  "titulo": "Vista de historial de actividades (tareas y eventos) para gerencia y JDV sobre sus subordinados",
+  "origen": "solicitud directa del usuario en sesión de trabajo",
+  "fecha": "2026-09-07",
+  "problema": "Gerencia necesita supervisar el trabajo de los Jefes de Venta (JDV) y los JDV necesitan supervisar el de los Vendedores, mediante una nueva vista en el side bar que muestre el historial completo de actividades (tareas y eventos) de esos roles subordinados, con todos los datos relacionados (fechas, empresas involucradas, oportunidades, etc.).",
+  "requisitos_cerrados": [
+    {
+      "id": "R1",
+      "pedido": "Nueva vista en el side bar: gerencia ve el historial de actividades (tareas y eventos) de los JDV.",
+      "nota": "según el solicitante, gerencia NO ve directamente el historial de vendedores en esta vista, solo el de JDV."
+    },
+    {
+      "id": "R2",
+      "pedido": "Nueva vista en el side bar: JDV ve el historial de actividades (tareas y eventos) de los Vendedores.",
+      "nota": "acceso plano: cualquier JDV ve actividades de todos los Vendedores, no solo de un equipo asignado (confirmado por el solicitante)."
+    },
+    {
+      "id": "R3",
+      "pedido": "El historial cubre actividades pasadas, presentes y futuras (no se filtra por completadas o vencidas).",
+      "segun_solicitante": "se quiere ver todo, sin recorte temporal"
+    },
+    {
+      "id": "R4",
+      "pedido": "Cada actividad debe mostrar todos los datos relacionados: fechas, empresas involucradas, oportunidades vinculadas, y cualquier otro dato asociado a la tarea/evento.",
+      "verificar_en_triage": true,
+      "nota": "el ticket no fija la lista exhaustiva de campos; se toma como 'todos los que la actividad ya tiene asociados hoy en tareas/eventos'."
+    },
+    {
+      "id": "R5",
+      "pedido": "La vista no es de solo lectura: desde ahí se debe poder editar la tarea/evento (fecha, descripción, etc.) y agregar comentarios o notas de seguimiento.",
+      "segun_solicitante": "confirmado explícitamente al preguntar; se descartó la opción de que fuera solo lectura"
+    },
+    {
+      "id": "R6",
+      "pedido": "Admin también tiene acceso a ambas vistas nuevas (historial de JDV e historial de Vendedores), no solo gerencia y JDV respectivamente.",
+      "segun_solicitante": "confirmado explícitamente"
+    }
+  ],
+  "preguntas_abiertas": [
+    {
+      "id": "P1",
+      "pregunta": "¿Por qué gerencia ve el historial de JDV pero no el de Vendedores directamente? ¿Es una restricción deliberada de negocio, o gerencia debería tener también visibilidad de Vendedores dado que ya tiene visibilidad total en otras partes del sistema (matriz_permisos.md)?",
+      "por_que_bloquea": "si es una omisión y no una decisión deliberada, la implementación dejaría a gerencia sin poder auditar directamente el trabajo de los vendedores, que es justamente el nivel operativo más numeroso.",
+      "decide": "producto"
+    },
+    {
+      "id": "P2",
+      "pregunta": "¿Qué campos exactos debe editar el rol supervisor (gerencia/JDV/admin) sobre una tarea o evento ajeno? ¿Puede reasignar el responsable, cambiar el estado (completada/cancelada), o solo campos descriptivos (fecha, descripción)?",
+      "por_que_bloquea": "'editar la tarea/evento (fecha, descripción, etc.)' es una lista abierta con un 'etc.'; sin acotarla, se puede terminar dando permisos de reasignación o cambio de estado que el solicitante no pidió ni descartó.",
+      "decide": "producto"
+    },
+    {
+      "id": "P3",
+      "pregunta": "¿Los comentarios o notas de seguimiento son un mecanismo nuevo (feature no existente hoy) o ya existe algo similar en tareas/eventos que solo se debe exponer en esta vista?",
+      "por_que_bloquea": "si es una funcionalidad nueva, cambia el alcance del ticket de 'nueva vista' a 'nueva vista + nueva feature de comentarios'.",
+      "decide": "producto",
+      "verificar_en_triage": true
+    },
+    {
+      "id": "P4",
+      "pregunta": "Cuando gerencia o admin editan una tarea/evento de un JDV, o un JDV edita la de un Vendedor, ¿debe quedar registrado quién hizo el cambio (auditoría), o basta con que el cambio se aplique sin dejar rastro de que fue un tercero?",
+      "por_que_bloquea": "afecta directamente la confianza del dueño original de la actividad en su propio historial y puede requerir un campo o tabla de auditoría nueva.",
+      "decide": "producto"
+    },
+    {
+      "id": "P5",
+      "pregunta": "¿Esta vista debe incluir algún filtro o buscador (por empleado, por rango de fechas, por empresa/oportunidad), o el pedido es solo un listado completo sin filtros en esta primera versión?",
+      "por_que_bloquea": "con volumen real de datos (todas las tareas y eventos de todos los vendedores, sin recorte temporal), un listado sin filtros puede ser inutilizable en la práctica.",
+      "decide": "producto"
+    }
+  ],
+  "areas_sospechadas": {
+    "advertencia": "sospecha del solicitante/asistente, sin verificar contra el repo",
+    "modulos": ["tareas", "eventos", "empleados", "empresas", "oportunidades"],
+    "docs": ["matriz_permisos.md", "contrato_api.md"]
+  },
+  "impacto_esperado_en_frontend": "Requiere nueva(s) sección(es) en el side bar y nuevos endpoints o parámetros de consulta para listar actividades de otro empleado según jerarquía de rol. El solicitante no indicó si ya conversó esto con el equipo de frontend.",
+  "no_alcance": [
+    "No se pidió que Vendedores o JDV vean el historial de roles superiores.",
+    "No se especificó si esta vista reemplaza o convive con vistas de tareas/eventos ya existentes."
+  ],
+  "urgencia": "no especificada por el solicitante"
+}

@@ -23,6 +23,8 @@ data class EventoDto(
     val esRecomendado: Boolean,
     val etapaAsociada: String?,
     val esHitoProspeccion: Boolean,
+    val createdBy: Long = 0,
+    val createdAt: Instant = Instant.EPOCH,
 )
 
 /** Eventos de una oportunidad separados por estado (contrato §11). */
@@ -96,4 +98,11 @@ data class EventoRecordatorioProyeccion(
     val idOportunidad: Long?,
     val idEmpresa: Long?,
     val fechaEstimada: LocalDate,
+)
+
+/** Datos minimos de un evento para otros modulos (actividades). */
+data class EventoVinculo(
+    val id: Long,
+    val idOportunidad: Long?,
+    val createdBy: Long,
 )

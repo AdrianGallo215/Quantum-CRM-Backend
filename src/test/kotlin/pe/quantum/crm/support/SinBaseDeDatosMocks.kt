@@ -9,6 +9,8 @@ import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.TransactionStatus
 import org.springframework.transaction.support.SimpleTransactionStatus
 import org.springframework.transaction.support.TransactionTemplate
+import pe.quantum.crm.domain.actividades.ActividadAuditoriaRepository
+import pe.quantum.crm.domain.actividades.ActividadComentarioRepository
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoRepository
 import pe.quantum.crm.domain.contactos.ContactoRepository
 import pe.quantum.crm.domain.contactos.EmpresaContactoRepository
@@ -100,6 +102,12 @@ class SinBaseDeDatosMocks {
 
     @Bean
     fun simulacionLogRepository(): SimulacionLogRepository = mockk(relaxed = true)
+
+    @Bean
+    fun actividadComentarioRepository(): ActividadComentarioRepository = mockk(relaxed = true)
+
+    @Bean
+    fun actividadAuditoriaRepository(): ActividadAuditoriaRepository = mockk(relaxed = true)
 
     @Bean
     fun namedParameterJdbcTemplate(): NamedParameterJdbcTemplate = mockk(relaxed = true)

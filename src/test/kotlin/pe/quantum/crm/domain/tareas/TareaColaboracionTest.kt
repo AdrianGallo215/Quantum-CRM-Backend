@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.EmpresaService
@@ -22,6 +23,7 @@ class TareaColaboracionTest {
     private val contactoService = mockk<ContactoService>()
     private val empleadoService = mockk<EmpleadoService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val auditoriaService = mockk<AuditoriaActividadService>(relaxed = true)
     private val service =
         TareaServiceImpl(
             tareaRepository,
@@ -31,6 +33,7 @@ class TareaColaboracionTest {
             contactoService,
             empleadoService,
             notificacionService,
+            auditoriaService,
         )
 
     @Test

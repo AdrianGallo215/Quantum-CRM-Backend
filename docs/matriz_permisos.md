@@ -198,6 +198,7 @@ Las fugas de **Solicitudes**, **Metas de venta** y **Contactos** ya se corrigier
 | Velocidad por etapa | ✓ | ✓ | ✓ | — | — | — |
 | Embudo de prospección | ✓ | ✓ | ✓ | — | — | — |
 | Mix de descuentos | ✓ | ✓ | ✓ | — | — | — |
+| Export Excel de gestión comercial | ✓ | ✓ | ✓ | — | — | — |
 
 Ningún rol `vendedor`, `analista` ni `otro` tiene acceso a reportes en el MVP.
 
@@ -390,3 +391,23 @@ Cuando se implemente el módulo financiero, el analista necesitará acceso a cam
 ### 4.4 Reasignación y visibilidad histórica
 
 Cuando una empresa se reasigna de un vendedor a otro, el vendedor anterior pierde visibilidad sobre la empresa y sus oportunidades activas. Sin embargo, las oportunidades en `facturado` o `cerrado` donde él era el vendedor snapshot siguen siendo visibles para él en una vista de historial (filtro `incluir_cerradas=true` en `/oportunidades`). Esto garantiza que pueda consultar su historial de operaciones para comisiones futuras.
+
+## Historial de actividades (`/actividades`)
+
+Vista de supervisión que une tareas y eventos de un empleado (`contrato_api.md §29`).
+
+**No introduce ninguna visibilidad nueva.** `admin`, `gerencia` y `jdv` ya veían todas las tareas y todos los eventos (§1 de este documento); estos endpoints solo agregan la forma de filtrar esa visión por empleado.
+
+| Operación | admin | gerencia | jdv | vendedor | analista | otro |
+|---|---|---|---|---|---|---|
+| Ver el historial propio (`id_empleado` = uno mismo) | Sí | Sí | Sí | Sí | Sí | Sí |
+| Ver el historial de **otro** empleado | Sí | Sí | Sí | No (403) | No (403) | No (403) |
+| Leer comentarios de una actividad | \*  | \* | \* | \* | \* | \* |
+| Crear un comentario | \* | \* | \* | \* | \* | \* |
+| Leer la auditoría de una actividad | \* | \* | \* | \* | \* | \* |
+
+\* Sujeto al filtro de visibilidad de la propia actividad: la tarea o el evento que el rol no alcanza responde `404 NO_ENCONTRADO`, igual que en `§2.5` (eventos) y `§2.6` (tareas). Un rol de apoyo (`analista`, `otro`) solo alcanza aquello donde colabora vía tarea.
+
+**Nota sobre el 403 del historial ajeno.** La regla general del repo es responder `404` ante un recurso ajeno (CLAUDE.md regla 14, contra IDOR). Aquí es `403` porque el recurso protegido no es una actividad sino **el empleado**, cuya existencia ya es pública para cualquier usuario autenticado vía `GET /empleados` (§7 del contrato). No hay existencia que ocultar, y el mensaje explícito le dice al usuario por qué no puede, en vez de fingir que la persona no existe.
+
+**Auditoría.** Toda edición de una tarea o un evento (`PUT /tareas/:id`, `PUT /eventos/:id`) queda registrada campo a campo con el id de quien la hizo, sea o no el dueño de la actividad. Ningún rol puede editar una actividad ajena sin dejar rastro.

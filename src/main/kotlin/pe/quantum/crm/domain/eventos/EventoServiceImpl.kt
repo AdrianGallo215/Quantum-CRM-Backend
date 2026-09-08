@@ -2,6 +2,9 @@ package pe.quantum.crm.domain.eventos
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
+import pe.quantum.crm.domain.actividades.TipoActividad
+import pe.quantum.crm.domain.actividades.dto.CambioCampo
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -12,6 +15,7 @@ import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.eventos.dto.EventoDto
 import pe.quantum.crm.domain.eventos.dto.EventoOcurridoDto
 import pe.quantum.crm.domain.eventos.dto.EventoRecordatorioProyeccion
+import pe.quantum.crm.domain.eventos.dto.EventoVinculo
 import pe.quantum.crm.domain.eventos.dto.EventosAgrupadosDto
 import pe.quantum.crm.domain.eventos.dto.MarcarDescartadoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
@@ -28,6 +32,7 @@ import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -41,6 +46,7 @@ class EventoServiceImpl(
     private val empresaService: EmpresaService,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
+    private val auditoriaService: AuditoriaActividadService,
 ) : EventoService {
     @Transactional(readOnly = true)
     override fun listarPorOportunidad(
@@ -165,6 +171,8 @@ class EventoServiceImpl(
         if (evento.estado != EstadoEvento.pendiente) {
             throw EstadoInvalidoException("Solo se pueden editar eventos pendientes")
         }
+        // Snapshot ANTES de mutar: la auditoria compara contra estos valores.
+        val antes = InstantaneaEvento(evento)
         // Solo cuenta como reprogramacion si la fecha se mueve de verdad: reiniciar
         // el dedup en cada edicion reenviaria recordatorios ya entregados.
         var reprogramado = false
@@ -183,7 +191,9 @@ class EventoServiceImpl(
         if (reprogramado) {
             notificacionService.reiniciarRecordatorios(OrigenRecordatorio.evento, id)
         }
-        return eventoRepository.save(evento).toDto()
+        val actualizado = eventoRepository.save(evento)
+        auditoriaService.registrar(TipoActividad.evento, id, antes.diffContra(actualizado), usuario.id)
+        return actualizado.toDto()
     }
 
     @Transactional(readOnly = true)
@@ -196,6 +206,53 @@ class EventoServiceImpl(
                 fechaEstimada = requireNotNull(it.fechaEstimada),
             )
         }
+
+    @Transactional(readOnly = true)
+    override fun listarPorEmpleado(
+        idEmpleado: Long,
+        desde: Instant?,
+        hasta: Instant?,
+        usuario: UsuarioActual,
+    ): List<EventoDto> {
+        val eventos =
+            eventoRepository.findByCreatedByAndCreatedAtBetweenOrderByCreatedAtDesc(
+                idEmpleado,
+                desde?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: INICIO_DE_LOS_TIEMPOS,
+                hasta?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: FIN_DE_LOS_TIEMPOS,
+            )
+        // Descarta los eventos cuya oportunidad/empresa subyacente esta fuera del
+        // alcance de visibilidad del usuario que pide el historial.
+        val visibles =
+            eventos.filter {
+                try {
+                    val idOportunidad = it.idOportunidad
+                    val idEmpresa = it.idEmpresa
+                    when {
+                        idOportunidad != null -> oportunidadService.vinculoVisible(idOportunidad, usuario)
+                        idEmpresa != null -> empresaService.vinculoVisible(idEmpresa, usuario)
+                    }
+                    true
+                } catch (
+                    @Suppress("SwallowedException") e: NoEncontradoException,
+                ) {
+                    false
+                }
+            }
+        return toDtos(visibles)
+    }
+
+    @Transactional(readOnly = true)
+    override fun vinculoVisible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): EventoVinculo {
+        val evento = visible(id, usuario)
+        return EventoVinculo(
+            id = requireNotNull(evento.id),
+            idOportunidad = evento.idOportunidad,
+            createdBy = evento.createdBy,
+        )
+    }
 
     // ── privados ───────────────────────────────────────────────
 
@@ -359,6 +416,8 @@ class EventoServiceImpl(
             esRecomendado = entrada?.esRecomendado ?: false,
             etapaAsociada = entrada?.etapaAsociada,
             esHitoProspeccion = entrada?.esHitoProspeccion ?: false,
+            createdBy = createdBy,
+            createdAt = createdAt.comoInstanteUtc(),
         )
     }
 
@@ -370,4 +429,39 @@ class EventoServiceImpl(
             EstadoOportunidad.facturado -> "Facturado"
             EstadoOportunidad.cerrado -> "Cerrado"
         }
+
+    private companion object {
+        /** Limites del rango para cuando no se manda `desde`/`hasta`. */
+        val INICIO_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(1970, 1, 1, 0, 0)
+        val FIN_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(2999, 12, 31, 23, 59, 59)
+    }
+}
+
+/**
+ * Valores de un evento antes de editarlo. Solo los tres campos que
+ * `ActualizarEventoRequest` permite tocar.
+ *
+ * `fechaEstimada` y `fechaSeguimiento` son columnas DATE: se auditan como el dia
+ * que son (`toString()` da `2026-09-20`), sin convertirlos a instante — ver la
+ * advertencia de `shared/TiempoUtc.kt`.
+ */
+private class InstantaneaEvento(
+    evento: Evento,
+) {
+    private val descripcion: String? = evento.descripcion
+    private val fechaEstimada: String? = evento.fechaEstimada?.toString()
+    private val fechaSeguimiento: String? = evento.fechaSeguimiento?.toString()
+
+    fun diffContra(evento: Evento): List<CambioCampo> =
+        listOfNotNull(
+            cambio("descripcion", descripcion, evento.descripcion),
+            cambio("fecha_estimada", fechaEstimada, evento.fechaEstimada?.toString()),
+            cambio("fecha_seguimiento", fechaSeguimiento, evento.fechaSeguimiento?.toString()),
+        )
+
+    private fun cambio(
+        campo: String,
+        anterior: String?,
+        nuevo: String?,
+    ): CambioCampo? = if (anterior == nuevo) null else CambioCampo(campo, anterior, nuevo)
 }

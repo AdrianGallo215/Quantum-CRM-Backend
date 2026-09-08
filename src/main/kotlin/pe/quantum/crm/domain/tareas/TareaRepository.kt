@@ -56,6 +56,13 @@ interface TareaRepository :
     fun idsEmpresaConColaborador(
         @Param("idEmpleado") idEmpleado: Long,
     ): List<Long>
+
+    /** Historial de un empleado por rango de `created_at` (modulo actividades). */
+    fun findByIdAsignadoAndCreatedAtBetweenOrderByCreatedAtDesc(
+        idAsignado: Long,
+        desde: LocalDateTime,
+        hasta: LocalDateTime,
+    ): List<Tarea>
 }
 
 /** Colaboradores de tareas (tabla `tarea_responsables`, migracion V31). */

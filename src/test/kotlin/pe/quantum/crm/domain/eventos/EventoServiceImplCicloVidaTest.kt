@@ -7,6 +7,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -40,8 +41,17 @@ class EventoServiceImplCicloVidaTest {
     private val empresaService = mockk<EmpresaService>(relaxed = true)
     private val empleadoService = mockk<EmpleadoService>(relaxed = true)
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val auditoriaService = mockk<AuditoriaActividadService>(relaxed = true)
     private val service =
-        EventoServiceImpl(eventoRepository, catalogoEventoService, oportunidadService, empresaService, empleadoService, notificacionService)
+        EventoServiceImpl(
+            eventoRepository,
+            catalogoEventoService,
+            oportunidadService,
+            empresaService,
+            empleadoService,
+            notificacionService,
+            auditoriaService,
+        )
 
     private val usuario = UsuarioActual(id = 1, rol = "vendedor")
 
