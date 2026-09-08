@@ -5,6 +5,7 @@ import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.EmpresaService
@@ -29,6 +30,7 @@ class EventoHistorialTest {
     private val empresaService = mockk<EmpresaService>(relaxed = true)
     private val empleadoService = mockk<EmpleadoService>(relaxed = true)
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val auditoriaService = mockk<AuditoriaActividadService>(relaxed = true)
     private val service =
         EventoServiceImpl(
             eventoRepository,
@@ -37,6 +39,7 @@ class EventoHistorialTest {
             empresaService,
             empleadoService,
             notificacionService,
+            auditoriaService,
         )
 
     private val supervisor = UsuarioActual(id = 1, rol = "gerencia")

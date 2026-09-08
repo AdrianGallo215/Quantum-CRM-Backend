@@ -2,6 +2,9 @@ package pe.quantum.crm.domain.eventos
 
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
+import pe.quantum.crm.domain.actividades.TipoActividad
+import pe.quantum.crm.domain.actividades.dto.CambioCampo
 import pe.quantum.crm.domain.catalogoeventos.CatalogoEventoService
 import pe.quantum.crm.domain.catalogoeventos.dto.CatalogoEventoDto
 import pe.quantum.crm.domain.empleados.EmpleadoService
@@ -43,6 +46,7 @@ class EventoServiceImpl(
     private val empresaService: EmpresaService,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
+    private val auditoriaService: AuditoriaActividadService,
 ) : EventoService {
     @Transactional(readOnly = true)
     override fun listarPorOportunidad(
@@ -167,6 +171,8 @@ class EventoServiceImpl(
         if (evento.estado != EstadoEvento.pendiente) {
             throw EstadoInvalidoException("Solo se pueden editar eventos pendientes")
         }
+        // Snapshot ANTES de mutar: la auditoria compara contra estos valores.
+        val antes = InstantaneaEvento(evento)
         // Solo cuenta como reprogramacion si la fecha se mueve de verdad: reiniciar
         // el dedup en cada edicion reenviaria recordatorios ya entregados.
         var reprogramado = false
@@ -185,7 +191,9 @@ class EventoServiceImpl(
         if (reprogramado) {
             notificacionService.reiniciarRecordatorios(OrigenRecordatorio.evento, id)
         }
-        return eventoRepository.save(evento).toDto()
+        val actualizado = eventoRepository.save(evento)
+        auditoriaService.registrar(TipoActividad.evento, id, antes.diffContra(actualizado), usuario.id)
+        return actualizado.toDto()
     }
 
     @Transactional(readOnly = true)
@@ -406,6 +414,8 @@ class EventoServiceImpl(
             esRecomendado = entrada?.esRecomendado ?: false,
             etapaAsociada = entrada?.etapaAsociada,
             esHitoProspeccion = entrada?.esHitoProspeccion ?: false,
+            createdBy = createdBy,
+            createdAt = createdAt.comoInstanteUtc(),
         )
     }
 
@@ -423,4 +433,33 @@ class EventoServiceImpl(
         val INICIO_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(1970, 1, 1, 0, 0)
         val FIN_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(2999, 12, 31, 23, 59, 59)
     }
+}
+
+/**
+ * Valores de un evento antes de editarlo. Solo los tres campos que
+ * `ActualizarEventoRequest` permite tocar.
+ *
+ * `fechaEstimada` y `fechaSeguimiento` son columnas DATE: se auditan como el dia
+ * que son (`toString()` da `2026-09-20`), sin convertirlos a instante — ver la
+ * advertencia de `shared/TiempoUtc.kt`.
+ */
+private class InstantaneaEvento(
+    evento: Evento,
+) {
+    private val descripcion: String? = evento.descripcion
+    private val fechaEstimada: String? = evento.fechaEstimada?.toString()
+    private val fechaSeguimiento: String? = evento.fechaSeguimiento?.toString()
+
+    fun diffContra(evento: Evento): List<CambioCampo> =
+        listOfNotNull(
+            cambio("descripcion", descripcion, evento.descripcion),
+            cambio("fecha_estimada", fechaEstimada, evento.fechaEstimada?.toString()),
+            cambio("fecha_seguimiento", fechaSeguimiento, evento.fechaSeguimiento?.toString()),
+        )
+
+    private fun cambio(
+        campo: String,
+        anterior: String?,
+        nuevo: String?,
+    ): CambioCampo? = if (anterior == nuevo) null else CambioCampo(campo, anterior, nuevo)
 }

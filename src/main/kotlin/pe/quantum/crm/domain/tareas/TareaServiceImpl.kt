@@ -522,3 +522,36 @@ class TareaServiceImpl(
         val FIN_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(2999, 12, 31, 23, 59, 59)
     }
 }
+
+/**
+ * Valores de una tarea antes de editarla. Existe porque `actualizar` muta la
+ * entidad en sitio: sin copiar antes, no hay con que comparar despues.
+ *
+ * Todo se guarda como texto porque `actividad_auditoria` almacena cualquier
+ * campo con la misma forma (ver V49).
+ */
+private class InstantaneaTarea(
+    tarea: Tarea,
+) {
+    private val tipoAccion: String = tarea.tipoAccion.name
+    private val descripcion: String? = tarea.descripcion
+    private val fechaEjecucion: String? = tarea.fechaEjecucion?.toString()
+    private val idContacto: String? = tarea.idContacto?.toString()
+    private val idAsignado: String? = tarea.idAsignado?.toString()
+
+    /** Un `CambioCampo` por campo que de verdad cambio; lista vacia si no cambio nada. */
+    fun diffContra(tarea: Tarea): List<CambioCampo> =
+        listOfNotNull(
+            cambio("tipo_accion", tipoAccion, tarea.tipoAccion.name),
+            cambio("descripcion", descripcion, tarea.descripcion),
+            cambio("fecha_ejecucion", fechaEjecucion, tarea.fechaEjecucion?.toString()),
+            cambio("id_contacto", idContacto, tarea.idContacto?.toString()),
+            cambio("id_asignado", idAsignado, tarea.idAsignado?.toString()),
+        )
+
+    private fun cambio(
+        campo: String,
+        anterior: String?,
+        nuevo: String?,
+    ): CambioCampo? = if (anterior == nuevo) null else CambioCampo(campo, anterior, nuevo)
+}
