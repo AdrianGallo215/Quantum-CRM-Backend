@@ -19,6 +19,7 @@ import pe.quantum.crm.domain.tareas.dto.CrearTareaRequest
 import pe.quantum.crm.domain.tareas.dto.TareaDto
 import pe.quantum.crm.domain.tareas.dto.TareaFiltros
 import pe.quantum.crm.domain.tareas.dto.TareaRecordatorioProyeccion
+import pe.quantum.crm.domain.tareas.dto.TareaVinculo
 import pe.quantum.crm.shared.CamposOrdenables
 import pe.quantum.crm.shared.Paginacion
 import pe.quantum.crm.shared.Paginado
@@ -29,7 +30,6 @@ import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.PermisoInsuficienteException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
-import pe.quantum.crm.domain.tareas.dto.TareaVinculo
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
