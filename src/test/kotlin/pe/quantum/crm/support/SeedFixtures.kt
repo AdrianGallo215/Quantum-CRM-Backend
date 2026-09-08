@@ -40,12 +40,12 @@ object SeedFixtures {
      * enum de notificaciones para simulaciones) es correlativa a V46: el desfase pasa de
      * 45/46 a 46/47.
      */
-    const val MIGRACIONES_TOTAL = 46
+    const val MIGRACIONES_TOTAL = 48
 
     /**
      * Número de versión de la última migración. Distinto de [MIGRACIONES_TOTAL] por el
      * hueco de V40 descrito arriba; separarlos es deliberado, porque son dos hechos
-     * distintos que coincidían por casualidad mientras la numeración fue correlativa.
+     * distintos que coincían por casualidad mientras la numeración fue correlativa.
      */
-    const val MIGRACION_VERSION_MAX = 47
+    const val MIGRACION_VERSION_MAX = 49
 }
