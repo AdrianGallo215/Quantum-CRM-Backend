@@ -7,6 +7,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
@@ -36,6 +37,7 @@ class TareaServiceImplTest {
     private val contactoService = mockk<ContactoService>()
     private val empleadoService = mockk<EmpleadoService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val auditoriaService = mockk<AuditoriaActividadService>(relaxed = true)
     private val service =
         TareaServiceImpl(
             tareaRepository,
@@ -45,6 +47,7 @@ class TareaServiceImplTest {
             contactoService,
             empleadoService,
             notificacionService,
+            auditoriaService,
         )
 
     /** `Tarea.id` es `val` (autogenerado): se reconstruye con un id real, simulando lo que hace JPA al guardar. */

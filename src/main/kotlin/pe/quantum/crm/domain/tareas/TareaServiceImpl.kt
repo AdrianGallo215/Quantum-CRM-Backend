@@ -4,6 +4,8 @@ import jakarta.persistence.criteria.Predicate
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
+import pe.quantum.crm.domain.actividades.TipoActividad
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.nombreCompleto
@@ -44,6 +46,7 @@ class TareaServiceImpl(
     private val contactoService: ContactoService,
     private val empleadoService: EmpleadoService,
     private val notificacionService: NotificacionService,
+    private val auditoriaService: AuditoriaActividadService,
 ) : TareaService {
     @Transactional(readOnly = true)
     override fun listar(
@@ -220,6 +223,8 @@ class TareaServiceImpl(
         if (tarea.estadoAccion != EstadoAccion.pendiente) {
             throw EstadoInvalidoException("Solo se pueden editar tareas pendientes")
         }
+        // Snapshot ANTES de mutar: la auditoria compara contra estos valores.
+        val antes = InstantaneaTarea(tarea)
         request.tipoAccion?.let { tarea.tipoAccion = it }
         request.descripcion?.let { tarea.descripcion = it }
         // Solo cuenta como reprogramacion si la fecha se mueve de verdad: reiniciar
@@ -257,6 +262,7 @@ class TareaServiceImpl(
             notificacionService.reiniciarRecordatorios(OrigenRecordatorio.tarea, id)
         }
         val actualizada = tareaRepository.save(tarea)
+        auditoriaService.registrar(TipoActividad.tarea, id, antes.diffContra(actualizada), usuario.id)
         notificarCambiosAsignacion(actualizada, nuevoDueno, colaboradoresAgregados, usuario)
         return toDtos(listOf(actualizada)).first()
     }

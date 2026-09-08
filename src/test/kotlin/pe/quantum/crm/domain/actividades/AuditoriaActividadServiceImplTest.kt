@@ -10,7 +10,6 @@ import pe.quantum.crm.domain.actividades.dto.CambioCampo
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empleados.dto.EmpleadoResumen
 import java.time.LocalDateTime
-import pe.quantum.crm.shared.comoInstanteUtc
 
 /**
  * Auditoria de ediciones. Lo que estos tests protegen:

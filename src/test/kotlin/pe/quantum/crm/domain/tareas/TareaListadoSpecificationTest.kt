@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.domain.Specification
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.EmpresaService
@@ -45,6 +46,7 @@ class TareaListadoSpecificationTest {
     private val contactoService = mockk<ContactoService>()
     private val empleadoService = mockk<EmpleadoService>()
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val auditoriaService = mockk<AuditoriaActividadService>(relaxed = true)
     private val service =
         TareaServiceImpl(
             tareaRepository,
@@ -54,6 +56,7 @@ class TareaListadoSpecificationTest {
             contactoService,
             empleadoService,
             notificacionService,
+            auditoriaService,
         )
 
     private val supervisor = UsuarioActual(id = 1, rol = "gerencia")

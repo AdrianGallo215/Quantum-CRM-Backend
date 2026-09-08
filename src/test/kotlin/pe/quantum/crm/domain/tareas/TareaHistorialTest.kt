@@ -5,6 +5,7 @@ import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import pe.quantum.crm.domain.actividades.AuditoriaActividadService
 import pe.quantum.crm.domain.contactos.ContactoService
 import pe.quantum.crm.domain.empleados.EmpleadoService
 import pe.quantum.crm.domain.empresas.EmpresaService
@@ -31,6 +32,7 @@ class TareaHistorialTest {
     private val contactoService = mockk<ContactoService>(relaxed = true)
     private val empleadoService = mockk<EmpleadoService>(relaxed = true)
     private val notificacionService = mockk<NotificacionService>(relaxed = true)
+    private val auditoriaService = mockk<AuditoriaActividadService>(relaxed = true)
     private val service =
         TareaServiceImpl(
             tareaRepository,
@@ -40,6 +42,7 @@ class TareaHistorialTest {
             contactoService,
             empleadoService,
             notificacionService,
+            auditoriaService,
         )
 
     private val supervisor = UsuarioActual(id = 1, rol = "gerencia")
