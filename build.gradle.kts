@@ -62,6 +62,11 @@ dependencies {
     // 2.0.0-M5 es la ultima publicada por Apache para jakarta.servlet 6.
     implementation("org.apache.commons:commons-fileupload2-jakarta-servlet6:2.0.0-M5")
 
+    // Apache POI: generacion del .xlsx del export comercial (plan-15). Solo se usa
+    // `poi-ooxml` (formato XLSX); no se agrega `poi-scratchpad`, que es para los
+    // formatos binarios viejos y arrastra dependencias que este proyecto no necesita.
+    implementation("org.apache.poi:poi-ooxml:5.4.1")
+
     // Migraciones
     implementation("org.flywaydb:flyway-core")
 
