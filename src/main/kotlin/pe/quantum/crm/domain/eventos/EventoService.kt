@@ -5,10 +5,12 @@ import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.eventos.dto.EventoDto
 import pe.quantum.crm.domain.eventos.dto.EventoOcurridoDto
 import pe.quantum.crm.domain.eventos.dto.EventoRecordatorioProyeccion
+import pe.quantum.crm.domain.eventos.dto.EventoVinculo
 import pe.quantum.crm.domain.eventos.dto.EventosAgrupadosDto
 import pe.quantum.crm.domain.eventos.dto.MarcarDescartadoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.Instant
 
 /** Interfaz publica del modulo eventos. */
 interface EventoService {
@@ -60,4 +62,25 @@ interface EventoService {
 
     /** Para el job de recordatorios (notificaciones): eventos pendientes con fecha_estimada. */
     fun pendientesParaRecordatorio(): List<EventoRecordatorioProyeccion>
+
+    /**
+     * Eventos creados por un empleado, filtrados por rango de `created_at`
+     * (ambos extremos opcionales). Solo devuelve aquellos cuya oportunidad o
+     * empresa sean visibles para el usuario que hace la peticion.
+     */
+    fun listarPorEmpleado(
+        idEmpleado: Long,
+        desde: Instant?,
+        hasta: Instant?,
+        usuario: UsuarioActual,
+    ): List<EventoDto>
+
+    /**
+     * Datos minimos de un evento, comprobando visibilidad. `NoEncontradoException`
+     * si no existe o la oportunidad/empresa base queda fuera del alcance del usuario.
+     */
+    fun vinculoVisible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): EventoVinculo
 }

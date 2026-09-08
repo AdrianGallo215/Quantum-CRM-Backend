@@ -97,3 +97,10 @@ data class EventoRecordatorioProyeccion(
     val idEmpresa: Long?,
     val fechaEstimada: LocalDate,
 )
+
+/** Datos minimos de un evento para otros modulos (actividades). */
+data class EventoVinculo(
+    val id: Long,
+    val idOportunidad: Long?,
+    val createdBy: Long,
+)

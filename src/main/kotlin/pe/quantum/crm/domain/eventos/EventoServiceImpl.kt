@@ -12,6 +12,7 @@ import pe.quantum.crm.domain.eventos.dto.CrearEventoRequest
 import pe.quantum.crm.domain.eventos.dto.EventoDto
 import pe.quantum.crm.domain.eventos.dto.EventoOcurridoDto
 import pe.quantum.crm.domain.eventos.dto.EventoRecordatorioProyeccion
+import pe.quantum.crm.domain.eventos.dto.EventoVinculo
 import pe.quantum.crm.domain.eventos.dto.EventosAgrupadosDto
 import pe.quantum.crm.domain.eventos.dto.MarcarDescartadoRequest
 import pe.quantum.crm.domain.eventos.dto.MarcarOcurridoRequest
@@ -28,6 +29,7 @@ import pe.quantum.crm.shared.exception.EstadoInvalidoException
 import pe.quantum.crm.shared.exception.NoEncontradoException
 import pe.quantum.crm.shared.exception.ValidacionException
 import pe.quantum.crm.shared.security.UsuarioActual
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -197,6 +199,51 @@ class EventoServiceImpl(
             )
         }
 
+    @Transactional(readOnly = true)
+    override fun listarPorEmpleado(
+        idEmpleado: Long,
+        desde: Instant?,
+        hasta: Instant?,
+        usuario: UsuarioActual,
+    ): List<EventoDto> {
+        val eventos =
+            eventoRepository.findByCreatedByAndCreatedAtBetweenOrderByCreatedAtDesc(
+                idEmpleado,
+                desde?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: INICIO_DE_LOS_TIEMPOS,
+                hasta?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) } ?: FIN_DE_LOS_TIEMPOS,
+            )
+        // Descarta los eventos cuya oportunidad/empresa subyacente esta fuera del
+        // alcance de visibilidad del usuario que pide el historial.
+        val visibles =
+            eventos.filter {
+                try {
+                    val idOportunidad = it.idOportunidad
+                    val idEmpresa = it.idEmpresa
+                    when {
+                        idOportunidad != null -> oportunidadService.vinculoVisible(idOportunidad, usuario)
+                        idEmpresa != null -> empresaService.vinculoVisible(idEmpresa, usuario)
+                    }
+                    true
+                } catch (e: NoEncontradoException) {
+                    false
+                }
+            }
+        return toDtos(visibles)
+    }
+
+    @Transactional(readOnly = true)
+    override fun vinculoVisible(
+        id: Long,
+        usuario: UsuarioActual,
+    ): EventoVinculo {
+        val evento = visible(id, usuario)
+        return EventoVinculo(
+            id = requireNotNull(evento.id),
+            idOportunidad = evento.idOportunidad,
+            createdBy = evento.createdBy,
+        )
+    }
+
     // ── privados ───────────────────────────────────────────────
 
     /**
@@ -363,6 +410,8 @@ class EventoServiceImpl(
     }
 
     /** Etiqueta legible del estado destino para el prompt del frontend. */
+
+    /** Etiqueta legible del estado destino para el prompt del frontend. */
     private fun etiqueta(estado: EstadoOportunidad): String =
         when (estado) {
             EstadoOportunidad.evaluacion_calidda -> "Evaluación Calidda"
@@ -370,4 +419,10 @@ class EventoServiceImpl(
             EstadoOportunidad.facturado -> "Facturado"
             EstadoOportunidad.cerrado -> "Cerrado"
         }
+
+    private companion object {
+        /** Limites del rango para cuando no se manda `desde`/`hasta`. */
+        val INICIO_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(1970, 1, 1, 0, 0)
+        val FIN_DE_LOS_TIEMPOS: LocalDateTime = LocalDateTime.of(2999, 12, 31, 23, 59, 59)
+    }
 }
